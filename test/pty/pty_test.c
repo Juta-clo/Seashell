@@ -113,11 +113,20 @@ curses_win *init_wins(curses_win wins[4]) {
         scrollok(wins[i].win, true);
     }
 
-    for (int i = 0; i < y; ++i)
-        xmvaddch(i, bx - 1, 'x');
+    for (int i = 0; i < y; ++i) {
+        if (i == by - 1) {
+            xmvaddch(i, bx - 1, ACS_PLUS);
+        } else
+            xmvaddch(i, bx - 1, ACS_VLINE);
+    }
 
-    for (int i = 0; i < x; ++i)
-        xmvaddch(by - 1, i, 'x');
+    for (int i = 0; i < x; ++i) {
+        if (i == bx - 1) {
+            xmvaddch(by - 1, i, ACS_PLUS);
+        } else
+            xmvaddch(by - 1, i, ACS_HLINE);
+    }
 
+    refresh();
     return wins;
 }

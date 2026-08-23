@@ -31,7 +31,9 @@ static void ncurses_setup(void) {
     init_pair(CP_RED_CL, COLOR_RED, COLOR_BLACK);
     init_pair(CP_GREEN_CL, COLOR_GREEN, COLOR_BLACK);
     init_pair(CP_CYAN_CL, COLOR_CYAN, COLOR_BLACK);
+    init_pair(CP_MAGENTA_CL, COLOR_MAGENTA, COLOR_BLACK);
     init_pair(CP_YELLOW_CL, COLOR_YELLOW, COLOR_BLACK);
+
     refresh();
     xatexit(ncurses_cleanup);
 }

@@ -11,12 +11,14 @@
 #define UNITY_WIN 0
 #define HARNESS_WIN 1
 #define RAW_WIN 2
+#define LOG_WIN 3
 
 #define CP_DEFAULT 0
 #define CP_RED_CL 1
 #define CP_GREEN_CL 2
 #define CP_CYAN_CL 3
 #define CP_YELLOW_CL 4
+#define CP_MAGENTA_CL 5
 
 #define PIPE_READ(_pipe, ...) \
     read(_pipe[0], __VA_ARGS__)
