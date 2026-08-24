@@ -37,6 +37,31 @@ static int mfd;
 static struct termios tio;
 static struct pollfd pollfds[NFDS];
 
+static void flush_win(int win_num) {
+    int fd;
+    bool break_on_eio;
+
+    switch (win_num) {
+    case RAW_WIN:
+        fd = mfd;
+        break_on_eio = true;
+        break;
+    case LOG_WIN:
+        fd = seashell_pipe[0];
+        break_on_eio = false;
+        break;
+    case UNITY_WIN:
+        return;
+    case HARNESS_WIN:
+        return;
+    }
+
+    char *data = flush_stream(fd, break_on_eio);
+    xwprintw(wins[win_num].win, "%s", data);
+    xwrefresh(wins[win_num].win);
+    free(data);
+}
+
 static char *request_chars(size_t nchars, size_t *index, int ms) {
     assert(index);
     assert(ptybuf_i >= *index);
@@ -91,10 +116,7 @@ static char *request_chars(size_t nchars, size_t *index, int ms) {
         }
 
         if (pollfds[POLL_SHELL].revents & POLLIN) {
-            char *pipe_chars = flush_pipe(seashell_pipe);
-            xwprintw(wins[LOG_WIN].win, "%s", pipe_chars);
-            xwrefresh(wins[LOG_WIN].win);
-            free(pipe_chars);
+            flush_win(LOG_WIN);
         }
 
         if (pollfds[POLL_TFD].revents & POLLIN) {
@@ -186,24 +208,8 @@ TEST_TEAR_DOWN(prompt) {
     if (waitpid(cpid, NULL, 0) == -1)
         TEST_FAIL_MESSAGE("waitpid failed");
 
-    /* flush seashell log pipe */
-    char *pipe_chars = flush_pipe(seashell_pipe);
-    xwprintw(wins[LOG_WIN].win, "%s", pipe_chars);
-    xwrefresh(wins[LOG_WIN].win);
-    free(pipe_chars);
-
-    /* flush mfd */
-    int num_read = read(mfd, outbuf, PTY_RBUF - 1);
-    if (num_read == -1) {
-        if (errno != EAGAIN && errno != EIO) {
-            LOG_ERR("read: %m");
-            TEST_FAIL_MESSAGE("read");
-        }
-    } else {
-        outbuf[num_read] = '\0';
-        xwprintw(wins[RAW_WIN].win, "%s", outbuf);
-        xwrefresh(wins[RAW_WIN].win);
-    }
+    flush_win(LOG_WIN);
+    flush_win(RAW_WIN);
 
     close(mfd);
 }

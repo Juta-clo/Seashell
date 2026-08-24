@@ -20,12 +20,6 @@
 #define CP_YELLOW_CL 4
 #define CP_MAGENTA_CL 5
 
-#define PIPE_READ(_pipe, ...) \
-    read(_pipe[0], __VA_ARGS__)
-
-#define PIPE_WRITE(_pipe, ...) \
-    write(_pipe[1], __VA_ARGS__)
-
 #define xwprintw(_win, _fmt, ...) \
     ({ \
         int rv = wprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
@@ -124,7 +118,7 @@ void curs_err(const char *msg);
 LLOG_SINK(pty_test_sink);
 void unity_output_char(int c);
 
-char *flush_pipe(int pipe[2]);
+char *flush_stream(int fd, bool break_on_eio);
 curses_win *init_wins(curses_win wins[4]);
 
 #endif

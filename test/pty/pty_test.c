@@ -50,18 +50,23 @@ void unity_output_char(int c) {
     xwrefresh(wins[UNITY_WIN].win);
 }
 
-char *flush_pipe(int pipe[2]) {
+/* assumes non blocking fd */
+char *flush_stream(int fd, bool break_on_eio) {
+#define FLUSH_STREAM_BS 4096
+
     char *out = NULL;
     size_t out_size = 0;
 
     while (true) {
-        char pbuf[4096];
-        int num_read = PIPE_READ(pipe, pbuf, 4096);
+        char pbuf[FLUSH_STREAM_BS];
+        int num_read = read(fd, pbuf, FLUSH_STREAM_BS);
 
         if (num_read == -1) {
-            if (errno == EAGAIN)
+            if (errno == EAGAIN) {
                 break;
-            else {
+            } else if (break_on_eio && errno == EIO) {
+                break;
+            } else {
                 LOG_ERR("read: %m");
                 exit(EXIT_FAILURE);
             }
