@@ -16,6 +16,7 @@ struct wait_event {
 
     union {
         int term_sig;
+        int stop_sig;
         int exit_stat;
     };
 };

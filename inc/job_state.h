@@ -19,7 +19,7 @@ typedef enum {
 
 typedef enum {
     JEXITED,
-    /* JSIGNALED, ? */
+    JTERMINATED,
     JSTOPPED,
     JCONTINUED,
 } job_event_type;
@@ -36,6 +36,7 @@ struct jc_proc {
 
     union {
         int term_sig;
+        int stop_sig;
         int exit_stat;
     };
 };
@@ -60,6 +61,11 @@ struct job_event {
     pid_t jid;
     job_event_type type;
     bool success;
+
+    union {
+        int term_sig;
+        int stop_sig;
+    };
 };
 
 pid_t request_job_id(pid_t jid);

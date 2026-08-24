@@ -58,6 +58,7 @@ int get_wstat(wait_event *wev) {
 
     } else if (WIFSTOPPED(wstat)) {
         wev->type = PSTOPPED;
+        wev->stop_sig = WSTOPSIG(wstat);
 
     } else if (WIFCONTINUED(wstat)) {
         wev->type = PCONTINUED;

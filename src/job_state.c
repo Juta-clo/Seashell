@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 
 #include "job_state.h"
@@ -90,8 +91,12 @@ char *get_jev_str(job_event jev) {
 
     if (jev.type == JEXITED) {
         snprintf(buf, 4096, "[%d] exited", jev.jid);
+    } else if (jev.type == JTERMINATED) {
+        snprintf(buf, 4096, "[%d] %s by signal %d", jev.jid,
+                strsignal(jev.term_sig), jev.term_sig);
     } else if (jev.type == JSTOPPED) {
-        snprintf(buf, 4096, "[%d] stopped", jev.jid);
+        snprintf(buf, 4096, "[%d] %s by signal %d", jev.jid,
+                strsignal(jev.stop_sig), jev.stop_sig);
     } else if (jev.type == JCONTINUED) {
         snprintf(buf, 4096, "[%d] continued", jev.jid);
     } else
@@ -162,6 +167,7 @@ int update_job_proc(wait_event wev) {
 
     else if (wev.type == PSTOPPED) {
         proc->stat = PROC_STOP;
+        proc->stop_sig = wev.stop_sig;
     }
 
     else if (wev.type == PCONTINUED) {
@@ -171,27 +177,39 @@ int update_job_proc(wait_event wev) {
     job_stat stat = calc_job_stat(job);
 
     if (job->stat == JOB_RUN && stat == JOB_STOP) {
-        add_job_event((job_event){ .jid = job->jid, .type = JSTOPPED });
+        add_job_event((job_event){
+            .jid = job->jid,
+            .type = JSTOPPED,
+            .stop_sig = proc->stop_sig
+        });
         job->stat = stat;
 
     } else if (job->stat == JOB_STOP && stat == JOB_RUN) {
-        add_job_event((job_event){ .jid = job->jid, .type = JCONTINUED });
+        add_job_event((job_event){
+            .jid = job->jid,
+            .type = JCONTINUED
+        });
         job->stat = stat;
 
     } else if (stat == JOB_EXIT) {
-
-        job_event jev = { .jid = job->jid, .type = JEXITED };
-
         if (job->last->stat == PROC_EXIT) {
-            jev.success = job->last->exit_stat == EXIT_SUCCESS;
+            add_job_event((job_event){
+                .jid = job->jid,
+                .type = JEXITED,
+                .success = job->last->exit_stat == EXIT_SUCCESS
+            });
 
         } else if (job->last->stat == PROC_SIG) {
-            jev.success = false;
+            add_job_event((job_event){
+                .jid = job->jid,
+                .type = JTERMINATED,
+                .success = false,
+                .term_sig = job->last->term_sig
+            });
 
-        } else
+        } else {
             xfatal("unexpected process exit status");
-
-        add_job_event(jev);
+        }
 
         /* delete job */
         size_t i = get_job_index(job->jid);

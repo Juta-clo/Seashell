@@ -226,16 +226,29 @@ static void process_signals(void) {
             LOG_INFO("%s", get_jev_str(*jev));
 
             if (!fg_event(jev)) {
-                if (jev->type != JEXITED || !run_next_job_bg(jev))
+                if ((jev->type != JEXITED && jev->type != JTERMINATED)
+                        || !run_next_job_bg(jev))
                     print_job_event(jev, &prompt_upset);
 
             } else if (jev->type == JEXITED) {
-
                 if (!run_next_job_fg(jev))
                     need_terminal = true;
 
+            } else if (jev->type == JTERMINATED) {
+                if (jev->term_sig == SIGINT) {
+                    printf("\n"); /* INT cancels entire andor chain */
+                    need_terminal = true;
+
+                } else {
+                    print_job_event(jev, &prompt_upset);
+                    if (!run_next_job_fg(jev))
+                        need_terminal = true;
+                }
+
             } else if (jev->type == JSTOPPED) {
-                printf("\n"); /* because of echoed ^Z on C-z */
+                if (jev->stop_sig == SIGTSTP)
+                    printf("\n");
+
                 print_job_event(jev, &prompt_upset);
                 need_terminal = true;
             }

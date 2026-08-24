@@ -132,12 +132,6 @@ typedef struct {
     exp_da_job jobs;
 } exp_job_table;
 
-struct job_event {
-    pid_t jid;
-    job_event_type type;
-    bool success;
-};
-
 void validate_proc(exp_proc *exp, jc_proc *proc) {
     TEST_ASSERT_EQUAL(exp->pid, proc->pid);
     TEST_ASSERT_EQUAL(exp->stat, proc->stat);
