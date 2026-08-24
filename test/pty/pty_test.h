@@ -3,13 +3,14 @@
 
 #include <ncurses.h>
 
+#include "dstr.h"
 #include "llog.h"
 #include "xfuncs.h"
 
 #define PTY_RBUF 100000
 
-#define UNITY_WIN 0
-#define HARNESS_WIN 1
+#define JOB_WIN 0
+#define TEST_WIN 1
 #define RAW_WIN 2
 #define LOG_WIN 3
 
@@ -19,6 +20,33 @@
 #define CP_CYAN_CL 3
 #define CP_YELLOW_CL 4
 #define CP_MAGENTA_CL 5
+
+typedef struct {
+    WINDOW *win;
+    int nlines;
+    int ncols;
+    int y;
+    int x;
+} curses_win;
+
+typedef struct {
+    size_t len;
+    char buf[PTY_RBUF];
+    size_t n;
+} pty_io;
+
+extern int sh_pipe[2];
+extern curses_win wins[4];
+extern dstr unity_buf;
+
+XFATAL_HANDLER(pty_xfatal_func);
+void curs_err(const char *msg);
+LLOG_SINK(pty_test_sink);
+void unity_output_char(int c);
+
+char *flush_stream(int fd, bool break_on_eio);
+int start_timerfd(int ms);
+curses_win *init_wins(curses_win wins[4]);
 
 #define xwprintw(_win, _fmt, ...) \
     ({ \
@@ -99,30 +127,5 @@
         xwattroff(_win, COLOR_PAIR(cp_num)); \
         xwattron(_win, COLOR_PAIR(CP_DEFAULT)); \
     } while (false)
-
-typedef struct {
-    WINDOW *win;
-    int nlines;
-    int ncols;
-    int y;
-    int x;
-} curses_win;
-
-typedef struct {
-    size_t len;
-    char buf[PTY_RBUF];
-    size_t n;
-} pty_io;
-
-extern int seashell_pipe[2];
-extern curses_win wins[4];
-
-XFATAL_HANDLER(pty_xfatal_func);
-void curs_err(const char *msg);
-LLOG_SINK(pty_test_sink);
-void unity_output_char(int c);
-
-char *flush_stream(int fd, bool break_on_eio);
-curses_win *init_wins(curses_win wins[4]);
 
 #endif

@@ -7,11 +7,13 @@
 #include "xfuncs.h"
 #include "llog.h"
 #include "pty_test.h"
+#include "dstr.h"
 
 static void test_init(void) {
     set_xfatal_handler(pty_xfatal_func);
     llog_set_sink(pty_test_sink);
-    xpipe2(seashell_pipe, O_NONBLOCK);
+    xpipe2(sh_pipe, O_NONBLOCK);
+    dstr_init(&unity_buf);
 }
 
 static void ncurses_cleanup(void) {
@@ -52,5 +54,15 @@ int main(void) {
 
     int tests_failed = UnityMain(argc, argv, run_all);
 
+    xwprintw(wins[TEST_WIN].win, "\n");
+    for (int y = 0 ; y < wins[TEST_WIN].ncols - 1; ++y)
+        xwcprintw(wins[TEST_WIN].win, CP_MAGENTA_CL, "-");
+    xwcprintw(wins[TEST_WIN].win, CP_MAGENTA_CL, "\nDone!\n");
+    for (int y = 0 ; y < wins[TEST_WIN].ncols - 1; ++y)
+        xwcprintw(wins[TEST_WIN].win, CP_MAGENTA_CL, "-");
+    xwprintw(wins[TEST_WIN].win, "\n");
+
+    xwprintw(wins[TEST_WIN].win, "\n%s", unity_buf.c_str);
+    xwrefresh(wins[TEST_WIN].win);
     return tests_failed;
 }

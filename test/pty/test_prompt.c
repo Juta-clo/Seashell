@@ -13,6 +13,7 @@
 
 #include "unity_fixture.h"
 #include "xfuncs.h"
+#include "dstr.h"
 #include "pty_test.h"
 
 TEST_GROUP(prompt);
@@ -26,12 +27,13 @@ TEST_GROUP(prompt);
 #define POLL_SHELL 1
 #define POLL_TFD 2
 
-static bool first = true;
-static size_t ptybuf_i;
-static size_t pred_i;
-static char ptybuf[PTY_RBUF];
-static char outbuf[PTY_RBUF];
+static dstr ptydata;
+static dstr reqdata;
 
+static char ptybuf[PTY_RBUF];
+static size_t pred_i;
+
+static bool first = true;
 static int cpid;
 static int mfd;
 static struct termios tio;
@@ -47,12 +49,12 @@ static void flush_win(int win_num) {
         break_on_eio = true;
         break;
     case LOG_WIN:
-        fd = seashell_pipe[0];
+        fd = sh_pipe[0];
         break_on_eio = false;
         break;
-    case UNITY_WIN:
+    case JOB_WIN:
         return;
-    case HARNESS_WIN:
+    case TEST_WIN:
         return;
     }
 
@@ -64,81 +66,61 @@ static void flush_win(int win_num) {
 
 static char *request_chars(size_t nchars, size_t *index, int ms) {
     assert(index);
-    assert(ptybuf_i >= *index);
+    assert(ptydata.len >= *index);
 
-    if (nchars == 0)
+    if (nchars == 0) {
+        LOG_WARN("requested 0 characters");
         return "";
+    }
 
-    int sec = ms / 1000;
-    ms %= 1000;
-
-    int ns = ms * 1000000;
-
-    struct itimerspec its = {
-        .it_value = {.tv_sec = sec, .tv_nsec = ns},
-        .it_interval = {0}
-    };
-
-    int tfd = xtimerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
-    xtimerfd_settime(tfd, 0, &its, NULL);
-
+    int tfd = start_timerfd(ms);
     pollfds[POLL_TFD] = (struct pollfd){.fd = tfd, .events = POLLIN};
 
-    bool done = false;
-
     while (true) {
-        if (ptybuf_i - *index >= nchars) {
-            strncpy(outbuf, &ptybuf[*index], nchars);
-            outbuf[nchars] = '\0';
+        if (ptydata.len - *index >= nchars) {
+            dstrncpy(&reqdata, &ptydata.c_str[*index], nchars);
             *index += nchars;
-            xclose(tfd);
-            return outbuf;
+            goto done;
         }
-
-        if (done)
-            break;
 
         xpoll(pollfds, NFDS, -1);
 
-        if (pollfds[POLL_MFD].revents & POLLIN) {
-            int num_read = read(mfd, &ptybuf[ptybuf_i], PTY_RBUF - 1 - ptybuf_i);
-            if (num_read == -1 && errno != EAGAIN) {
-                LOG_ERR("read: %m");
-                TEST_FAIL_MESSAGE("read");
-            }
-
-            strncpy(outbuf, &ptybuf[ptybuf_i], num_read);
-            outbuf[num_read] = '\0';
-            xwprintw(wins[RAW_WIN].win, "%s", outbuf);
-            xwrefresh(wins[RAW_WIN].win);
-
-            ptybuf_i += num_read;
+        if (pollfds[POLL_TFD].revents & POLLIN) {
+            TEST_FAIL_MESSAGE("timed out waiting for pty data");
         }
 
         if (pollfds[POLL_SHELL].revents & POLLIN) {
             flush_win(LOG_WIN);
         }
 
-        if (pollfds[POLL_TFD].revents & POLLIN) {
-            done = true;
+        if (pollfds[POLL_MFD].revents & POLLIN) {
+            int num_read = read(mfd, ptybuf, PTY_RBUF - 1);
+
+            if (num_read == -1) {
+                if (errno == EAGAIN)
+                    continue;
+
+                LOG_ERR("read: %m");
+                TEST_FAIL_MESSAGE("reading from mfd failed");
+            }
+
+            ptybuf[num_read] = '\0';
+            dstrcat(&ptydata, ptybuf);
+
+            xwprintw(wins[RAW_WIN].win, "%s", ptybuf);
+            xwrefresh(wins[RAW_WIN].win);
         }
     }
 
+done:
     xclose(tfd);
-    return NULL;
+    LOG_INFO("returning: %s", reqdata.c_str);
+    return reqdata.c_str;
 }
 
 static void pty_ensure(const char *msg) {
-    LOG_INFO("msg=%s", msg);
-
     size_t len = strlen(msg);
-
     char *pty_chars = request_chars(len, &pred_i, 1000);
-    if (!pty_chars) {
-        LOG_ERR("request_chars(.len=%d, .pred_i=%d, .ms=%d)",
-                len, pred_i, 1000);
-        TEST_FAIL_MESSAGE("request_chars");
-    }
 
     TEST_ASSERT_EQUAL_size_t(len, strlen(pty_chars));
     TEST_ASSERT_EQUAL_STRING(msg, pty_chars);
@@ -175,10 +157,9 @@ static void pty_cc(int cc_code) {
 /************ Fixture ************/
 
 TEST_SETUP(prompt) {
+    dstr_init(&ptydata);
+    dstr_init(&reqdata);
     pred_i = 0;
-    ptybuf_i = 0;
-    ptybuf[0] = '\0';
-    outbuf[0] = '\0';
 
     cpid = xforkpty(&mfd, NULL, &tio, NULL);
 
@@ -186,7 +167,7 @@ TEST_SETUP(prompt) {
         char *bin = "/home/juta/Projects/Seashell/seashell";
 
         char *lfd_arg;
-        if (asprintf(&lfd_arg, "--logfd=%d", seashell_pipe[1]) < 0)
+        if (asprintf(&lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
             TEST_FAIL_MESSAGE("asprintf: input output error");
 
         char *argv[] = { bin, lfd_arg, NULL };
@@ -204,9 +185,9 @@ TEST_SETUP(prompt) {
     pollfds[POLL_MFD].fd = mfd;
 
     pollfds[POLL_SHELL].events = POLLIN;
-    pollfds[POLL_SHELL].fd = seashell_pipe[0];
+    pollfds[POLL_SHELL].fd = sh_pipe[0];
 
-    for (int i = HARNESS_WIN; i <= LOG_WIN; ++i) {
+    for (int i = TEST_WIN; i <= LOG_WIN; ++i) {
         if (!first) {
             if (i == RAW_WIN)
                 xwprintw(wins[i].win, "\n");
@@ -215,9 +196,7 @@ TEST_SETUP(prompt) {
 
         for (int y = 0 ; y < wins[i].ncols - 1; ++y)
             xwcprintw(wins[i].win, CP_MAGENTA_CL, "-");
-
         xwcprintw(wins[i].win, CP_MAGENTA_CL, " %s\n", Unity.CurrentTestName);
-
         for (int y = 0 ; y < wins[i].ncols - 1; ++y)
             xwcprintw(wins[i].win, CP_MAGENTA_CL, "-");
 
@@ -237,6 +216,8 @@ TEST_TEAR_DOWN(prompt) {
     flush_win(LOG_WIN);
     flush_win(RAW_WIN);
 
+    dstr_free(&ptydata);
+    dstr_free(&reqdata);
     close(mfd);
 }
 
@@ -433,12 +414,13 @@ TEST(prompt, prompt_after_launch_fg_builtin) {
 
 TEST(prompt, jobs_builtin) {
     pty_send("jobs\n");
-    pty_send("sleep 100 &\n");
-    pty_send("jobs\n");
-
     pty_ensure(PROMPT);
+
+    pty_send("sleep 100 &\n");
     pty_ensure("[1] started\n");
     pty_ensure(PROMPT);
+
+    pty_send("jobs\n");
     pty_ensure("[1] running\n");
     pty_ensure(PROMPT);
 }

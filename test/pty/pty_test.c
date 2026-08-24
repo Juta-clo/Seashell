@@ -6,25 +6,27 @@
 #include <unistd.h>
 
 #include "pty_test.h"
+#include "dstr.h"
 #include "llog.h"
 #include "xfuncs.h"
 
-int seashell_pipe[2];
+int sh_pipe[2];
 curses_win wins[4];
+dstr unity_buf;
 
 XFATAL_HANDLER(pty_xfatal_func) {
-    wcprintw(wins[HARNESS_WIN].win, CP_RED_CL, "ERROR");
-    wprintw(wins[HARNESS_WIN].win, " %s: %s\n", XSYSNAME, strerror(errno));
+    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "ERROR");
+    wprintw(wins[TEST_WIN].win, " %s: %s\n", XSYSNAME, strerror(XERRNO));
 
-    wrefresh(wins[HARNESS_WIN].win);
+    wrefresh(wins[TEST_WIN].win);
     exit(EXIT_FAILURE);
 }
 
 void curs_err(const char *msg) {
-    wcprintw(wins[HARNESS_WIN].win, CP_RED_CL, "ERROR");
-    wprintw(wins[HARNESS_WIN].win, " ncurses: %s\n", msg);
+    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "ERROR");
+    wprintw(wins[TEST_WIN].win, " ncurses: %s\n", msg);
 
-    wrefresh(wins[HARNESS_WIN].win);
+    wrefresh(wins[TEST_WIN].win);
     exit(EXIT_FAILURE);
 }
 
@@ -38,16 +40,32 @@ LLOG_SINK(pty_test_sink) {
     case LLOG_ERR:  lvl_str = "ERROR"; level_cp = CP_RED_CL;    break;
     }
 
-    xwcprintw(wins[HARNESS_WIN].win, level_cp, "%s", lvl_str);
-    xwprintw(wins[HARNESS_WIN].win, " llog: %s:%d: %s\n",
+    xwcprintw(wins[TEST_WIN].win, level_cp, "%s", lvl_str);
+    xwprintw(wins[TEST_WIN].win, " llog: %s:%d: %s\n",
             info->site->file, info->site->line, info->msg);
 
-    wrefresh(wins[HARNESS_WIN].win);
+    wrefresh(wins[TEST_WIN].win);
 }
 
 void unity_output_char(int c) {
-    xwaddch(wins[UNITY_WIN].win, c);
-    xwrefresh(wins[UNITY_WIN].win);
+    dstr_push(&unity_buf, c);
+}
+
+int start_timerfd(int ms) {
+    int sec = ms / 1000;
+    ms %= 1000;
+
+    int ns = ms * 1000000;
+
+    struct itimerspec its = {
+        .it_value = {.tv_sec = sec, .tv_nsec = ns},
+        .it_interval = {0}
+    };
+
+    int tfd = xtimerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+    xtimerfd_settime(tfd, 0, &its, NULL);
+
+    return tfd;
 }
 
 /* assumes non blocking fd */
