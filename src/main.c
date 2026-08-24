@@ -284,6 +284,11 @@ int main(int argc, char *const *argv) {
     if (arg_parse(argc, argv, opts, ARG_NO_NON_OPTS) == -1)
         exit(EXIT_FAILURE);
 
+    if (setvbuf(stdin, NULL, _IONBF, 0) != 0) {
+        LOG_ERR("setvbuf"); /* so fgets doesn't steal bytes */
+        exit(EXIT_FAILURE);
+    }
+
     env_setup(&sh_env);
     xatexit(hup_to_children);
 

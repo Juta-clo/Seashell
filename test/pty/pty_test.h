@@ -85,16 +85,20 @@
     })
 
 #define wcprintw(_win, cp_num, _fmt, ...) \
-    wattron(_win, COLOR_PAIR(cp_num)); \
-    wprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
-    wattroff(_win, COLOR_PAIR(cp_num)); \
-    wattron(_win, COLOR_PAIR(CP_DEFAULT));
+    do { \
+        wattron(_win, COLOR_PAIR(cp_num)); \
+        wprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
+        wattroff(_win, COLOR_PAIR(cp_num)); \
+        wattron(_win, COLOR_PAIR(CP_DEFAULT)); \
+    } while (false)
 
 #define xwcprintw(_win, cp_num, _fmt, ...) \
-    xwattron(_win, COLOR_PAIR(cp_num)); \
-    xwprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
-    xwattroff(_win, COLOR_PAIR(cp_num)); \
-    xwattron(_win, COLOR_PAIR(CP_DEFAULT));
+    do { \
+        xwattron(_win, COLOR_PAIR(cp_num)); \
+        xwprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
+        xwattroff(_win, COLOR_PAIR(cp_num)); \
+        xwattron(_win, COLOR_PAIR(CP_DEFAULT)); \
+    } while (false)
 
 typedef struct {
     WINDOW *win;
