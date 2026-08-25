@@ -15,6 +15,7 @@
 #include "xfuncs.h"
 #include "dstr.h"
 #include "pty_test.h"
+#include "proc_view.h"
 
 TEST_GROUP(prompt);
 
@@ -36,8 +37,36 @@ static size_t pred_i;
 static bool first = true;
 static int cpid;
 static int mfd;
-static struct termios tio;
 static struct pollfd pollfds[NFDS];
+
+static void child_pstat_snapshot(void) {
+    da_pstat pstats;
+    if (child_pstat(cpid, &pstats) == -1)
+        TEST_FAIL_MESSAGE("child_pstat");
+
+    if (child_pstat > 0) {
+        xwprintw(wins[JOB_WIN].win, "seashell (%d)\n", cpid);
+
+        for (size_t i = 0; i < pstats.size; ++i) {
+            if (i == pstats.size - 1)
+                xwaddch(wins[JOB_WIN].win, ACS_LLCORNER);
+            else
+                xwaddch(wins[JOB_WIN].win, ACS_LTEE);
+
+
+            xwaddch(wins[JOB_WIN].win, ACS_HLINE);
+            xwaddch(wins[JOB_WIN].win, ACS_HLINE);
+            xwaddch(wins[JOB_WIN].win, ACS_HLINE);
+            xwprintw(wins[JOB_WIN].win, "%s (%d)\n", pstats.data[i].name,
+                    pstats.data[i].pid);
+        }
+    } else {
+        xwprintw(wins[JOB_WIN].win, "seashell (%d) - no children\n", cpid);
+    }
+
+    xwrefresh(wins[JOB_WIN].win);
+    da_free(&pstats);
+}
 
 static void flush_win(int win_num) {
     int fd;
@@ -114,7 +143,6 @@ static char *request_chars(size_t nchars, size_t *index, int ms) {
 
 done:
     xclose(tfd);
-    LOG_INFO("returning: %s", reqdata.c_str);
     return reqdata.c_str;
 }
 
@@ -187,7 +215,7 @@ TEST_SETUP(prompt) {
     pollfds[POLL_SHELL].events = POLLIN;
     pollfds[POLL_SHELL].fd = sh_pipe[0];
 
-    for (int i = TEST_WIN; i <= LOG_WIN; ++i) {
+    for (int i = 0; i < MAX_WIN; ++i) {
         if (!first) {
             if (i == RAW_WIN)
                 xwprintw(wins[i].win, "\n");
@@ -219,6 +247,8 @@ TEST_TEAR_DOWN(prompt) {
     dstr_free(&ptydata);
     dstr_free(&reqdata);
     close(mfd);
+
+    first = false;
 }
 
 /************ Tests ************/
@@ -305,6 +335,8 @@ TEST(prompt, bg_job_done_with_fg_job) {
     pty_ensure(PROMPT);
 
     pty_send("sleep 1\n"); /* lose fgroup control */
+
+    child_pstat_snapshot();
 
     pty_ensure("[1] exited\n");
     /* shouldn't see prompt between exit messages */
@@ -439,14 +471,7 @@ TEST(prompt, builtin_and_or_logic) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(prompt) {
-    xtcgetattr(STDERR_FILENO, &tio);
-    tio.c_lflag &= ~ECHO; /* don't echo, non-interactive */
-    tio.c_oflag &= ~OPOST; /* no post processing, \r\n -> \n */
-
     RUN_TEST_CASE(prompt, prompt_after_reclaim_tty);
-
-    first = false;
-
     RUN_TEST_CASE(prompt, prompt_after_launch_bg_cmd);
     RUN_TEST_CASE(prompt, prompt_after_bg_job_done);
     RUN_TEST_CASE(prompt, short_lived_bg_cmd);

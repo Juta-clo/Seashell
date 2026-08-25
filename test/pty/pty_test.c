@@ -13,42 +13,63 @@
 int sh_pipe[2];
 curses_win wins[4];
 dstr unity_buf;
+struct termios tio;
 
 XFATAL_HANDLER(pty_xfatal_func) {
-    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "ERROR");
-    wprintw(wins[TEST_WIN].win, " %s: %s\n", XSYSNAME, strerror(XERRNO));
+    dstr *line = da_push(&wins[TEST_WIN].lines);
+    dstr_init(line);
+    dstr_printf(line, "ERROR %s: %s\n", XSYSNAME, strerror(XERRNO));
 
+    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "%s", line->c_str);
     wrefresh(wins[TEST_WIN].win);
+
     exit(EXIT_FAILURE);
 }
 
 void curs_err(const char *msg) {
-    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "ERROR");
-    wprintw(wins[TEST_WIN].win, " ncurses: %s\n", msg);
+    dstr *line = da_push(&wins[TEST_WIN].lines);
+    dstr_init(line);
+    dstr_printf(line, "ERROR ncurses: %s\n", msg);
 
+    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "ncurses: %s\n", msg);
     wrefresh(wins[TEST_WIN].win);
+
     exit(EXIT_FAILURE);
 }
 
 LLOG_SINK(pty_test_sink) {
-    int level_cp = CP_DEFAULT;
     char *lvl_str;
-
     switch (info->log_level) {
-    case LLOG_INFO: lvl_str = "INFO";  level_cp = CP_CYAN_CL;   break;
-    case LLOG_WARN: lvl_str = "WARN";  level_cp = CP_YELLOW_CL; break;
-    case LLOG_ERR:  lvl_str = "ERROR"; level_cp = CP_RED_CL;    break;
+    case LLOG_INFO: lvl_str = "INFO"; break;
+    case LLOG_WARN: lvl_str = "WARN"; break;
+    case LLOG_ERR:  lvl_str = "ERROR"; break;
     }
 
-    xwcprintw(wins[TEST_WIN].win, level_cp, "%s", lvl_str);
-    xwprintw(wins[TEST_WIN].win, " llog: %s:%d: %s\n",
-            info->site->file, info->site->line, info->msg);
+    dstr *line = da_push(&wins[TEST_WIN].lines);
+    dstr_init(line);
+    dstr_printf(line, "%s llog: %s:%d: %s\n", lvl_str, info->site->file,
+            info->site->line, info->msg);
 
+    xwprintw(wins[TEST_WIN].win, "%s", line->c_str);
     wrefresh(wins[TEST_WIN].win);
 }
 
 void unity_output_char(int c) {
     dstr_push(&unity_buf, c);
+}
+
+int mev_to_win(MEVENT *mev) {
+    if (mev->x >= wins[TEST_WIN].x) {
+        if (mev->y >= wins[JOB_WIN].y)
+            return JOB_WIN;
+        else
+            return TEST_WIN;
+    } else {
+        if (mev->y >= wins[JOB_WIN].y)
+            return LOG_WIN;
+        else
+            return RAW_WIN;
+    }
 }
 
 int start_timerfd(int ms) {

@@ -8,27 +8,21 @@
 #include <dirent.h>
 
 #include "darr.h"
+#include "llog.h"
+#include "proc_view.h"
 
 #define PPID "PPid"
 #define NAME "Name"
 
 #define BUF_SIZE 4096
 
-struct ps_pstat {
-    pid_t pid;
-    pid_t ppid;
-    char name[PATH_MAX];
-};
-
-typedef struct ps_pstat ps_pstat;
-
 static void err_exit(char *msg) {
-    fprintf(stderr, "proc_view: %s: %s", msg, strerror(errno));
+    LOG_ERR("%s: %m", msg);
     exit(EXIT_FAILURE);
 }
 
 static void fatal(char *msg) {
-    fprintf(stderr, "proc_view: %s\n", msg);
+    LOG_ERR("%s", msg);
     exit(EXIT_FAILURE);
 }
 

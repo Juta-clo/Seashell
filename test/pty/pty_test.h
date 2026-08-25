@@ -3,16 +3,12 @@
 
 #include <ncurses.h>
 
+#include "darr.h"
 #include "dstr.h"
 #include "llog.h"
 #include "xfuncs.h"
 
 #define PTY_RBUF 100000
-
-#define JOB_WIN 0
-#define TEST_WIN 1
-#define RAW_WIN 2
-#define LOG_WIN 3
 
 #define CP_DEFAULT 0
 #define CP_RED_CL 1
@@ -21,8 +17,18 @@
 #define CP_YELLOW_CL 4
 #define CP_MAGENTA_CL 5
 
+typedef enum {
+    RAW_WIN,
+    TEST_WIN,
+    LOG_WIN,
+    JOB_WIN,
+    MAX_WIN
+} win_names;
+
 typedef struct {
     WINDOW *win;
+    da_dstr lines;
+    int offset;
     int nlines;
     int ncols;
     int y;
@@ -36,14 +42,16 @@ typedef struct {
 } pty_io;
 
 extern int sh_pipe[2];
-extern curses_win wins[4];
+extern curses_win wins[MAX_WIN];
 extern dstr unity_buf;
+extern struct termios tio;
 
 XFATAL_HANDLER(pty_xfatal_func);
 void curs_err(const char *msg);
 LLOG_SINK(pty_test_sink);
 void unity_output_char(int c);
 
+int mev_to_win(MEVENT *mev);
 char *flush_stream(int fd, bool break_on_eio);
 int start_timerfd(int ms);
 curses_win *init_wins(curses_win wins[4]);
