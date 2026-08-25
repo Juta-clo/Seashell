@@ -98,7 +98,10 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
             LOG_INFO("[%d] started (builtin)", jid);
 
             int status = builtin->func(pline->cmds.data[0].argv, &sh_env);
-            queue_builtin_exit_event(jid, status);
+
+            /* fg "replaces" itself with the existing job */
+            if (strcmp("fg", builtin->name) != 0)
+                queue_builtin_exit_event(jid, status);
 
             handled = true;
         }
@@ -251,6 +254,9 @@ static void process_signals(void) {
 
                 print_job_event(jev, &prompt_upset);
                 need_terminal = true;
+            } else if (jev->type == JCONTINUED) {
+                /*fground continue event means fg must have run so report it */
+                print_job_event(jev, &prompt_upset);
             }
         }
     }

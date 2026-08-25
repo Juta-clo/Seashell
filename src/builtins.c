@@ -93,6 +93,29 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
     if (!validate_argc(argv, 1, 1))
         return EXIT_FAILURE;
 
+    pid_t jid = arg_to_jid(argv[1], argv[0]);
+    if (jid == -1)
+        return EXIT_FAILURE;
+
+    pid_t pgid = lookup_job_pgrp(jid);
+
+    if (tcsetpgrp(sh_env->tty_fd, pgid) == -1) {
+        fprintf(stderr, "%s: tcsetpgrp: %m", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {
+        fprintf(stderr, "%s: killpg: %m\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1) {
+        fprintf(stderr, "%s: nanosleep: %m\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    sh_env->fg_jid = jid;
+
     return EXIT_SUCCESS;
 }
 
@@ -104,6 +127,22 @@ static int run_bg_builtin(char **argv, shell_env *sh_env) {
 
     if (!validate_argc(argv, 1, 1))
         return EXIT_FAILURE;
+
+    pid_t jid = arg_to_jid(argv[1], argv[0]);
+    if (jid == -1)
+        return EXIT_FAILURE;
+
+    pid_t pgid = lookup_job_pgrp(jid);
+
+    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {
+        fprintf(stderr, "%s: killpg: %m\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1) {
+        fprintf(stderr, "%s: nanosleep: %m\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
