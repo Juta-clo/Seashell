@@ -122,6 +122,14 @@ job_table *get_jctl(void) {
     return &jctl;
 }
 
+pid_t lookup_job_pgrp(pid_t jid) {
+    for (size_t i = 0; i < jctl.jobs.size; ++i)
+        if (jid == jctl.jobs.data[i].jid)
+            return jctl.jobs.data[i].pgrp.pgid;
+
+    return -1;
+}
+
 size_t get_job_index(pid_t jid) {
     for (size_t i = 0; i < jctl.jobs.size; ++i)
         if (jid == jctl.jobs.data[i].jid)

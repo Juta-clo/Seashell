@@ -80,6 +80,7 @@ char *get_jev_str(job_event jev);
 void clear_job_table(void);
 void clear_job_events(void);
 
+pid_t lookup_job_pgrp(pid_t jid);
 void queue_builtin_exit_event(pid_t jid, int status);
 void add_job(pid_t jid, da_pid *pids, pid_t pgid);
 

@@ -7,12 +7,50 @@
 #include <errno.h>
 
 #include "shell_state.h"
-#include "input.h"
 #include "job_state.h"
 #include "builtins.h"
 #include "llog.h"
 #include "utils.h"
 
+static int arg_to_jid(const char *arg, const char *name) {
+    if (arg[0] != '%' || arg[1] == '\0') {
+        fprintf(stderr, "%s: invalid argument: %s\n", name, arg);
+        return -1;
+    }
+
+    char *endptr;
+    pid_t jid = (int) strtol(&arg[1], &endptr, 10);
+
+    if (*endptr != '\0') {
+        fprintf(stderr, "%s: invalid argument: %s\n", name, arg);
+        return -1;
+    }
+
+    return jid;
+}
+
+static int arg_to_sig(char *sig_arg) {
+    /* - just to be consistent */
+    if (strcmp("-HUP", sig_arg) == 0)   return SIGHUP;
+    if (strcmp("-INT", sig_arg) == 0)   return SIGINT;
+    if (strcmp("-QUIT", sig_arg) == 0)  return SIGQUIT;
+    if (strcmp("-KILL", sig_arg) == 0)  return SIGKILL;
+    if (strcmp("-USR1", sig_arg) == 0)  return SIGUSR1;
+    if (strcmp("-SEGV", sig_arg) == 0)  return SIGSEGV;
+    if (strcmp("-USR2", sig_arg) == 0)  return SIGUSR2;
+    if (strcmp("-PIPE", sig_arg) == 0)  return SIGPIPE;
+    if (strcmp("-ALRM", sig_arg) == 0)  return SIGALRM;
+    if (strcmp("-TERM", sig_arg) == 0)  return SIGTERM;
+    if (strcmp("-CHLD", sig_arg) == 0)  return SIGCHLD;
+    if (strcmp("-CONT", sig_arg) == 0)  return SIGCONT;
+    if (strcmp("-STOP", sig_arg) == 0)  return SIGSTOP;
+    if (strcmp("-TSTP", sig_arg) == 0)  return SIGTSTP;
+    if (strcmp("-TTIN", sig_arg) == 0)  return SIGTTIN;
+    if (strcmp("-TTOU", sig_arg) == 0)  return SIGTTOU;
+    if (strcmp("-WINCH", sig_arg) == 0) return SIGWINCH;
+
+    return -1;
+}
 static bool validate_argc(char **argv, size_t min_argc, size_t max_argc) {
     if (!argv || !argv[0]) {
         LOG_ERR("validate_args: bad argv array");
@@ -79,6 +117,42 @@ static int run_kill_builtin(char **argv, shell_env *sh_env) {
 
     if (!validate_argc(argv, 1, 2))
         return EXIT_FAILURE;
+
+    int jid;
+    int sig;
+
+    if (!argv[2]) {
+        sig = SIGTERM;
+
+        if ((jid = arg_to_jid(argv[1], argv[0])) == -1)
+            return EXIT_FAILURE;
+
+    } else {
+        if ((sig = arg_to_sig(argv[1])) == -1) {
+            fprintf(stderr, "%s: unknown signal: %s\n", argv[0], argv[1]);
+            return EXIT_FAILURE;
+        }
+
+        if ((jid = arg_to_jid(argv[2], argv[0])) == -1)
+            return EXIT_FAILURE;
+    }
+
+
+    pid_t pgid = lookup_job_pgrp(jid);
+    if (pgid == -1) {
+        fprintf(stderr, "%s: %%%d: no such job\n", argv[0], jid);
+        return EXIT_FAILURE;
+    }
+
+    if (killpg(pgid, sig) == -1 && errno != ESRCH) {
+        fprintf(stderr, "%s: killpg: %m\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1) {
+        fprintf(stderr, "%s: nanosleep: %m\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
@@ -205,9 +279,6 @@ bool try_run_builtin(char **argv, int *status) {
 
         if (status)
             *status = builtin_status;
-
-        if (!sh_env.subshell && shell_in_fg())
-            display_prompt(PROMPT_SIMPLE);
 
         return true;
     }
