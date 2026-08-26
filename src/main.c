@@ -202,6 +202,49 @@ static void print_job_event(job_event *jev, bool *prompt_upset) {
     printf("%s\n", get_jev_str(*jev));
 }
 
+// static void print_job_event(job_event *jev, bool *prompt_upset) {
+// #define JOB_MSG_BUF 4096
+//     assert(jev && prompt_upset);
+//     assert(!jev->builtin);
+//
+//     if (!*prompt_upset) {
+//         printf("\n");
+//         *prompt_upset = true;
+//     }
+//
+//     if (jev->type == JEXITED) {
+//         if (job_interrupted(jev))
+//             printf("\n");
+//
+//         psnap *last_psn = &jev->psnaps.data[jev->psnaps.size - 1];
+//
+//         if (last_psn->stat == PROC_SIG) {
+//             printf("[%d] %s by signal %d\n", jev->jid,
+//                     strsignal(last_psn->term_sig), last_psn->term_sig);
+//         } else if (last_psn->stat == PROC_EXIT) {
+//             printf("[%d] exited\n", jev->jid);
+//         }
+//
+//     } else if (jev->type == JSTOPPED) {
+//         for (size_t i = 0; i < jev->psnaps.size; ++i) {
+//             psnap *psn = &jev->psnaps.data[i];
+//
+//             if (psn->stat == PROC_STOP) {
+//                 if (psn->stop_sig == SIGTSTP)
+//                     printf("\n");
+//
+//                 printf("[%d] %s by signal %d\n",
+//                         jev->jid, strsignal(psn->stop_sig), psn->stop_sig);
+//
+//                 break;
+//             }
+//         }
+//
+//     } else if (jev->type == JCONTINUED) {
+//         printf("[%d] continued\n", jev->jid);
+//     }
+// }
+
 void reclaim_terminal(void) {
     if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");

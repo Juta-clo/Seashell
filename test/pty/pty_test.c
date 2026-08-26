@@ -16,25 +16,15 @@ dstr unity_buf;
 struct termios tio;
 
 XFATAL_HANDLER(pty_xfatal_func) {
-    dstr *line = da_push(&wins[TEST_WIN].lines);
-    dstr_init(line);
-    dstr_printf(line, "ERROR %s: %s\n", XSYSNAME, strerror(XERRNO));
-
-    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "%s", line->c_str);
-    wrefresh(wins[TEST_WIN].win);
-
-    exit(EXIT_FAILURE);
+    endwin();
+    fprintf(stderr, "ERROR %s: %s\n", XSYSNAME, strerror(XERRNO));
+    _exit(EXIT_FAILURE);
 }
 
 void curs_err(const char *msg) {
-    dstr *line = da_push(&wins[TEST_WIN].lines);
-    dstr_init(line);
-    dstr_printf(line, "ERROR ncurses: %s\n", msg);
-
-    wcprintw(wins[TEST_WIN].win, CP_RED_CL, "ncurses: %s\n", msg);
-    wrefresh(wins[TEST_WIN].win);
-
-    exit(EXIT_FAILURE);
+    endwin();
+    fprintf(stderr, "ERROR ncurses: %s\n", msg);
+    _exit(EXIT_FAILURE);
 }
 
 LLOG_SINK(pty_test_sink) {
@@ -49,13 +39,53 @@ LLOG_SINK(pty_test_sink) {
     dstr_init(line);
     dstr_printf(line, "%s llog: %s:%d: %s\n", lvl_str, info->site->file,
             info->site->line, info->msg);
-
-    xwprintw(wins[TEST_WIN].win, "%s", line->c_str);
-    wrefresh(wins[TEST_WIN].win);
 }
 
 void unity_output_char(int c) {
     dstr_push(&unity_buf, c);
+}
+
+void add_lines(int win_num, const char *str) {
+    curses_win *win = &wins[win_num];
+
+    if (strcmp(str, "") == 0)
+        return;
+
+    if (str[0] == '\n') {
+        if (win->push_line)
+            dstr_init(da_push(&wins[win_num].lines));
+
+        win->push_line = true;
+
+        if (strlen(str) == 1)
+            return;
+    }
+
+    char *data = strdup(str);
+    char *tok = strtok(data, "\n");
+    dstr *line;
+
+    while (tok != NULL) {
+        if (win->push_line) {
+            line = da_push(&wins[win_num].lines);
+            dstr_init(line);
+        } else {
+            line = &win->lines.data[win->lines.size - 1];
+            win->push_line = true;
+        }
+
+        dstrcat(line, tok);
+
+        /* multiple '\n' are compressed so for programs
+         * that for example just emit \n a bunch of times
+         * the transcript will not be accurate. This is
+         * pretty rare though */
+
+        tok = strtok(NULL, "\n");
+    }
+
+    win->push_line = (str[strlen(str) - 1] == '\n');
+    free(data);
 }
 
 int mev_to_win(MEVENT *mev) {
@@ -170,6 +200,9 @@ curses_win *init_wins(curses_win wins[4]) {
         } else
             xmvaddch(by - 1, i, ACS_HLINE);
     }
+
+    for (size_t i = 0; i < MAX_WIN; ++i)
+        wins[i].push_line = true;
 
     refresh();
     return wins;

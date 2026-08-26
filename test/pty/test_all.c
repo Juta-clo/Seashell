@@ -50,41 +50,65 @@ void run_all(void) {
     RUN_TEST_GROUP(prompt);
 }
 
-int main(void) {
+static void render_lines(curses_win *win) {
+    for (int i = 0; i < win->nlines; ++i) {
+        if (i + win->offset > (int) win->lines.size - 1)
+            continue;
+
+        if (i + win->offset < 0)
+            continue;
+
+        dstr *line = &win->lines.data[i + win->offset];
+        mvwaddnstr(win->win, i, 0, line->c_str, win->ncols);
+    }
+
+    mvwprintw(win->win, 0, 0, "lines[%d]", win->offset);
+}
+
+static bool handle_mouse_event(void) {
+    MEVENT mev;
+    if (getmouse(&mev) == ERR)
+        return false;
+
+    curses_win *win = &wins[mev_to_win(&mev)];
+
+    if (mev.bstate & BUTTON4_PRESSED)
+        --win->offset;
+
+    if (mev.bstate & BUTTON5_PRESSED)
+        ++win->offset;
+
+    werase(win->win);
+    render_lines(win);
+    wrefresh(win->win);
+
+    return true;
+}
+
+int main(int argc, const char **argv) {
     ncurses_setup();
     test_init();
     init_wins(wins);
 
-    int argc = 2;
-    const char *argv[] = { "test_pty", "-s", NULL };
-
-    // int argc = 4;
-    // const char *argv[] = { "test_pty", "-s", "-n", "bg_job_done_with_fg_job", NULL };
+    // int argc = 2;
+    // const char *argv[] = { "./pty_test",  NULL };
 
     int tests_failed = UnityMain(argc, argv, run_all);
 
-    if (tests_failed > 0) {
-        xwprintw(wins[TEST_WIN].win, "\n");
-        for (int y = 0 ; y < wins[TEST_WIN].ncols - 1; ++y)
-            xwcprintw(wins[TEST_WIN].win, CP_MAGENTA_CL, "-");
-        xwcprintw(wins[TEST_WIN].win, CP_RED_CL, "\n%s", unity_buf.c_str);
-        for (int y = 0 ; y < wins[TEST_WIN].ncols - 1; ++y)
-            xwcprintw(wins[TEST_WIN].win, CP_MAGENTA_CL, "-");
+    add_lines(TEST_WIN, unity_buf.c_str);
 
-    } else {
-        xwprintw(wins[TEST_WIN].win, "\n");
-        for (int y = 0 ; y < wins[TEST_WIN].ncols - 1; ++y)
-            xwcprintw(wins[TEST_WIN].win, CP_MAGENTA_CL, "-");
-        xwcprintw(wins[TEST_WIN].win, CP_GREEN_CL,
-                "\nOK - Ran %ld tests\nPassed %ld - Failed 0 - Ignored %ld\n",
-                Unity.NumberOfTests, Unity.NumberOfTests - Unity.TestIgnores,
-                Unity.TestIgnores);
-        for (int y = 0 ; y < wins[TEST_WIN].ncols - 1; ++y)
-            xwcprintw(wins[TEST_WIN].win, CP_MAGENTA_CL, "-");
-        xwprintw(wins[TEST_WIN].win, "\n");
+    for (size_t i = 0; i < MAX_WIN; ++i) {
+        curses_win *win = &wins[i];
+
+        int start_offset = (int) win->lines.size - win->nlines;
+        if (start_offset < 0)
+            start_offset = 0;
+        win->offset = start_offset;
+
+        werase(win->win);
+        render_lines(win);
+        wrefresh(win->win);
     }
-
-    xwrefresh(wins[TEST_WIN].win);
 
     if (keypad(stdscr, true) == ERR)
         curs_err("keypad");
@@ -95,29 +119,15 @@ int main(void) {
     while (true) {
         int c = getch();
 
-        if (c == KEY_MOUSE) {
-            MEVENT mev;
-
-            if (getmouse(&mev) == OK) {
-                curses_win *w = &wins[mev_to_win(&mev)];
-
-                if (mev.bstate & BUTTON4_PRESSED) {
-                    wscrl(w->win, -1);
-                }
-
-                if (mev.bstate & BUTTON5_PRESSED) {
-                    wscrl(w->win, 1);
-                }
-
-                for (size_t i = 0; i < MAX_WIN; ++i)
-                    xwrefresh(wins[i].win);
-            } else
-                curs_err("getmouse");
-        } else if (c == 'q')
+        if (c == 'q')
             break;
+
+        if (c == KEY_MOUSE)
+            while (handle_mouse_event())
+                continue;
     }
 
-    for (size_t i = 0; i < 4; ++i)
+    for (size_t i = 0; i < MAX_WIN; ++i)
         delwin(wins[i].win);
     endwin();
 

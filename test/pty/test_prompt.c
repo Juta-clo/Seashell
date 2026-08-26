@@ -1,6 +1,5 @@
 #define _GNU_SOURCE
 
-#include <errno.h>
 #include <assert.h>
 #include <sys/timerfd.h>
 #include <time.h>
@@ -31,7 +30,6 @@ TEST_GROUP(prompt);
 static dstr ptydata;
 static dstr reqdata;
 
-static char ptybuf[PTY_RBUF];
 static size_t pred_i;
 
 static bool first = true;
@@ -40,31 +38,28 @@ static int mfd;
 static struct pollfd pollfds[NFDS];
 
 static void child_pstat_snapshot(void) {
+#define INFO_BUF_SIZE 4096
+    char info_buf[INFO_BUF_SIZE];
+
     da_pstat pstats;
     if (child_pstat(cpid, &pstats) == -1)
         TEST_FAIL_MESSAGE("child_pstat");
 
-    if (child_pstat > 0) {
-        xwprintw(wins[JOB_WIN].win, "seashell (%d)\n", cpid);
+    if (pstats.size > 0) {
+        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d)\n", cpid);
+        add_lines(JOB_WIN, info_buf);
 
         for (size_t i = 0; i < pstats.size; ++i) {
-            if (i == pstats.size - 1)
-                xwaddch(wins[JOB_WIN].win, ACS_LLCORNER);
-            else
-                xwaddch(wins[JOB_WIN].win, ACS_LTEE);
-
-
-            xwaddch(wins[JOB_WIN].win, ACS_HLINE);
-            xwaddch(wins[JOB_WIN].win, ACS_HLINE);
-            xwaddch(wins[JOB_WIN].win, ACS_HLINE);
-            xwprintw(wins[JOB_WIN].win, "%s (%d)\n", pstats.data[i].name,
-                    pstats.data[i].pid);
+            add_lines(JOB_WIN, "    ");
+            snprintf(info_buf, INFO_BUF_SIZE, "%s (%d)\n",
+                    pstats.data[i].name, pstats.data[i].pid);
+            add_lines(JOB_WIN, info_buf);
         }
     } else {
-        xwprintw(wins[JOB_WIN].win, "seashell (%d) - no children\n", cpid);
+        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d) no children\n", cpid);
+        add_lines(JOB_WIN, info_buf);
     }
 
-    xwrefresh(wins[JOB_WIN].win);
     da_free(&pstats);
 }
 
@@ -88,8 +83,7 @@ static void flush_win(int win_num) {
     }
 
     char *data = flush_stream(fd, break_on_eio);
-    xwprintw(wins[win_num].win, "%s", data);
-    xwrefresh(wins[win_num].win);
+    add_lines(win_num, data);
     free(data);
 }
 
@@ -123,21 +117,11 @@ static char *request_chars(size_t nchars, size_t *index, int ms) {
         }
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
-            int num_read = read(mfd, ptybuf, PTY_RBUF - 1);
+            char *data = flush_stream(mfd, false);
+            dstrcat(&ptydata, data);
+            add_lines(RAW_WIN, data);
 
-            if (num_read == -1) {
-                if (errno == EAGAIN)
-                    continue;
-
-                LOG_ERR("read: %m");
-                TEST_FAIL_MESSAGE("reading from mfd failed");
-            }
-
-            ptybuf[num_read] = '\0';
-            dstrcat(&ptydata, ptybuf);
-
-            xwprintw(wins[RAW_WIN].win, "%s", ptybuf);
-            xwrefresh(wins[RAW_WIN].win);
+            free(data);
         }
     }
 
@@ -160,8 +144,7 @@ static void pty_send(const char *msg) {
     if (write(mfd, msg, len) != len)
         TEST_FAIL_MESSAGE("failed/partial write");
 
-    xwprintw(wins[RAW_WIN].win, "%s", msg);
-    xwrefresh(wins[RAW_WIN].win);
+    add_lines(RAW_WIN, msg);
 }
 
 static void pty_cc(int cc_code) {
@@ -178,8 +161,7 @@ static void pty_cc(int cc_code) {
     default: return;
     }
 
-    xwprintw(wins[RAW_WIN].win, "%s", cc_out);
-    xwrefresh(wins[RAW_WIN].win);
+    add_lines(RAW_WIN, cc_out);
 }
 
 /************ Fixture ************/
@@ -215,21 +197,28 @@ TEST_SETUP(prompt) {
     pollfds[POLL_SHELL].events = POLLIN;
     pollfds[POLL_SHELL].fd = sh_pipe[0];
 
-    for (int i = 0; i < MAX_WIN; ++i) {
+    for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
+        curses_win *win = &wins[win_i];
+
         if (!first) {
-            if (i == RAW_WIN)
-                xwprintw(wins[i].win, "\n");
-            xwprintw(wins[i].win, "\n");
+            if (win_i == RAW_WIN)
+                add_lines(win_i, "\n");
+
+            add_lines(win_i, "\n");
         }
 
-        for (int y = 0 ; y < wins[i].ncols - 1; ++y)
-            xwcprintw(wins[i].win, CP_MAGENTA_CL, "-");
-        xwcprintw(wins[i].win, CP_MAGENTA_CL, " %s\n", Unity.CurrentTestName);
-        for (int y = 0 ; y < wins[i].ncols - 1; ++y)
-            xwcprintw(wins[i].win, CP_MAGENTA_CL, "-");
+        for (int y = 0 ; y < win->ncols - 1; ++y)
+            add_lines(win_i, "-");
 
-        xwprintw(wins[i].win, "\n\n");
-        xwrefresh(wins[i].win);
+        add_lines(win_i, "\n");
+        add_lines(win_i, Unity.CurrentTestName);
+        add_lines(win_i, "\n");
+
+        for (int y = 0 ; y < win->ncols - 1; ++y)
+            add_lines(win_i, "-");
+
+        add_lines(win_i, "\n");
+        add_lines(win_i, "\n");
     }
 
     pty_ensure(PROMPT);
@@ -468,6 +457,66 @@ TEST(prompt, builtin_and_or_logic) {
     pty_ensure(PROMPT);
 }
 
+TEST(prompt, fg_stopped_bg_job) {
+    pty_send("cat &\n");
+    pty_ensure("[1] started\n");
+    pty_ensure(PROMPT);
+    pty_ensure("\n[1] Stopped (tty input) by signal 21\n");
+    pty_ensure(PROMPT);
+
+    pty_send("fg %1\n");
+    pty_ensure("[1] continued\n");
+}
+
+TEST(prompt, kill_builtin_works_on_bg_jobs) {
+    pty_send("sleep 100 &\n");
+    pty_ensure("[1] started\n");
+    pty_ensure(PROMPT);
+
+    pty_send("jobs\n");
+    pty_ensure("[1] running\n");
+    pty_ensure(PROMPT);
+
+    child_pstat_snapshot();
+
+    pty_send("kill %1\n");
+    pty_ensure("[1] Terminated by signal 15\n");
+    pty_ensure(PROMPT);
+
+    child_pstat_snapshot();
+
+    pty_send("jobs\n");
+    pty_ensure(PROMPT);
+}
+
+TEST(prompt, bg_on_stopped_job_resumes_it) {
+    pty_send("sleep 100 &\n");
+    pty_ensure("[1] started\n");
+    pty_ensure(PROMPT);
+
+    pty_send("kill -STOP %1\n");
+    pty_ensure("[1] Stopped (signal) by signal 19\n");
+    pty_ensure(PROMPT);
+
+    pty_send("bg %1\n");
+    pty_ensure("[1] continued\n");
+    pty_ensure(PROMPT);
+}
+
+// TEST(prompt, kill_multiple_proc_job) {
+//     pty_send("ping 1.1.1.1 >/dev/null | grep hi | grep bye &\n");
+//     pty_ensure("[1] started\n");
+//     pty_ensure(PROMPT);
+//
+//     child_pstat_snapshot();
+//
+//     pty_send("kill %1\n");
+//     pty_ensure("[1] Terminated by signal 15\n");
+//     pty_ensure(PROMPT);
+//
+//     child_pstat_snapshot();
+// }
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(prompt) {
@@ -493,4 +542,8 @@ TEST_GROUP_RUNNER(prompt) {
     RUN_TEST_CASE(prompt, prompt_after_launch_fg_builtin);
     RUN_TEST_CASE(prompt, jobs_builtin);
     RUN_TEST_CASE(prompt, builtin_and_or_logic);
+    RUN_TEST_CASE(prompt, fg_stopped_bg_job);
+    RUN_TEST_CASE(prompt, kill_builtin_works_on_bg_jobs);
+    RUN_TEST_CASE(prompt, bg_on_stopped_job_resumes_it);
+    // RUN_TEST_CASE(prompt, kill_multiple_proc_job);
 }

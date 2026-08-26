@@ -28,6 +28,7 @@ typedef enum {
 typedef struct {
     WINDOW *win;
     da_dstr lines;
+    bool push_line;
     int offset;
     int nlines;
     int ncols;
@@ -51,6 +52,7 @@ void curs_err(const char *msg);
 LLOG_SINK(pty_test_sink);
 void unity_output_char(int c);
 
+void add_lines(int win_num, const char *str);
 int mev_to_win(MEVENT *mev);
 char *flush_stream(int fd, bool break_on_eio);
 int start_timerfd(int ms);
