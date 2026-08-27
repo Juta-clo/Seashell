@@ -19,7 +19,6 @@ typedef enum {
 
 typedef enum {
     JEXITED,
-    JTERMINATED,
     JSTOPPED,
     JCONTINUED,
 } job_event_type;
@@ -29,6 +28,7 @@ typedef struct jc_pgrp jc_pgrp;
 typedef struct jc_job jc_job;
 typedef struct job_table job_table;
 typedef struct job_event job_event;
+typedef struct proc_view proc_view;
 
 struct jc_proc {
     pid_t pid;
@@ -57,15 +57,31 @@ struct job_table {
     da_job jobs;
 };
 
-struct job_event {
-    pid_t jid;
-    job_event_type type;
-    bool success;
+struct proc_view {
+    pid_t pid;
+    proc_stat stat;
 
     union {
         int term_sig;
         int stop_sig;
+        int exit_stat;
     };
+};
+
+struct job_event {
+    pid_t jid;
+    job_event_type type;
+
+    bool success;
+    bool signaled;
+    bool intr_int;
+    bool intr_stop;
+
+    /* for display only */
+
+    bool builtin; /* builtins don't have pviews */
+    proc_view *last;
+    da_proc_view pviews;
 };
 
 pid_t request_job_id(pid_t jid);
@@ -75,6 +91,7 @@ job_table *get_jctl(void);
 job_event *pop_job_event(void);
 
 int update_job_proc(wait_event wev);
+void free_job_event(job_event *jev);
 char *get_jev_str(job_event jev);
 
 void clear_job_table(void);

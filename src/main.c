@@ -256,10 +256,54 @@ bool fg_event(job_event *jev) {
     return sh_env.fg_jid  == jev->jid;
 }
 
+static void handle_fg_event(shell_state *sst, job_event *jev) {
+    if (jev->type == JEXITED) {
+        if (jev->intr_int) {
+            printf("\n");
+            sst->need_terminal = true;
+
+            if (jev->signaled)
+                print_job_event(jev, &sst->prompt_upset);
+
+        } else {
+            if (jev->signaled)
+                print_job_event(jev, &sst->prompt_upset);
+
+            if (!run_next_job_fg(jev))
+                sst->need_terminal = true;
+        }
+
+    } else if (jev->type == JSTOPPED) {
+        if (jev->intr_stop)
+            printf("\n");
+
+        print_job_event(jev, &sst->prompt_upset);
+        sst->need_terminal = true;
+    } else if (jev->type == JCONTINUED) {
+        /*fground continue event means fg must have run so report it */
+        print_job_event(jev, &sst->prompt_upset);
+    }
+}
+
+static void handle_bg_event(shell_state *sst, job_event *jev) {
+    bool need_print = false;
+
+    if (jev->type == JEXITED) {
+        if (!run_next_job_bg(jev))
+            need_print = true;
+    } else
+        need_print = true;
+
+    if (need_print)
+        print_job_event(jev, &sst->prompt_upset);
+}
+
 static void process_signals(void) {
-    bool need_prompt = false;
-    bool need_terminal = false;
-    bool prompt_upset = !shell_in_fg();
+    shell_state sst = {
+        .need_prompt = false,
+        .need_terminal = false,
+        .prompt_upset = !shell_in_fg()
+    };
 
     if (sigchld_caught) {
         wait_event wev;
@@ -271,45 +315,21 @@ static void process_signals(void) {
         while ((jev = pop_job_event())) {
             LOG_INFO("%s", get_jev_str(*jev));
 
-            if (!fg_event(jev)) {
-                if ((jev->type != JEXITED && jev->type != JTERMINATED)
-                        || !run_next_job_bg(jev))
-                    print_job_event(jev, &prompt_upset);
+            if (fg_event(jev)) {
+                handle_fg_event(&sst, jev);
+            } else
+                handle_bg_event(&sst, jev);
 
-            } else if (jev->type == JEXITED) {
-                if (!run_next_job_fg(jev))
-                    need_terminal = true;
-
-            } else if (jev->type == JTERMINATED) {
-                if (jev->term_sig == SIGINT) {
-                    printf("\n"); /* INT cancels entire andor chain */
-                    need_terminal = true;
-
-                } else {
-                    print_job_event(jev, &prompt_upset);
-                    if (!run_next_job_fg(jev))
-                        need_terminal = true;
-                }
-
-            } else if (jev->type == JSTOPPED) {
-                if (jev->stop_sig == SIGTSTP)
-                    printf("\n");
-
-                print_job_event(jev, &prompt_upset);
-                need_terminal = true;
-            } else if (jev->type == JCONTINUED) {
-                /*fground continue event means fg must have run so report it */
-                print_job_event(jev, &prompt_upset);
-            }
+            free_job_event(jev);
         }
     }
 
     if (sigint_caught) {
         LOG_INFO("sigint caught");
 
-        if (!prompt_upset) {
+        if (!sst.prompt_upset) {
             printf("\n");
-            prompt_upset = true;
+            sst.prompt_upset = true;
         }
     }
 
@@ -318,12 +338,12 @@ static void process_signals(void) {
         exit(EXIT_FAILURE);
     }
 
-    if (need_terminal) {
+    if (sst.need_terminal) {
         reclaim_terminal();
-        need_prompt = true;
+        sst.need_prompt = true;
     }
 
-    if (need_prompt || (shell_in_fg() && prompt_upset))
+    if (sst.need_prompt || (shell_in_fg() && sst.prompt_upset))
         display_prompt(PROMPT_SIMPLE);
 
     reset_sig_flags();

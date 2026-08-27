@@ -61,6 +61,58 @@ static bool identify_proc(pid_t pid, jc_job **job, jc_proc** proc) {
     return false;
 }
 
+static void update_proc(jc_proc *proc, wait_event wev) {
+    if (wev.type == PEXITED) {
+        proc->stat = PROC_EXIT;
+        proc->exit_stat = wev.exit_stat;
+    }
+
+    if (wev.type == PSIGNALED) {
+        proc->stat = PROC_SIG;
+        proc->exit_stat = wev.term_sig;
+    }
+
+    else if (wev.type == PSTOPPED) {
+        proc->stat = PROC_STOP;
+        proc->stop_sig = wev.stop_sig;
+    }
+
+    else if (wev.type == PCONTINUED) {
+        proc->stat = PROC_RUN;
+    }
+}
+
+static size_t get_job_index(pid_t jid) {
+    for (size_t i = 0; i < jctl.jobs.size; ++i)
+        if (jid == jctl.jobs.data[i].jid)
+            return i;
+
+    xfatal("tried to get job index of non-existant job\n");
+}
+
+static bool pg_leader_missing(pid_t pgid, da_pid *pids) {
+    for (size_t i = 0; i < pids->size; ++i)
+        if (pgid == pids->data[i])
+            return false;
+
+    return true;
+}
+
+static void remove_job (pid_t jid) {
+    size_t i = get_job_index(jid);
+    free_job(&jctl.jobs.data[i]);
+    da_delete(&jctl.jobs, i);
+}
+
+static bool job_interrupted(jc_job *job) {
+    for (size_t i = 0; i < job->pgrp.procs.size; ++i)
+        if (job->pgrp.procs.data[i].stat == PROC_SIG)
+            if (job->pgrp.procs.data[i].stop_sig == SIGINT)
+                return true;
+
+    return false;
+}
+
 pid_t request_job_id(pid_t jid) {
     for (size_t i = 0; i < jctl.jobs.size; ++i)
         if (jid == jctl.jobs.data[i].jid)
@@ -86,17 +138,21 @@ pid_t create_job_id(void) {
     return jid;
 }
 
+void free_job_event(job_event *jev) {
+    if (!jev->builtin)
+        da_free(&jev->pviews);
+}
+
 char *get_jev_str(job_event jev) {
     static char buf[4096];
 
     if (jev.type == JEXITED) {
-        snprintf(buf, 4096, "[%d] exited", jev.jid);
-    } else if (jev.type == JTERMINATED) {
-        snprintf(buf, 4096, "[%d] %s by signal %d", jev.jid,
-                strsignal(jev.term_sig), jev.term_sig);
+        if (jev.signaled) {
+            snprintf(buf, 4096, "[%d] signaled", jev.jid);
+        } else
+            snprintf(buf, 4096, "[%d] exited", jev.jid);
     } else if (jev.type == JSTOPPED) {
-        snprintf(buf, 4096, "[%d] %s by signal %d", jev.jid,
-                strsignal(jev.stop_sig), jev.stop_sig);
+        snprintf(buf, 4096, "[%d] stopped", jev.jid);
     } else if (jev.type == JCONTINUED) {
         snprintf(buf, 4096, "[%d] continued", jev.jid);
     } else
@@ -130,13 +186,6 @@ pid_t lookup_job_pgrp(pid_t jid) {
     return -1;
 }
 
-size_t get_job_index(pid_t jid) {
-    for (size_t i = 0; i < jctl.jobs.size; ++i)
-        if (jid == jctl.jobs.data[i].jid)
-            return i;
-
-    xfatal("tried to get job index of non-existant job\n");
-}
 
 job_event *pop_job_event(void) {
     static job_event jev;
@@ -156,6 +205,64 @@ void add_job_event(job_event jev) {
     *new_jev = jev;
 }
 
+void capture_pviews(jc_job *job, job_event *jev) {
+    da_init(&jev->pviews);
+
+    for (size_t i = 0; i < job->pgrp.procs.size; ++i) {
+        jc_proc *proc = &job->pgrp.procs.data[i];
+        proc_view *pview = da_push(&jev->pviews);
+
+        pview->pid = proc->pid;
+        pview->stat = proc->stat;
+
+        if (proc->stat == PROC_EXIT)      pview->exit_stat = proc->exit_stat;
+        else if (proc->stat == PROC_SIG)  pview->term_sig = proc->term_sig;
+        else if (proc->stat == PROC_STOP) pview->stop_sig = proc->stop_sig;
+    }
+}
+
+void push_continue_event(jc_job *job) {
+    job_event *jev = da_push(&jevs);
+    *jev = (job_event){0};
+
+    jev->jid = job->jid;
+    jev->type = JCONTINUED;
+
+    capture_pviews(job, jev);
+}
+
+void push_stop_event(jc_job *job, int stop_sig) {
+    job_event *jev = da_push(&jevs);
+    *jev = (job_event){0};
+
+    jev->jid = job->jid;
+    jev->type = JSTOPPED;
+
+    jev->intr_stop = (stop_sig == SIGTSTP);
+
+    capture_pviews(job, jev);
+}
+
+void push_exit_event(jc_job *job) {
+    job_event *jev = da_push(&jevs);
+    *jev = (job_event){0};
+
+    jev->jid = job->jid;
+    jev->type = JEXITED;
+
+    if (job->last->stat == PROC_EXIT) {
+        jev->success = (job->last->exit_stat == EXIT_SUCCESS);
+        jev->signaled = false;
+
+    } else if (job->last->stat == PROC_SIG) {
+        jev->success = false;
+        jev->intr_int = job_interrupted(job);
+        jev->signaled = job->last->term_sig != SIGINT;
+    }
+
+    capture_pviews(job, jev);
+}
+
 int update_job_proc(wait_event wev) {
     jc_job *job;
     jc_proc *proc;
@@ -163,84 +270,33 @@ int update_job_proc(wait_event wev) {
     if (!identify_proc(wev.pid, &job, &proc))
         return -1;
 
-    if (wev.type == PEXITED) {
-        proc->stat = PROC_EXIT;
-        proc->exit_stat = wev.exit_stat;
-    }
-
-    if (wev.type == PSIGNALED) {
-        proc->stat = PROC_SIG;
-        proc->exit_stat = wev.term_sig;
-    }
-
-    else if (wev.type == PSTOPPED) {
-        proc->stat = PROC_STOP;
-        proc->stop_sig = wev.stop_sig;
-    }
-
-    else if (wev.type == PCONTINUED) {
-        proc->stat = PROC_RUN;
-    }
+    update_proc(proc, wev);
 
     job_stat stat = calc_job_stat(job);
 
     if (job->stat == JOB_RUN && stat == JOB_STOP) {
-        add_job_event((job_event){
-            .jid = job->jid,
-            .type = JSTOPPED,
-            .stop_sig = proc->stop_sig
-        });
+        push_stop_event(job, proc->stop_sig);
         job->stat = stat;
 
     } else if (job->stat == JOB_STOP && stat == JOB_RUN) {
-        add_job_event((job_event){
-            .jid = job->jid,
-            .type = JCONTINUED
-        });
+        push_continue_event(job);
         job->stat = stat;
 
     } else if (stat == JOB_EXIT) {
-        if (job->last->stat == PROC_EXIT) {
-            add_job_event((job_event){
-                .jid = job->jid,
-                .type = JEXITED,
-                .success = job->last->exit_stat == EXIT_SUCCESS
-            });
-
-        } else if (job->last->stat == PROC_SIG) {
-            add_job_event((job_event){
-                .jid = job->jid,
-                .type = JTERMINATED,
-                .success = false,
-                .term_sig = job->last->term_sig
-            });
-
-        } else {
-            xfatal("unexpected process exit status");
-        }
-
-        /* delete job */
-        size_t i = get_job_index(job->jid);
-        free_job(&jctl.jobs.data[i]);
-        da_delete(&jctl.jobs, i);
+        push_exit_event(job);
+        remove_job(job->jid);
     }
 
     return 0;
-}
-
-static bool pg_leader_missing(pid_t pgid, da_pid *pids) {
-    for (size_t i = 0; i < pids->size; ++i)
-        if (pgid == pids->data[i])
-            return false;
-
-    return true;
 }
 
 void queue_builtin_exit_event(pid_t jid, int status) {
     add_job_event((job_event){
         .jid = jid,
         .type = JEXITED,
-        .success = (status == EXIT_SUCCESS)
+        .success = (status == EXIT_SUCCESS),
+        .signaled = false,
+        .builtin = true
     });
 
     xkill(getpid(), SIGCHLD);

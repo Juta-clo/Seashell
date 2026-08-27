@@ -46,10 +46,6 @@ static void ncurses_setup(void) {
     xatexit(ncurses_cleanup);
 }
 
-void run_all(void) {
-    RUN_TEST_GROUP(prompt);
-}
-
 static void render_lines(curses_win *win) {
     for (int i = 0; i < win->nlines; ++i) {
         if (i + win->offset > (int) win->lines.size - 1)
@@ -83,6 +79,10 @@ static bool handle_mouse_event(void) {
     wrefresh(win->win);
 
     return true;
+}
+
+void run_all(void) {
+    RUN_TEST_GROUP(shell);
 }
 
 int main(int argc, const char **argv) {

@@ -21,6 +21,7 @@ struct jc_proc;
 struct jc_pgrp;
 struct jc_job;
 struct job_event;
+struct proc_view;
 
 /* shell_types.h */
 struct job_plan;
@@ -53,4 +54,5 @@ struct dstr;
     APPLY(arg, da_jevent, struct job_event) \
     APPLY(arg, da_plan, struct job_plan) \
     APPLY(arg, da_pstat, struct ps_pstat) \
-    APPLY(arg, da_dstr, struct dstr)
+    APPLY(arg, da_dstr, struct dstr) \
+    APPLY(arg, da_proc_view, struct proc_view)

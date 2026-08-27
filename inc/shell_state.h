@@ -11,6 +11,12 @@
 #define NOFG -1
 
 typedef struct {
+    bool need_terminal;
+    bool need_prompt;
+    bool prompt_upset;
+} shell_state;
+
+typedef struct {
     bool subshell;
     pid_t fg_jid;
     int tty_fd;

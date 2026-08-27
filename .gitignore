@@ -17,3 +17,4 @@ job_mon
 vg.err
 pty_test
 unit_test
+self_kill
