@@ -80,7 +80,6 @@ struct job_event {
     bool signaled;
     bool intr_int;
     bool intr_stop;
-    int job_stop_sig;
 
     /* for display only */
 

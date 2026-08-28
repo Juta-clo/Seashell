@@ -37,8 +37,10 @@ static job_stat calc_job_stat(jc_job *job) {
         if (proc->stat == PROC_RUN)
             return JOB_RUN;
 
-        if (proc->stat == PROC_STOP)
+        if (proc->stat == PROC_STOP) {
+            LOG_INFO("stopped: %d", proc->pid);
             stopped = true;
+        }
     }
 
     return stopped ? JOB_STOP : JOB_EXIT;
@@ -98,6 +100,15 @@ static void remove_job (pid_t jid) {
     size_t i = get_job_index(jid);
     free_job(&jctl.jobs.data[i]);
     da_delete(&jctl.jobs, i);
+}
+
+static bool job_inter_stopped(jc_job *job) {
+    for (size_t i = 0; i < job->pgrp.procs.size; ++i)
+        if (job->pgrp.procs.data[i].stat == PROC_STOP)
+            if (job->pgrp.procs.data[i].stop_sig == SIGTSTP)
+                return true;
+
+    return false;
 }
 
 static bool job_interrupted(jc_job *job) {
@@ -236,13 +247,12 @@ void push_continue_event(jc_job *job) {
     capture_pviews(job, jev);
 }
 
-void push_stop_event(jc_job *job, int stop_sig) {
+void push_stop_event(jc_job *job) {
     job_event *jev = da_push(&jevs);
     *jev = (job_event){0};
 
     jev->type = JSTOPPED;
-    jev->job_stop_sig = stop_sig;
-    jev->intr_stop = (stop_sig == SIGTSTP);
+    jev->intr_stop = job_inter_stopped(job);;
 
     capture_pviews(job, jev);
 }
@@ -278,7 +288,7 @@ int update_job_proc(wait_event wev) {
     job_stat stat = calc_job_stat(job);
 
     if (job->stat == JOB_RUN && stat == JOB_STOP) {
-        push_stop_event(job, proc->stop_sig);
+        push_stop_event(job);
         job->stat = stat;
 
     } else if (job->stat == JOB_STOP && stat == JOB_RUN) {

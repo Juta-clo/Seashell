@@ -203,16 +203,15 @@ static void output_jev(shell_state *sst, job_event *jev) {
 
     if (jev->type == JEXITED) {
         if (jev->signaled) {
-            dstr_printf(&msg, "[%d] %s by signal %d", jev->jid,
+            dstr_printf(&msg, "[%d] Done - %s by signal %d", jev->jid,
                     strsignal(jev->last->term_sig), jev->last->term_sig);
         } else {
-            dstr_printf(&msg, "[%d] Exited with status %d", jev->jid,
+            dstr_printf(&msg, "[%d] Done - Exited with status %d", jev->jid,
                     jev->last->exit_stat);
         }
 
     } else if (jev->type == JSTOPPED) {
-        dstr_printf(&msg, "[%d] %s by signal %d", jev->jid,
-                strsignal(jev->job_stop_sig), jev->job_stop_sig);
+        dstr_printf(&msg, "[%d] Stopped", jev->jid);
 
     } else if (jev->type == JCONTINUED) {
         dstr_printf(&msg, "[%d] Continued", jev->jid);

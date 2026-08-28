@@ -255,12 +255,18 @@ TEST(shell, prompt_after_launch_bg_cmd) {
 
 TEST(shell, prompt_after_bg_job_done) {
     pty_send("sleep 0.05 &\n");
-    pty_ensure("[1] Started\n" PROMPT "\n[1] Exited with status 0\n" PROMPT);
+    pty_ensure("[1] Started\n");
+    pty_ensure(PROMPT);
+    pty_ensure("\n[1] Done - Exited with status 0\n");
+    pty_ensure(PROMPT);
 }
 
 TEST(shell, short_lived_bg_cmd) {
     pty_send("/bin/echo x &\n");
-    pty_ensure("[1] Started\n" PROMPT "x\n\n[1] Exited with status 0\n" PROMPT);
+    pty_ensure("[1] Started\n");
+    pty_ensure(PROMPT);
+    pty_ensure("x\n\n[1] Done - Exited with status 0\n");
+    pty_ensure(PROMPT);
 }
 
 TEST(shell, int_fg_job) {
@@ -280,7 +286,7 @@ TEST(shell, stop_fg_job) {
     pty_cc(VSUSP);
 
     pty_ensure("\n");
-    pty_ensure("[1] Stopped by signal 20\n");
+    pty_ensure("[1] Stopped\n");
     pty_ensure(PROMPT);
 }
 
@@ -328,9 +334,9 @@ TEST(shell, bg_job_done_with_fg_job) {
 
     child_pstat_snapshot();
 
-    pty_ensure("[1] Exited with status 0\n");
+    pty_ensure("[1] Done - Exited with status 0\n");
     /* shouldn't see prompt between exit messages */
-    pty_ensure("[2] Exited with status 0\n");
+    pty_ensure("[2] Done - Exited with status 0\n");
 }
 
 TEST(shell, builtin_in_bg) {
@@ -339,7 +345,7 @@ TEST(shell, builtin_in_bg) {
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
     pty_ensure("jobs: no job control in this shell\n");
-    pty_ensure("\n[1] Exited with status 1\n");
+    pty_ensure("\n[1] Done - Exited with status 1\n");
     pty_ensure(PROMPT);
 }
 
@@ -368,7 +374,7 @@ TEST(shell, simple_bg_andor_chain) {
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
     pty_ensure("x\n");
-    pty_ensure("\n[1] Exited with status 0\n");
+    pty_ensure("\n[1] Done - Exited with status 0\n");
     pty_ensure(PROMPT);
 }
 
@@ -395,13 +401,13 @@ TEST(shell, and_if_logic_bg) {
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
     pty_ensure("x\n");
-    pty_ensure("\n[1] Exited with status 0\n");
+    pty_ensure("\n[1] Done - Exited with status 0\n");
     pty_ensure(PROMPT);
 
     pty_send("false && /bin/echo x &\n");
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
-    pty_ensure("\n[1] Exited with status 1\n");
+    pty_ensure("\n[1] Done - Exited with status 1\n");
     pty_ensure(PROMPT);
 }
 
@@ -410,13 +416,13 @@ TEST(shell, or_if_logic_bg) {
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
     pty_ensure("y\n");
-    pty_ensure("\n[1] Exited with status 0\n");
+    pty_ensure("\n[1] Done - Exited with status 0\n");
     pty_ensure(PROMPT);
 
     pty_send("true || /bin/echo y &\n");
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
-    pty_ensure("\n[1] Exited with status 0\n");
+    pty_ensure("\n[1] Done - Exited with status 0\n");
     pty_ensure(PROMPT);
 }
 
@@ -463,7 +469,7 @@ TEST(shell, fg_stopped_bg_job) {
     pty_send("cat &\n");
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
-    pty_ensure("\n[1] Stopped (tty input) by signal 21\n");
+    pty_ensure("\n[1] Stopped\n");
     pty_ensure(PROMPT);
 
     pty_send("fg %1\n");
@@ -483,7 +489,7 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
     child_pstat_snapshot();
 
     pty_send("kill %1\n");
-    pty_ensure("[1] Terminated by signal 15\n");
+    pty_ensure("[1] Done - Terminated by signal 15\n");
     pty_ensure(PROMPT);
 
     child_pstat_snapshot();
@@ -498,7 +504,7 @@ TEST(shell, bg_on_stopped_job_resumes_it) {
     pty_ensure(PROMPT);
 
     pty_send("kill -STOP %1\n");
-    pty_ensure("[1] Stopped (signal) by signal 19\n");
+    pty_ensure("[1] Stopped\n");
     pty_ensure(PROMPT);
 
     pty_send("bg %1\n");
@@ -514,7 +520,7 @@ TEST(shell, kill_multiple_proc_job) {
     pty_ensure("x\n");
 
     pty_send("kill %1\n");
-    pty_ensure("[1] Terminated by signal 15\n");
+    pty_ensure("[1] Done - Terminated by signal 15\n");
     pty_ensure(PROMPT);
 }
 
@@ -522,7 +528,7 @@ TEST(shell, sigint_on_non_final_proc_prints_newline) {
     pty_send("self_kill -INT | self_kill -TERM\n");
 
     pty_ensure("\n");
-    pty_ensure("[1] Terminated by signal 15\n");
+    pty_ensure("[1] Done - Terminated by signal 15\n");
     pty_ensure(PROMPT);
 }
 
@@ -538,26 +544,26 @@ TEST(shell, process_exits_normally_in_bg) {
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
 
-    pty_ensure("\n[1] Exited with status 0\n");
+    pty_ensure("\n[1] Done - Exited with status 0\n");
     pty_ensure(PROMPT);
 }
 
 TEST(shell, fg_process_signaled) {
     pty_send("self_kill -TERM\n");
-    pty_ensure("[1] Terminated by signal 15\n");
+    pty_ensure("[1] Done - Terminated by signal 15\n");
     pty_ensure(PROMPT);
 }
 
 TEST(shell, fg_process_stopped) {
     pty_send("self_kill -STOP\n");
-    pty_ensure("[1] Stopped (signal) by signal 19\n");
+    pty_ensure("[1] Stopped\n");
     pty_ensure(PROMPT);
 }
 
 TEST(shell, fg_process_stopped_interactively) {
     pty_send("self_kill -TSTP\n");
     pty_ensure("\n");
-    pty_ensure("[1] Stopped by signal 20\n");
+    pty_ensure("[1] Stopped\n");
     pty_ensure(PROMPT);
 }
 
@@ -568,6 +574,18 @@ TEST(shell, send_sigint_to_process_that_catches_it) {
     pty_cc(VINTR);
 
     pty_ensure("\n");
+    pty_ensure(PROMPT);
+}
+
+TEST(shell, stopped_process_then_kill_builtin) {
+    pty_send("self_kill -STOP | sleep 100 &\n");
+    pty_ensure("[1] Started\n");
+    pty_ensure(PROMPT);
+
+    child_pstat_snapshot();
+
+    pty_send("kill %1\n");
+    pty_ensure("[1] Stopped\n");
     pty_ensure(PROMPT);
 }
 
@@ -623,4 +641,5 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, fg_process_stopped);
     RUN_TEST_CASE(shell, fg_process_stopped_interactively);
     RUN_TEST_CASE(shell, send_sigint_to_process_that_catches_it);
+    RUN_TEST_CASE(shell, stopped_process_then_kill_builtin);
 }
