@@ -175,11 +175,15 @@ TEST_SETUP(shell) {
     if (cpid == 0) {
         char *bin = "/home/juta/Projects/Seashell/seashell";
 
+        char *prompt_arg;
+        if (asprintf(&prompt_arg, "--prompt=simple") < 0)
+            TEST_FAIL_MESSAGE("asprintf: input output error");
+
         char *lfd_arg;
         if (asprintf(&lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
             TEST_FAIL_MESSAGE("asprintf: input output error");
 
-        char *argv[] = { bin, lfd_arg, NULL };
+        char *argv[] = { bin, prompt_arg, lfd_arg, NULL };
 
         execvp(argv[0], argv);
         _exit(EXIT_FAILURE);

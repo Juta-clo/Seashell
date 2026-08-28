@@ -334,7 +334,7 @@ static void process_signals(void) {
     }
 
     if (sst.need_prompt || (shell_in_fg() && sst.prompt_upset))
-        display_prompt(PROMPT_SIMPLE);
+        display_prompt(sh_env.prompt_style);
 
     reset_sig_flags();
 }
@@ -353,7 +353,7 @@ int main(int argc, char *const *argv) {
 
     struct pollfd events = { .events = POLLIN, .fd = sh_env.tty_fd };
 
-    display_prompt(PROMPT_SIMPLE);
+    display_prompt(sh_env.prompt_style);
 
     while (true) {
         int nfds = shell_in_fg() ? 1 : 0;
@@ -372,7 +372,7 @@ int main(int argc, char *const *argv) {
 
         ps_ast *ast = line_to_ast();
         if (!ast) {
-            display_prompt(PROMPT_SIMPLE);
+            display_prompt(sh_env.prompt_style);
             continue;
         }
 
@@ -385,7 +385,7 @@ int main(int argc, char *const *argv) {
 
         if (ast->bg) {
             printf("[%d] Started\n", jid);
-            display_prompt(PROMPT_SIMPLE);
+            display_prompt(sh_env.prompt_style);
         } else {
             sh_env.fg_jid = jid;
         }

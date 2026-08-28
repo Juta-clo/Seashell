@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <fcntl.h>
 
+#include "input.h"
 #include "shell_state.h"
 #include "sig_funcs.h"
 #include "xfuncs.h"
@@ -54,6 +55,12 @@ opt_data opts[] = {
     [LOGDIR] = {
         .long_name = "logdir",
         .short_name = 'p',
+        .has_arg = REQUIRED_ARG,
+        .arg_type = STR_ARG
+    },
+    [PROMPT] = {
+        .long_name = "prompt",
+        .short_name = 'x',
         .has_arg = REQUIRED_ARG,
         .arg_type = STR_ARG
     },
@@ -128,6 +135,15 @@ void env_setup(shell_env *env) {
     env->subshell = false;
     env->fg_jid = NOFG;
     env->tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
+
+    if (opts[PROMPT].found) {
+        if (strcmp("cwd", opts[PROMPT].val_str) == 0)
+            env->prompt_style = PROMPT_CWD;
+        else if (strcmp("simple", opts[PROMPT].val_str) == 0)
+            env->prompt_style = PROMPT_SIMPLE;
+    } else {
+        env->prompt_style = PROMPT_CWD;
+    }
 
     LOG_INFO("seashell PID(%d)", getpid());
 }

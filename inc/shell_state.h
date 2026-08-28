@@ -22,6 +22,7 @@ typedef struct {
     int tty_fd;
     sigset_t og_mask;
     int log_fd;
+    int prompt_style;
 } shell_env;
 
 extern shell_env sh_env;
@@ -37,6 +38,7 @@ typedef struct job_plan job_plan;
 typedef enum {
     LOGFD,
     LOGDIR,
+    PROMPT,
 } opt_names;
 
 extern opt_data opts[];
