@@ -21,6 +21,7 @@ typedef enum {
     JEXITED,
     JSTOPPED,
     JCONTINUED,
+    JINFO,
 } job_event_type;
 
 typedef struct jc_proc jc_proc;
@@ -76,10 +77,12 @@ struct job_event {
     bool signaled;
     bool intr_int;
     bool intr_stop;
+    int job_stop_sig;
 
     /* for display only */
 
     bool builtin; /* builtins don't have pviews */
+    job_stat stat;
     proc_view *last;
     da_proc_view pviews;
 };
@@ -88,6 +91,7 @@ pid_t request_job_id(pid_t jid);
 pid_t create_job_id(void);
 
 job_table *get_jctl(void);
+da_jevent get_job_info(void);
 job_event *pop_job_event(void);
 
 int update_job_proc(wait_event wev);

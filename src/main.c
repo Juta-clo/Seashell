@@ -10,6 +10,7 @@
 #include <wait.h>
 #include <getopt.h>
 
+#include "dstr.h"
 #include "xfuncs.h"
 #include "builtins.h"
 #include "exec_funcs.h"
@@ -95,7 +96,7 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
         sh_builtin *builtin = get_builtin(pline->cmds.data[0].argv[0]);
 
         if (builtin) {
-            LOG_INFO("[%d] started (builtin)", jid);
+            LOG_INFO("[%d] Started (builtin)", jid);
 
             int status = builtin->func(pline->cmds.data[0].argv, &sh_env);
 
@@ -108,7 +109,7 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
     }
 
     if (!handled) {
-        LOG_INFO("[%d] started", jid);
+        LOG_INFO("[%d] Started", jid);
 
         pline_data pld = exec_pline(pline, bg);
         add_job(jid, pld.pids, pld.pgid);
@@ -191,59 +192,39 @@ static bool run_next_job_bg(job_event *jev) {
     return run_next_job_in_plan(jev, true);
 }
 
-static void print_job_event(job_event *jev, bool *prompt_upset) {
-    assert(jev && prompt_upset);
+static void output_jev(shell_state *sst, job_event *jev) {
+    assert(sst && jev);
 
-    if (!*prompt_upset) {
+    if (!sst->prompt_upset) {
         printf("\n");
-        *prompt_upset = true;
+        sst->prompt_upset = true;
     }
 
-    printf("%s\n", get_jev_str(*jev));
-}
+    dstr msg;
+    dstr_init(&msg);
 
-// static void print_job_event(job_event *jev, bool *prompt_upset) {
-// #define JOB_MSG_BUF 4096
-//     assert(jev && prompt_upset);
-//     assert(!jev->builtin);
-//
-//     if (!*prompt_upset) {
-//         printf("\n");
-//         *prompt_upset = true;
-//     }
-//
-//     if (jev->type == JEXITED) {
-//         if (job_interrupted(jev))
-//             printf("\n");
-//
-//         psnap *last_psn = &jev->psnaps.data[jev->psnaps.size - 1];
-//
-//         if (last_psn->stat == PROC_SIG) {
-//             printf("[%d] %s by signal %d\n", jev->jid,
-//                     strsignal(last_psn->term_sig), last_psn->term_sig);
-//         } else if (last_psn->stat == PROC_EXIT) {
-//             printf("[%d] exited\n", jev->jid);
-//         }
-//
-//     } else if (jev->type == JSTOPPED) {
-//         for (size_t i = 0; i < jev->psnaps.size; ++i) {
-//             psnap *psn = &jev->psnaps.data[i];
-//
-//             if (psn->stat == PROC_STOP) {
-//                 if (psn->stop_sig == SIGTSTP)
-//                     printf("\n");
-//
-//                 printf("[%d] %s by signal %d\n",
-//                         jev->jid, strsignal(psn->stop_sig), psn->stop_sig);
-//
-//                 break;
-//             }
-//         }
-//
-//     } else if (jev->type == JCONTINUED) {
-//         printf("[%d] continued\n", jev->jid);
-//     }
-// }
+    if (jev->type == JEXITED) {
+        if (jev->signaled) {
+            dstr_printf(&msg, "[%d] %s by signal %d", jev->jid,
+                    strsignal(jev->last->term_sig), jev->last->term_sig);
+        } else {
+            dstr_printf(&msg, "[%d] Exited with status %d", jev->jid,
+                    jev->last->exit_stat);
+        }
+
+    } else if (jev->type == JSTOPPED) {
+        dstr_printf(&msg, "[%d] %s by signal %d", jev->jid,
+                strsignal(jev->job_stop_sig), jev->job_stop_sig);
+
+    } else if (jev->type == JCONTINUED) {
+        dstr_printf(&msg, "[%d] Continued", jev->jid);
+    }
+
+    LOG_INFO("%s", msg.c_str);
+    printf("%s\n", msg.c_str);
+
+    dstr_free(&msg);
+}
 
 void reclaim_terminal(void) {
     if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
@@ -257,45 +238,56 @@ bool fg_event(job_event *jev) {
 }
 
 static void handle_fg_event(shell_state *sst, job_event *jev) {
+    bool need_print = false;
+    bool run_next_job = false;
+
     if (jev->type == JEXITED) {
+        if (jev->signaled)
+            need_print = true;
+
         if (jev->intr_int) {
             printf("\n");
             sst->need_terminal = true;
 
-            if (jev->signaled)
-                print_job_event(jev, &sst->prompt_upset);
-
         } else {
-            if (jev->signaled)
-                print_job_event(jev, &sst->prompt_upset);
-
-            if (!run_next_job_fg(jev))
-                sst->need_terminal = true;
+            run_next_job = true;
         }
 
     } else if (jev->type == JSTOPPED) {
         if (jev->intr_stop)
             printf("\n");
 
-        print_job_event(jev, &sst->prompt_upset);
+        need_print = true;
         sst->need_terminal = true;
+
     } else if (jev->type == JCONTINUED) {
-        /*fground continue event means fg must have run so report it */
-        print_job_event(jev, &sst->prompt_upset);
+        need_print = true;
     }
+
+    /* must preserve this ordering, print -> run next job */
+
+    if (need_print)
+        output_jev(sst, jev);
+
+    if (run_next_job && !run_next_job_fg(jev))
+        sst->need_terminal = true;
 }
 
 static void handle_bg_event(shell_state *sst, job_event *jev) {
     bool need_print = false;
 
     if (jev->type == JEXITED) {
+        if (jev->signaled)
+            need_print = true;
+
         if (!run_next_job_bg(jev))
             need_print = true;
+
     } else
         need_print = true;
 
     if (need_print)
-        print_job_event(jev, &sst->prompt_upset);
+        output_jev(sst, jev);
 }
 
 static void process_signals(void) {
@@ -313,8 +305,6 @@ static void process_signals(void) {
 
         job_event *jev;
         while ((jev = pop_job_event())) {
-            LOG_INFO("%s", get_jev_str(*jev));
-
             if (fg_event(jev)) {
                 handle_fg_event(&sst, jev);
             } else
@@ -394,7 +384,7 @@ int main(int argc, char *const *argv) {
         int jid = create_job_id();
 
         if (ast->bg) {
-            printf("[%d] started\n", jid);
+            printf("[%d] Started\n", jid);
             display_prompt(PROMPT_SIMPLE);
         } else {
             sh_env.fg_jid = jid;

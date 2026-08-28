@@ -205,28 +205,48 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
     if (!validate_argc(argv, 0, 0))
         return EXIT_FAILURE;
 
-    job_table *jctl = get_jctl();
+    da_jevent jevs = get_job_info();
 
-    for (size_t i = 0; i < jctl->jobs.size; ++i) {
+    for (size_t i = 0; i < jevs.size; ++i) {
+        job_event *jev = &jevs.data[i];
+        printf("[%d] ", jev->jid);
 
-        jc_job *job = &jctl->jobs.data[i];
-
-        printf("[%d] ", job->jid);
-
-        switch (job->stat) {
-        case JOB_RUN:
-            printf("running");
-            break;
-        case JOB_STOP:
-            printf("stopped");
-            break;
-        case JOB_EXIT:
-            printf("done (?)");
-            break;
+        switch (jev->stat) {
+        case JOB_RUN:  printf("Running\n"); break;
+        case JOB_EXIT: printf("Exited\n");  break;
+        case JOB_STOP: printf("Stopped\n"); break;
         }
 
-        printf("\n");
+        for (size_t i = 0; i < jev->pviews.size; ++i) {
+            proc_view *pview = &jev->pviews.data[i];
+
+            printf("   %d ", pview->pid);
+
+            switch(pview->stat) {
+                case PROC_RUN:
+                    printf("Running\n");
+                    break;
+
+                case PROC_EXIT:
+                    printf("Exited with status %d\n", pview->exit_stat);
+                    break;
+
+                case PROC_SIG:
+                    printf("%s by signal %d\n", strsignal(pview->term_sig),
+                            pview->term_sig);
+                    break;
+
+                case PROC_STOP:
+                    printf("%s by signal %d\n", strsignal(pview->stop_sig),
+                            pview->stop_sig);
+                    break;
+            }
+        }
+
+        free_job_event(&jevs.data[i]);
     }
+
+    da_free(&jevs);
 
     return EXIT_SUCCESS;
 }

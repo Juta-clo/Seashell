@@ -143,24 +143,6 @@ void free_job_event(job_event *jev) {
         da_free(&jev->pviews);
 }
 
-char *get_jev_str(job_event jev) {
-    static char buf[4096];
-
-    if (jev.type == JEXITED) {
-        if (jev.signaled) {
-            snprintf(buf, 4096, "[%d] signaled", jev.jid);
-        } else
-            snprintf(buf, 4096, "[%d] exited", jev.jid);
-    } else if (jev.type == JSTOPPED) {
-        snprintf(buf, 4096, "[%d] stopped", jev.jid);
-    } else if (jev.type == JCONTINUED) {
-        snprintf(buf, 4096, "[%d] continued", jev.jid);
-    } else
-        xfatal("unknown job event type");
-
-    return buf;
-}
-
 void clear_job_table(void) {
     for (size_t i = 0; i < jctl.jobs.size; ++i) {
         LOG_INFO("[%d] removed", jctl.jobs.data[i].jid);
@@ -219,13 +201,36 @@ void capture_pviews(jc_job *job, job_event *jev) {
         else if (proc->stat == PROC_SIG)  pview->term_sig = proc->term_sig;
         else if (proc->stat == PROC_STOP) pview->stop_sig = proc->stop_sig;
     }
+
+    jev->jid = job->jid;
+    jev->stat = job->stat;
+    jev->last = &jev->pviews.data[jev->pviews.size - 1];
+}
+
+da_jevent get_job_info(void) {
+    da_jevent jevs;
+    da_init(&jevs);
+
+    for (size_t i = 0; i < jctl.jobs.size; ++i) {
+        jc_job *job = &jctl.jobs.data[i];
+
+        job_event *jev = da_push(&jevs);
+        *jev = (job_event){
+            .jid = job->jid,
+            .type = JINFO
+        };
+
+        da_init(&jev->pviews);
+        capture_pviews(job, jev);
+    }
+
+    return jevs;
 }
 
 void push_continue_event(jc_job *job) {
     job_event *jev = da_push(&jevs);
     *jev = (job_event){0};
 
-    jev->jid = job->jid;
     jev->type = JCONTINUED;
 
     capture_pviews(job, jev);
@@ -235,9 +240,8 @@ void push_stop_event(jc_job *job, int stop_sig) {
     job_event *jev = da_push(&jevs);
     *jev = (job_event){0};
 
-    jev->jid = job->jid;
     jev->type = JSTOPPED;
-
+    jev->job_stop_sig = stop_sig;
     jev->intr_stop = (stop_sig == SIGTSTP);
 
     capture_pviews(job, jev);
@@ -247,7 +251,6 @@ void push_exit_event(jc_job *job) {
     job_event *jev = da_push(&jevs);
     *jev = (job_event){0};
 
-    jev->jid = job->jid;
     jev->type = JEXITED;
 
     if (job->last->stat == PROC_EXIT) {
