@@ -147,9 +147,7 @@ static void pty_send(const char *msg) {
 }
 
 static void pty_cc(int cc_code) {
-    char cc_str[2] = { tio.c_cc[cc_code], '\0' };
-
-    if (write(mfd, cc_str, 2) != 2)
+    if (write(mfd, &tio.c_cc[cc_code], 1) != 1)
         TEST_FAIL_MESSAGE("failed/partial write");
 
     char *cc_out;
@@ -445,7 +443,8 @@ TEST(shell, jobs_builtin) {
     pty_ensure(PROMPT);
 
     pty_send("jobs\n");
-    pty_ensure("[1] running\n");
+    pty_ensure("[1] Running\n");
+    pty_ensure("   'sleep 100' Running\n");
     pty_ensure(PROMPT);
 }
 
@@ -477,7 +476,8 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
     pty_ensure(PROMPT);
 
     pty_send("jobs\n");
-    pty_ensure("[1] running\n");
+    pty_ensure("[1] Running\n");
+    pty_ensure("   'sleep 100' Running\n");
     pty_ensure(PROMPT);
 
     child_pstat_snapshot();
@@ -507,9 +507,11 @@ TEST(shell, bg_on_stopped_job_resumes_it) {
 }
 
 TEST(shell, kill_multiple_proc_job) {
-    pty_send("sleep 100 | sleep 100 | sleep 100 &\n");
+    pty_send("sleep 100 | sleep 100 | write_sleep &\n");
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
+
+    pty_ensure("x\n");
 
     pty_send("kill %1\n");
     pty_ensure("[1] Terminated by signal 15\n");
@@ -559,6 +561,16 @@ TEST(shell, fg_process_stopped_interactively) {
     pty_ensure(PROMPT);
 }
 
+TEST(shell, send_sigint_to_process_that_catches_it) {
+    pty_send("sleep 100 | write_sleep\n");
+    pty_ensure("x\n");
+
+    pty_cc(VINTR);
+
+    pty_ensure("\n");
+    pty_ensure(PROMPT);
+}
+
 /************ Test runner ************/
 
 // SIGINT on any process causes a newline to be printed. It does NOT have
@@ -597,13 +609,11 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, and_if_logic_bg);
     RUN_TEST_CASE(shell, and_or_chain_with_builtins);
     RUN_TEST_CASE(shell, prompt_after_launch_fg_builtin);
-    // RUN_TEST_CASE(shell, jobs_builtin);
+    RUN_TEST_CASE(shell, jobs_builtin);
     RUN_TEST_CASE(shell, builtin_and_or_logic);
     RUN_TEST_CASE(shell, fg_stopped_bg_job);
-    // RUN_TEST_CASE(shell, kill_builtin_works_on_bg_jobs);
+    RUN_TEST_CASE(shell, kill_builtin_works_on_bg_jobs);
     RUN_TEST_CASE(shell, bg_on_stopped_job_resumes_it);
-
-    /* JOB CONTRL */
     RUN_TEST_CASE(shell, kill_multiple_proc_job);
     RUN_TEST_CASE(shell, sigint_on_non_final_proc_prints_newline);
     RUN_TEST_CASE(shell, sigint_on_final_proc);
@@ -612,4 +622,5 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, fg_process_signaled);
     RUN_TEST_CASE(shell, fg_process_stopped);
     RUN_TEST_CASE(shell, fg_process_stopped_interactively);
+    RUN_TEST_CASE(shell, send_sigint_to_process_that_catches_it);
 }

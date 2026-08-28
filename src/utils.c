@@ -7,6 +7,7 @@
 
 #include "utils.h"
 #include "shell_state.h"
+#include "xfuncs.h"
 
 #define BUF_SIZE 1024
 
@@ -79,4 +80,24 @@ void usage_err(const char *fmt, ...) {
     fprintf(stderr, "\n");
     fflush(stderr);
     exit(EXIT_FAILURE);
+}
+
+/* general */
+
+void free_argv(char **argv) {
+    for (char **arg = argv; *arg != NULL; ++arg)
+        free(*arg);
+    free(argv);
+}
+
+char **copy_argv(char **argv) {
+    int argc = 0;
+    for (char **arg = argv; *arg != NULL; ++arg)
+        ++argc;
+
+    char **out = xcalloc(argc + 1, sizeof(char *));
+    for (int i = 0; i < argc; ++i)
+        out[i] = xstrdup(argv[i]);
+
+    return out;
 }

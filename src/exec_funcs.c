@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <string.h>
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
@@ -65,22 +66,9 @@ void child_redir_setup(da_redir *redirs) {
     }
 }
 
-void free_pline_data(pline_data *pld) {
-    da_free(pld->pids);
-
-    free(pld->pids);
-
-    *pld = (pline_data){0};
-}
-
 void init_pline_data(pline_data *pld) {
     *pld = (pline_data){0};
-
-    da_pid *pids = xmalloc(sizeof(da_pid));
-
-    da_init(pids);
-
-    pld->pids = pids;
+    da_init(&pld->procs);
 }
 
 pline_data exec_pline(const ps_pline *pline, bool bg) {
@@ -156,9 +144,9 @@ pline_data exec_pline(const ps_pline *pline, bool bg) {
             xclose(next_pipe[1]);
         }
 
-        pid_t *pid = da_push(pld.pids);
-
-        *pid = cpid;
+        pline_proc *pproc = da_push(&pld.procs);
+        pproc->pid = cpid;
+        pproc->argv = copy_argv(cur_cmd->argv);
     }
 
     return pld;

@@ -179,7 +179,7 @@ static int run_kill_builtin(char **argv, shell_env *sh_env) {
 
     pid_t pgid = lookup_job_pgrp(jid);
     if (pgid == -1) {
-        fprintf(stderr, "%s: %%%d: no such job\n", argv[0], jid);
+        fprintf(stderr, "%s: %d: no such job\n", argv[0], jid);
         return EXIT_FAILURE;
     }
 
@@ -202,7 +202,7 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    if (!validate_argc(argv, 0, 0))
+    if (!validate_argc(argv, 0, 1))
         return EXIT_FAILURE;
 
     da_jevent jevs = get_job_info();
@@ -220,7 +220,16 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
         for (size_t i = 0; i < jev->pviews.size; ++i) {
             proc_view *pview = &jev->pviews.data[i];
 
-            printf("   %d ", pview->pid);
+            if (argv[1] == NULL) {
+                printf("   '");
+                for (char **arg = pview->argv; *arg != NULL; ++arg) {
+                    printf("%s", *arg);
+                    if (arg[1] != NULL)
+                        printf(" ");
+                }
+                printf("' ");
+            } else
+                printf("   %d ", pview->pid);
 
             switch(pview->stat) {
                 case PROC_RUN:

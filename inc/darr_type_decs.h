@@ -32,6 +32,8 @@ struct ps_pstat;
 /* dstr.h */
 struct dstr;
 
+struct pline_proc;
+
 #define DYN_ARR_TYPES(APPLY, arg) \
     /* lexer */ \
     APPLY(arg, da_part, struct lx_part) \
@@ -55,4 +57,5 @@ struct dstr;
     APPLY(arg, da_plan, struct job_plan) \
     APPLY(arg, da_pstat, struct ps_pstat) \
     APPLY(arg, da_dstr, struct dstr) \
-    APPLY(arg, da_proc_view, struct proc_view)
+    APPLY(arg, da_proc_view, struct proc_view) \
+    APPLY(arg, da_pline_proc, struct pline_proc)

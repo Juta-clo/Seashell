@@ -8,6 +8,7 @@
 #include "wait_stat.h"
 #include "utils.h"
 #include "xfuncs.h"
+#include "exec_funcs.h"
 
 static job_table jctl = {0};
 static da_jevent jevs = {0};
@@ -19,6 +20,9 @@ static void init_job(jc_job *job) {
 }
 
 static void free_job(jc_job *job) {
+    for (size_t i = 0; i < job->pgrp.procs.size; ++i)
+        free_argv(job->pgrp.procs.data[i].argv);
+
     da_free(&job->pgrp.procs);
     *job = (jc_job){0};
 }
@@ -69,7 +73,7 @@ static void update_proc(jc_proc *proc, wait_event wev) {
 
     if (wev.type == PSIGNALED) {
         proc->stat = PROC_SIG;
-        proc->exit_stat = wev.term_sig;
+        proc->term_sig = wev.term_sig;
     }
 
     else if (wev.type == PSTOPPED) {
@@ -88,14 +92,6 @@ static size_t get_job_index(pid_t jid) {
             return i;
 
     xfatal("tried to get job index of non-existant job\n");
-}
-
-static bool pg_leader_missing(pid_t pgid, da_pid *pids) {
-    for (size_t i = 0; i < pids->size; ++i)
-        if (pgid == pids->data[i])
-            return false;
-
-    return true;
 }
 
 static void remove_job (pid_t jid) {
@@ -139,8 +135,11 @@ pid_t create_job_id(void) {
 }
 
 void free_job_event(job_event *jev) {
-    if (!jev->builtin)
+    if (!jev->builtin) {
+        for (size_t i = 0; i < jev->pviews.size; ++i)
+            free_argv(jev->pviews.data[i].argv);
         da_free(&jev->pviews);
+    }
 }
 
 void clear_job_table(void) {
@@ -196,6 +195,7 @@ void capture_pviews(jc_job *job, job_event *jev) {
 
         pview->pid = proc->pid;
         pview->stat = proc->stat;
+        pview->argv = copy_argv(proc->argv);
 
         if (proc->stat == PROC_EXIT)      pview->exit_stat = proc->exit_stat;
         else if (proc->stat == PROC_SIG)  pview->term_sig = proc->term_sig;
@@ -252,6 +252,7 @@ void push_exit_event(jc_job *job) {
     *jev = (job_event){0};
 
     jev->type = JEXITED;
+    jev->intr_int = job_interrupted(job);
 
     if (job->last->stat == PROC_EXIT) {
         jev->success = (job->last->exit_stat == EXIT_SUCCESS);
@@ -259,7 +260,6 @@ void push_exit_event(jc_job *job) {
 
     } else if (job->last->stat == PROC_SIG) {
         jev->success = false;
-        jev->intr_int = job_interrupted(job);
         jev->signaled = job->last->term_sig != SIGINT;
     }
 
@@ -305,14 +305,11 @@ void queue_builtin_exit_event(pid_t jid, int status) {
     xkill(getpid(), SIGCHLD);
 }
 
-void add_job(pid_t jid, da_pid *pids, pid_t pgid) {
-    assert(pids);
+void add_job(pid_t jid, pline_data *pld) {
+    assert(pld);
 
-    if (pids->size == 0)
-        xfatal("empty pid array");
-
-    if (pg_leader_missing(pgid, pids))
-        xfatal("process group leader missing");
+    if (pld->procs.size == 0)
+        xfatal("empty pline proc array");
 
     jc_job *job = da_push(&jctl.jobs);
 
@@ -320,15 +317,19 @@ void add_job(pid_t jid, da_pid *pids, pid_t pgid) {
 
     job->jid = jid;
     job->stat = JOB_RUN;
-    job->pgrp.pgid = pgid;
+    job->pgrp.pgid = pld->pgid;
 
-    for (size_t i = 0; i < pids->size; ++i) {
+    for (size_t i = 0; i < pld->procs.size; ++i) {
         jc_proc *proc = da_push(&job->pgrp.procs);
+        pline_proc *pproc = &pld->procs.data[i];
 
-        proc->pid = pids->data[i];
+        proc->pid = pproc->pid;
         proc->stat = PROC_RUN;
+        proc->argv = pproc->argv;
 
-        if (i == pids->size - 1)
+        if (i == pld->procs.size - 1)
             job->last = proc;
     }
+
+    da_free(&pld->procs);
 }

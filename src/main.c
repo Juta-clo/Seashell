@@ -112,9 +112,7 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
         LOG_INFO("[%d] Started", jid);
 
         pline_data pld = exec_pline(pline, bg);
-        add_job(jid, pld.pids, pld.pgid);
-
-        free_pline_data(&pld);
+        add_job(jid, &pld);
     }
 }
 

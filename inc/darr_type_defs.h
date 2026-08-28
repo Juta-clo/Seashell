@@ -5,4 +5,5 @@
 #include "wait_stat.h" // IWYU pragma: export
 #include "job_state.h" // IWYU pragma: export
 #include "dstr.h" // IWYU pragma: export
+#include "exec_funcs.h" // IWYU pragma: export
 #include "../test/pty/proc_view.h" // IWYU pragma: export

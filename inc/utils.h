@@ -21,6 +21,9 @@ void errno_msg(const char *fmt, ...);
 UTIL_PFFORMAT(1, 2) UTIL_NORETURN
 void usage_err(const char *fmt, ...);
 
+void free_argv(char **argv);
+char **copy_argv(char **argv);
+
 #define xfatal(fmt, ...) \
     do { \
         LOG_ERR(fmt __VA_OPT__(,) __VA_ARGS__); \

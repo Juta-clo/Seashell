@@ -2,6 +2,7 @@
 #define JOB_STATE_H
 
 #include "darr.h"
+#include "exec_funcs.h"
 #include "wait_stat.h"
 
 typedef enum {
@@ -34,6 +35,7 @@ typedef struct proc_view proc_view;
 struct jc_proc {
     pid_t pid;
     proc_stat stat;
+    char **argv;
 
     union {
         int term_sig;
@@ -61,6 +63,7 @@ struct job_table {
 struct proc_view {
     pid_t pid;
     proc_stat stat;
+    char **argv;
 
     union {
         int term_sig;
@@ -103,6 +106,6 @@ void clear_job_events(void);
 
 pid_t lookup_job_pgrp(pid_t jid);
 void queue_builtin_exit_event(pid_t jid, int status);
-void add_job(pid_t jid, da_pid *pids, pid_t pgid);
+void add_job(pid_t jid, pline_data *pld);
 
 #endif
