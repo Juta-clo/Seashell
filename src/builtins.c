@@ -12,21 +12,17 @@
 #include "llog.h"
 #include "utils.h"
 
-static int arg_to_jid(const char *arg, const char *name) {
-    if (arg[0] != '%' || arg[1] == '\0') {
-        fprintf(stderr, "%s: invalid argument: %s\n", name, arg);
+static int get_int(const char *arg) {
+    if (arg[0] == '\0')
         return -1;
-    }
 
     char *endptr;
-    pid_t jid = (int) strtol(&arg[1], &endptr, 10);
+    pid_t num = (int) strtol(&arg[0], &endptr, 10);
 
-    if (*endptr != '\0') {
-        fprintf(stderr, "%s: invalid argument: %s\n", name, arg);
+    if (*endptr != '\0')
         return -1;
-    }
 
-    return jid;
+    return num;
 }
 
 static int arg_to_sig(char *sig_arg) {
@@ -93,28 +89,32 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
     if (!validate_argc(argv, 1, 1))
         return EXIT_FAILURE;
 
-    pid_t jid = arg_to_jid(argv[1], argv[0]);
-    if (jid == -1)
+    if (argv[1][0] != '%') {
+        fprintf(stderr, "%s: invalid argument: %s\n", argv[0], argv[1]);
         return EXIT_FAILURE;
+    }
+
+    pid_t jid = get_int(&argv[1][1]);
+    if (jid == -1) {
+        fprintf(stderr, "%s: job not found: %s\n", argv[0], argv[1]);
+        return EXIT_FAILURE;
+    }
 
     pid_t pgid = lookup_job_pgrp(jid);
 
     if (tcsetpgrp(sh_env->tty_fd, pgid) == -1) {
-        fprintf(stderr, "%s: tcsetpgrp: %m", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {
-        fprintf(stderr, "%s: killpg: %m\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1) {
-        fprintf(stderr, "%s: nanosleep: %m\n", argv[0]);
+        fprintf(stderr, "%s: tcsetpgrp: %m\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     sh_env->fg_jid = jid;
+
+    /* best effort, must report success when tcsetpgrp succeeds */
+    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH)
+        LOG_ERR("killpg: %m");
+
+    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1)
+        LOG_ERR("nanosleep: %m");
 
     return EXIT_SUCCESS;
 }
@@ -128,9 +128,16 @@ static int run_bg_builtin(char **argv, shell_env *sh_env) {
     if (!validate_argc(argv, 1, 1))
         return EXIT_FAILURE;
 
-    pid_t jid = arg_to_jid(argv[1], argv[0]);
-    if (jid == -1)
+    if (argv[1][0] != '%') {
+        fprintf(stderr, "%s: invalid argument: %s\n", argv[0], argv[1]);
         return EXIT_FAILURE;
+    }
+
+    pid_t jid = get_int(&argv[1][1]);
+    if (jid == -1) {
+        fprintf(stderr, "%s: job not found: %s\n", argv[0], argv[1]);
+        return EXIT_FAILURE;
+    }
 
     pid_t pgid = lookup_job_pgrp(jid);
 
@@ -157,39 +164,64 @@ static int run_kill_builtin(char **argv, shell_env *sh_env) {
     if (!validate_argc(argv, 1, 2))
         return EXIT_FAILURE;
 
-    int jid;
-    int sig;
+    pid_t jid;
+    pid_t pid;
+
+    char *signal_arg;
+    char *target_arg;
 
     if (!argv[2]) {
-        sig = SIGTERM;
-
-        if ((jid = arg_to_jid(argv[1], argv[0])) == -1)
-            return EXIT_FAILURE;
-
+        signal_arg = NULL;
+        target_arg = argv[1];
     } else {
-        if ((sig = arg_to_sig(argv[1])) == -1) {
-            fprintf(stderr, "%s: unknown signal: %s\n", argv[0], argv[1]);
+        signal_arg = argv[1];
+        target_arg = argv[2];
+    }
+
+    int sig = SIGTERM;
+
+    if (signal_arg) {
+        sig = arg_to_sig(signal_arg);
+        if (sig == -1) {
+            fprintf(stderr, "%s: unknown signal: %d\n", argv[0], sig);
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (target_arg[0] == '%') {
+        jid = get_int(&target_arg[1]);
+        if (jid == -1) {
+            fprintf(stderr, "%s: invalid job: %s\n", argv[0], target_arg);
             return EXIT_FAILURE;
         }
 
-        if ((jid = arg_to_jid(argv[2], argv[0])) == -1)
+        pid_t pgid = lookup_job_pgrp(jid);
+        if (pgid == -1) {
+            fprintf(stderr, "%s: no such job\n", argv[0]);
             return EXIT_FAILURE;
+        }
+
+        if (killpg(pgid, sig) == -1 && errno != ESRCH) {
+            fprintf(stderr, "%s: killpg failed: %m\n", argv[0]);
+            return EXIT_FAILURE;
+        }
+
+    } else {
+        pid = get_int(target_arg);
+        if (pid == -1) {
+            fprintf(stderr, "%s: illegal pid: %s\n", argv[0], target_arg);
+            return EXIT_FAILURE;
+        }
+
+        if (kill(pid, sig) == -1 && errno != ESRCH) {
+            fprintf(stderr, "%s: kill failed: %m\n", argv[0]);
+            return EXIT_FAILURE;
+        }
     }
 
-
-    pid_t pgid = lookup_job_pgrp(jid);
-    if (pgid == -1) {
-        fprintf(stderr, "%s: %d: no such job\n", argv[0], jid);
-        return EXIT_FAILURE;
-    }
-
-    if (killpg(pgid, sig) == -1 && errno != ESRCH) {
-        fprintf(stderr, "%s: killpg: %m\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
+    /* Report the signal more consistently when delivered immediately */
     if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1) {
-        fprintf(stderr, "%s: nanosleep: %m\n", argv[0]);
+        fprintf(stderr, "%s: nanosleep failed: %m\n", argv[0]);
         return EXIT_FAILURE;
     }
 
