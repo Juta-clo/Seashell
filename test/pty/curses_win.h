@@ -26,6 +26,7 @@ typedef struct {
 extern curses_win wins[MAX_WIN];
 
 void init_curses_wins(void);
+void print_divider(const char *text);
 void render_lines(curses_win *win);
 bool handle_mouse_event(void);
 

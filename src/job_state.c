@@ -114,7 +114,7 @@ static bool job_inter_stopped(jc_job *job) {
 static bool job_interrupted(jc_job *job) {
     for (size_t i = 0; i < job->pgrp.procs.size; ++i)
         if (job->pgrp.procs.data[i].stat == PROC_SIG)
-            if (job->pgrp.procs.data[i].stop_sig == SIGINT)
+            if (job->pgrp.procs.data[i].term_sig == SIGINT)
                 return true;
 
     return false;

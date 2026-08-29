@@ -16,7 +16,10 @@ struct pty_test {
     int cpid;
     dstr ptydata;
     size_t pred_i;
-    // da_dstr lines;
+    // da_dstr raw_lines;
+    // da_dstr shell_lines;
+    // da_dstr val_lines;
+    // da_dstr test_lines;
 };
 
 typedef struct pty_test pty_test;
@@ -35,6 +38,8 @@ extern da_pty_test all_tests;
 
 extern int sh_pipe[2];
 extern int val_pipe[2];
+extern char *shell_lfd_arg;
+extern char *val_lfd_arg;
 extern dstr unity_buf;
 
 extern struct termios tio;
@@ -46,17 +51,11 @@ extern int val_test_errs;
 /* CREATED FOR EACH TEST */
 
 extern pty_test *cur_test;
-
-extern int mfd;
-extern int cpid;
-extern dstr ptydata;
-extern size_t pred_i;
-
 extern dstr reqdata;
 
 /****** SETUP *******/
 
-void test_init(void);
+void harness_init(void);
 
 /****** HANDLERS *******/
 
@@ -83,6 +82,7 @@ char *request_chars(size_t nchars, size_t *index, int ms);
 void pty_send(const char *msg);
 void pty_cc(int cc_code);
 
+void new_test(void);
 void new_shell(void);
 void delete_shell(void);
 

@@ -19,6 +19,8 @@ da_pty_test all_tests;
 
 int sh_pipe[2];
 int val_pipe[2];
+char *shell_lfd_arg;
+char *val_lfd_arg;
 dstr unity_buf;
 
 struct termios tio;
@@ -28,16 +30,9 @@ bool first = true;
 int val_test_errs = 0;
 
 pty_test *cur_test;
-
-int mfd;
-int cpid;
-dstr ptydata;
-size_t pred_i;
-
 dstr reqdata;
 
-
-void test_init(void) {
+void harness_init(void) {
     da_init(&all_tests);
 
     set_xfatal_handler(pty_xfatal_func);
@@ -54,10 +49,13 @@ void test_init(void) {
 
     xpipe2(sh_pipe, O_NONBLOCK);
     pollfds[POLL_SHELL].fd = sh_pipe[0];
+    if (asprintf(&shell_lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
+        TEST_FAIL_MESSAGE("asprintf: input output error");
 
     xpipe2(val_pipe, O_NONBLOCK);
     pollfds[POLL_VAL].fd = val_pipe[0];
-
+    if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
+        TEST_FAIL_MESSAGE("asprintf: input output error");
 }
 
 XFATAL_HANDLER(pty_xfatal_func) {
@@ -187,7 +185,7 @@ char *flush_stream(int fd, bool break_on_eio) {
 
 void pty_ensure(const char *msg) {
     size_t len = strlen(msg);
-    char *pty_chars = request_chars(len, &pred_i, 1000);
+    char *pty_chars = request_chars(len, &cur_test->pred_i, 1000);
 
     TEST_ASSERT_EQUAL_size_t(len, strlen(pty_chars));
     TEST_ASSERT_EQUAL_STRING(msg, pty_chars);
@@ -198,11 +196,11 @@ void child_pstat_snapshot(void) {
     char info_buf[INFO_BUF_SIZE];
 
     da_pstat pstats;
-    if (child_pstat(cpid, &pstats) == -1)
+    if (child_pstat(cur_test->cpid, &pstats) == -1)
         TEST_FAIL_MESSAGE("child_pstat");
 
     if (pstats.size > 0) {
-        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d)\n", cpid);
+        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d)\n", cur_test->cpid);
         add_lines(TEST_WIN, info_buf);
 
         for (size_t i = 0; i < pstats.size; ++i) {
@@ -212,7 +210,8 @@ void child_pstat_snapshot(void) {
             add_lines(TEST_WIN, info_buf);
         }
     } else {
-        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d) no children\n", cpid);
+        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d) no children\n",
+                cur_test->cpid);
         add_lines(TEST_WIN, info_buf);
     }
 
@@ -225,7 +224,7 @@ void flush_win(int win_num) {
 
     switch (win_num) {
     case RAW_WIN:
-        fd = mfd;
+        fd = cur_test->mfd;
         break_on_eio = true;
         break;
     case LOG_WIN:
@@ -247,7 +246,7 @@ void flush_win(int win_num) {
 
 char *request_chars(size_t nchars, size_t *index, int ms) {
     assert(index);
-    assert(ptydata.len >= *index);
+    assert(cur_test->ptydata.len >= *index);
 
     if (nchars == 0) {
         LOG_WARN("requested 0 characters");
@@ -258,8 +257,8 @@ char *request_chars(size_t nchars, size_t *index, int ms) {
     pollfds[POLL_TFD] = (struct pollfd){.fd = tfd, .events = POLLIN};
 
     while (true) {
-        if (ptydata.len - *index >= nchars) {
-            dstrncpy(&reqdata, &ptydata.c_str[*index], nchars);
+        if (cur_test->ptydata.len - *index >= nchars) {
+            dstrncpy(&reqdata, &cur_test->ptydata.c_str[*index], nchars);
             *index += nchars;
             goto done;
         }
@@ -280,8 +279,8 @@ char *request_chars(size_t nchars, size_t *index, int ms) {
         }
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
-            char *data = flush_stream(mfd, false);
-            dstrcat(&ptydata, data);
+            char *data = flush_stream(cur_test->mfd, false);
+            dstrcat(&cur_test->ptydata, data);
             add_lines(RAW_WIN, data);
 
             free(data);
@@ -296,14 +295,14 @@ done:
 void pty_send(const char *msg) {
     int len = (int) strlen(msg);
 
-    if (write(mfd, msg, len) != len)
+    if (write(cur_test->mfd, msg, len) != len)
         TEST_FAIL_MESSAGE("failed/partial write");
 
     add_lines(RAW_WIN, msg);
 }
 
 void pty_cc(int cc_code) {
-    if (write(mfd, &tio.c_cc[cc_code], 1) != 1)
+    if (write(cur_test->mfd, &tio.c_cc[cc_code], 1) != 1)
         TEST_FAIL_MESSAGE("failed/partial write");
 
     char *cc_out;
@@ -317,24 +316,12 @@ void pty_cc(int cc_code) {
     add_lines(RAW_WIN, cc_out);
 }
 
-void new_shell(void) {
-    dstr_init(&ptydata);
-    dstr_init(&reqdata);
-    pred_i = 0;
+void new_test(void) {
+    cur_test = da_push(&all_tests);
 
-    cpid = xforkpty(&mfd, NULL, &tio, NULL);
-    pollfds[POLL_MFD].fd = mfd;
+    cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, NULL);
 
-    if (cpid == 0) {
-
-        char *val_lfd_arg;
-        if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
-            TEST_FAIL_MESSAGE("asprintf: input output error");
-
-        char *lfd_arg;
-        if (asprintf(&lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
-            TEST_FAIL_MESSAGE("asprintf: input output error");
-
+    if (cur_test->cpid == 0) {
         char *argv[] = {
             // "valgrind",
             //     "--vgdb=no",
@@ -346,7 +333,7 @@ void new_shell(void) {
 
             "/home/juta/Projects/Seashell/seashell",
                 "--prompt=simple",
-                lfd_arg,
+                shell_lfd_arg,
             NULL
         };
 
@@ -354,50 +341,36 @@ void new_shell(void) {
         _exit(EXIT_FAILURE);
     }
 
-    if (ioctl(mfd, FIONBIO, &(int){1}) == -1) {
+    if (ioctl(cur_test->mfd, FIONBIO, &(int){1}) == -1) {
         LOG_ERR("ioctl");
         TEST_FAIL_MESSAGE("ioctl");
     }
 
-    for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
-        curses_win *win = &wins[win_i];
+    dstr_init(&cur_test->ptydata);
+    cur_test->pred_i = 0;
+}
 
-        if (!first) {
-            if (win_i == RAW_WIN)
-                add_lines(win_i, "\n");
+void new_shell(void) {
+    new_test();
 
-            add_lines(win_i, "\n");
-        }
+    pollfds[POLL_MFD].fd = cur_test->mfd;
+    dstr_init(&reqdata);
 
-        for (int y = 0 ; y < win->ncols - 1; ++y)
-            add_lines(win_i, "-");
-
-        add_lines(win_i, "\n");
-        add_lines(win_i, Unity.CurrentTestName);
-        add_lines(win_i, "\n");
-
-        for (int y = 0 ; y < win->ncols - 1; ++y)
-            add_lines(win_i, "-");
-
-        add_lines(win_i, "\n");
-        add_lines(win_i, "\n");
-    }
-
+    print_divider(Unity.CurrentTestName);
     pty_ensure(PROMPT);
 }
 
 void delete_shell(void) {
-    xkill(cpid, SIGHUP);
+    xkill(cur_test->cpid, SIGHUP);
 
-    if (waitpid(cpid, NULL, 0) == -1)
+    if (waitpid(cur_test->cpid, NULL, 0) == -1)
         TEST_FAIL_MESSAGE("waitpid failed");
 
     flush_win(LOG_WIN);
     flush_win(RAW_WIN);
 
-    dstr_free(&ptydata);
     dstr_free(&reqdata);
-    close(mfd);
+    close(cur_test->mfd);
 
     first = false;
 }

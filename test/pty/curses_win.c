@@ -59,6 +59,32 @@ void init_curses_wins() {
     refresh();
 }
 
+void print_divider(const char *text) {
+    for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
+        curses_win *win = &wins[win_i];
+
+        if (!first) {
+            if (win_i == RAW_WIN)
+                add_lines(win_i, "\n");
+
+            add_lines(win_i, "\n");
+        }
+
+        for (int y = 0 ; y < win->ncols - 1; ++y)
+            add_lines(win_i, "-");
+
+        add_lines(win_i, "\n");
+        add_lines(win_i, text);
+        add_lines(win_i, "\n");
+
+        for (int y = 0 ; y < win->ncols - 1; ++y)
+            add_lines(win_i, "-");
+
+        add_lines(win_i, "\n");
+        add_lines(win_i, "\n");
+    }
+}
+
 void render_lines(curses_win *win) {
     for (int i = 0, wn = 0; i < win->nlines; ++i) {
         if (i + win->offset > (int) win->lines.size - 1)

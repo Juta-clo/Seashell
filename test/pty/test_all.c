@@ -30,7 +30,7 @@ int main(int argc, const char **argv) {
     xatexit(ncurses_cleanup);
 
     init_curses_wins();
-    test_init();
+    harness_init();
 
     int tests_failed = UnityMain(argc, argv, run_all);
 
