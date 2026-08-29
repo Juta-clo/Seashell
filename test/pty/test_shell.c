@@ -572,7 +572,6 @@ TEST(shell, send_sigint_to_process_that_catches_it) {
     pty_ensure("x\n");
 
     pty_cc(VINTR);
-
     pty_ensure("\n");
     pty_ensure(PROMPT);
 }

@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <string.h>
 #include <stdlib.h>
 #include <locale.h>
 #include <ncurses.h>
@@ -47,15 +48,23 @@ static void ncurses_setup(void) {
 }
 
 static void render_lines(curses_win *win) {
-    for (int i = 0; i < win->nlines; ++i) {
+    for (int i = 0, wn = 0; i < win->nlines; ++i) {
         if (i + win->offset > (int) win->lines.size - 1)
             continue;
 
         if (i + win->offset < 0)
             continue;
 
-        dstr *line = &win->lines.data[i + win->offset];
-        mvwaddnstr(win->win, i, 0, line->c_str, win->ncols);
+        dstr *line = &win->lines.data[i - wn + win->offset];
+        mvwaddnstr(win->win, i, 0, line->c_str, win->ncols - 1);
+
+        char *p = line->c_str;
+
+        while ((int) strlen(p) > win->ncols - 1 && i + wn + 1 < win->nlines) {
+            p += win->ncols - 1;
+            mvwaddnstr(win->win, ++i, 0, p, win->ncols - 1);
+            ++wn;
+        }
     }
 
     mvwprintw(win->win, 0, 0, "lines[%d]", win->offset);
