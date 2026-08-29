@@ -15,6 +15,7 @@ static void test_init(void) {
     set_xfatal_handler(pty_xfatal_func);
     llog_set_sink(pty_test_sink);
     xpipe2(sh_pipe, O_NONBLOCK);
+    xpipe2(val_pipe, O_NONBLOCK);
     dstr_init(&unity_buf);
 
     xtcgetattr(STDERR_FILENO, &tio);
@@ -104,7 +105,18 @@ int main(int argc, const char **argv) {
 
     int tests_failed = UnityMain(argc, argv, run_all);
 
+    add_lines(TEST_WIN, "\n");
     add_lines(TEST_WIN, unity_buf.c_str);
+
+    char val_sum[4096];
+
+    if (val_test_errs == 0) {
+        snprintf(val_sum, 4096,
+                "\nAll heap blocks were freed -- no leaks are possible");
+    } else
+        snprintf(val_sum, 4096, "\nValgrind %d Errors", val_test_errs);
+
+    add_lines(TEST_WIN, val_sum);
 
     for (size_t i = 0; i < MAX_WIN; ++i) {
         curses_win *win = &wins[i];

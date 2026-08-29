@@ -11,6 +11,8 @@
 #include "xfuncs.h"
 
 int sh_pipe[2];
+int val_pipe[2];
+int val_test_errs = 0;
 curses_win wins[4];
 dstr unity_buf;
 struct termios tio;
@@ -90,12 +92,12 @@ void add_lines(int win_num, const char *str) {
 
 int mev_to_win(MEVENT *mev) {
     if (mev->x >= wins[TEST_WIN].x) {
-        if (mev->y >= wins[JOB_WIN].y)
-            return JOB_WIN;
+        if (mev->y >= wins[VAL_WIN].y)
+            return VAL_WIN;
         else
             return TEST_WIN;
     } else {
-        if (mev->y >= wins[JOB_WIN].y)
+        if (mev->y >= wins[VAL_WIN].y)
             return LOG_WIN;
         else
             return RAW_WIN;

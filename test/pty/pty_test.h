@@ -21,7 +21,7 @@ typedef enum {
     RAW_WIN,
     TEST_WIN,
     LOG_WIN,
-    JOB_WIN,
+    VAL_WIN,
     MAX_WIN
 } win_names;
 
@@ -43,9 +43,11 @@ typedef struct {
 } pty_io;
 
 extern int sh_pipe[2];
+extern int val_pipe[2];
 extern curses_win wins[MAX_WIN];
 extern dstr unity_buf;
 extern struct termios tio;
+extern int val_test_errs;
 
 XFATAL_HANDLER(pty_xfatal_func);
 void curs_err(const char *msg);

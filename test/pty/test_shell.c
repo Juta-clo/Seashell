@@ -10,21 +10,22 @@
 #include <pty.h>
 #include <sys/wait.h>
 
+#include "proc_view.h"
 #include "unity_fixture.h"
 #include "xfuncs.h"
 #include "dstr.h"
 #include "pty_test.h"
-#include "proc_view.h"
 
 TEST_GROUP(shell);
 
 /************ Shared utils ************/
 #define PROMPT "> "
 
-#define NFDS 3
+#define NFDS 4
 #define POLL_MFD 0
 #define POLL_SHELL 1
 #define POLL_TFD 2
+#define POLL_VAL 3
 
 static dstr ptydata;
 static dstr reqdata;
@@ -46,17 +47,17 @@ static void child_pstat_snapshot(void) {
 
     if (pstats.size > 0) {
         snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d)\n", cpid);
-        add_lines(JOB_WIN, info_buf);
+        add_lines(TEST_WIN, info_buf);
 
         for (size_t i = 0; i < pstats.size; ++i) {
-            add_lines(JOB_WIN, "    ");
+            add_lines(TEST_WIN, "    ");
             snprintf(info_buf, INFO_BUF_SIZE, "%s (%d)\n",
                     pstats.data[i].name, pstats.data[i].pid);
-            add_lines(JOB_WIN, info_buf);
+            add_lines(TEST_WIN, info_buf);
         }
     } else {
         snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d) no children\n", cpid);
-        add_lines(JOB_WIN, info_buf);
+        add_lines(TEST_WIN, info_buf);
     }
 
     da_free(&pstats);
@@ -75,8 +76,10 @@ static void flush_win(int win_num) {
         fd = sh_pipe[0];
         break_on_eio = false;
         break;
-    case JOB_WIN:
-        return;
+    case VAL_WIN:
+        fd = val_pipe[0];
+        break_on_eio = false;
+        break;
     case TEST_WIN:
         return;
     }
@@ -113,6 +116,11 @@ static char *request_chars(size_t nchars, size_t *index, int ms) {
 
         if (pollfds[POLL_SHELL].revents & POLLIN) {
             flush_win(LOG_WIN);
+        }
+
+        if (pollfds[POLL_VAL].revents & POLLIN) {
+            ++val_test_errs;
+            flush_win(VAL_WIN);
         }
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
@@ -171,17 +179,29 @@ TEST_SETUP(shell) {
     cpid = xforkpty(&mfd, NULL, &tio, NULL);
 
     if (cpid == 0) {
-        char *bin = "/home/juta/Projects/Seashell/seashell";
 
-        char *prompt_arg;
-        if (asprintf(&prompt_arg, "--prompt=simple") < 0)
+        char *val_lfd_arg;
+        if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
             TEST_FAIL_MESSAGE("asprintf: input output error");
 
         char *lfd_arg;
         if (asprintf(&lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
             TEST_FAIL_MESSAGE("asprintf: input output error");
 
-        char *argv[] = { bin, prompt_arg, lfd_arg, NULL };
+        char *argv[] = {
+            "valgrind",
+                "--vgdb=no",
+                "--quiet",
+                "--leak-check=full",
+                "--errors-for-leak-kinds=definite,indirect",
+                "--show-leak-kinds=definite,indirect",
+                val_lfd_arg,
+
+            "/home/juta/Projects/Seashell/seashell",
+                "--prompt=simple",
+                lfd_arg,
+            NULL
+        };
 
         execvp(argv[0], argv);
         _exit(EXIT_FAILURE);
@@ -197,6 +217,9 @@ TEST_SETUP(shell) {
 
     pollfds[POLL_SHELL].events = POLLIN;
     pollfds[POLL_SHELL].fd = sh_pipe[0];
+
+    pollfds[POLL_VAL].events = POLLIN;
+    pollfds[POLL_VAL].fd = val_pipe[0];
 
     for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
         curses_win *win = &wins[win_i];
@@ -331,8 +354,6 @@ TEST(shell, bg_job_done_with_fg_job) {
     pty_ensure(PROMPT);
 
     pty_send("sleep 1\n"); /* lose fgroup control */
-
-    child_pstat_snapshot();
 
     pty_ensure("[1] Done - Exited with status 0\n");
     /* shouldn't see prompt between exit messages */
@@ -486,13 +507,9 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
     pty_ensure("   sleep 100 Running\n");
     pty_ensure(PROMPT);
 
-    child_pstat_snapshot();
-
     pty_send("kill %1\n");
     pty_ensure("[1] Done - Terminated by signal 15\n");
     pty_ensure(PROMPT);
-
-    child_pstat_snapshot();
 
     pty_send("jobs\n");
     pty_ensure(PROMPT);
@@ -571,17 +588,18 @@ TEST(shell, send_sigint_to_process_that_catches_it) {
     pty_send("sleep 100 | write_sleep\n");
     pty_ensure("x\n");
 
+    child_pstat_snapshot();
+
     pty_cc(VINTR);
     pty_ensure("\n");
     pty_ensure(PROMPT);
 }
 
 TEST(shell, stopped_process_then_kill_builtin) {
-    pty_send("self_kill -STOP | sleep 100 &\n");
+    pty_send("self_kill -STOP | sleep 100 | write_sleep &\n");
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
-
-    child_pstat_snapshot();
+    pty_ensure("x\n");
 
     pty_send("kill %1\n");
     pty_ensure("[1] Stopped\n");
@@ -589,21 +607,6 @@ TEST(shell, stopped_process_then_kill_builtin) {
 }
 
 /************ Test runner ************/
-
-// SIGINT on any process causes a newline to be printed. It does NOT have
-// to be the last process.
-//
-// SIGTSTP that causes a job to transition to the stopped state causes a
-// newline to be printed.
-//
-// The final process exiting determines the job control output message.
-// - If the final process is terminated by SIGINT then we print nothing.
-// - If the final process exits normally we print the exit status.
-// - If the final process terminated by a signal then we print the term sig.
-//
-// The first process to stop determines the job control output message.
-// - If the first process is stopped by SIGTSTP then we print newline + message
-// - If the first process is stopped by a signal then we print the stop sig
 
 TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, prompt_after_reclaim_tty);
