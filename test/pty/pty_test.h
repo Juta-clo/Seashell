@@ -8,135 +8,82 @@
 #include "llog.h"
 #include "xfuncs.h"
 
+#define PROMPT "> "
 #define PTY_RBUF 100000
 
-#define CP_DEFAULT 0
-#define CP_RED_CL 1
-#define CP_GREEN_CL 2
-#define CP_CYAN_CL 3
-#define CP_YELLOW_CL 4
-#define CP_MAGENTA_CL 5
+struct pty_test {
+    int mfd;
+    int cpid;
+    dstr ptydata;
+    size_t pred_i;
+    // da_dstr lines;
+};
+
+typedef struct pty_test pty_test;
 
 typedef enum {
-    RAW_WIN,
-    TEST_WIN,
-    LOG_WIN,
-    VAL_WIN,
-    MAX_WIN
-} win_names;
+    POLL_MFD,
+    POLL_SHELL,
+    POLL_VAL,
+    POLL_TFD,
+    NFDS,
+} poll_fds;
 
-typedef struct {
-    WINDOW *win;
-    da_dstr lines;
-    int offset;
-    int nlines;
-    int ncols;
-    int y;
-    int x;
-} curses_win;
+/* PERSISTS ACROSS TESTS */
 
-typedef struct {
-    size_t len;
-    char buf[PTY_RBUF];
-    size_t n;
-} pty_io;
+extern da_pty_test all_tests;
 
 extern int sh_pipe[2];
 extern int val_pipe[2];
-extern curses_win wins[MAX_WIN];
 extern dstr unity_buf;
+
 extern struct termios tio;
+extern struct pollfd pollfds[NFDS];/* some fds need to be reinitialized */
+
+extern bool first;
 extern int val_test_errs;
+
+/* CREATED FOR EACH TEST */
+
+extern pty_test *cur_test;
+
+extern int mfd;
+extern int cpid;
+extern dstr ptydata;
+extern size_t pred_i;
+
+extern dstr reqdata;
+
+/****** SETUP *******/
+
+void test_init(void);
+
+/****** HANDLERS *******/
 
 XFATAL_HANDLER(pty_xfatal_func);
 void curs_err(const char *msg);
 LLOG_SINK(pty_test_sink);
 void unity_output_char(int c);
 
+/****** UTILITIES *******/
+
+dstr *push_line(da_dstr *lines);
+dstr *last_line(da_dstr *lines);
 void add_lines(int win_num, const char *str);
+
 int mev_to_win(MEVENT *mev);
 char *flush_stream(int fd, bool break_on_eio);
+void flush_win(int win_num);
+
 int start_timerfd(int ms);
-curses_win *init_wins(curses_win wins[4]);
 
-#define xwprintw(_win, _fmt, ...) \
-    ({ \
-        int rv = wprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
-        if (rv == ERR) \
-            curs_err("wprintw"); \
-        rv; \
-    })
+void pty_ensure(const char *msg);
+void child_pstat_snapshot(void);
+char *request_chars(size_t nchars, size_t *index, int ms);
+void pty_send(const char *msg);
+void pty_cc(int cc_code);
 
-#define xmvaddch(y, x, ch) \
-    ({ \
-        int rv = mvaddch(y, x, ch); \
-        if (rv == ERR) \
-            curs_err("mvaddch"); \
-        rv; \
-    })
-
-#define xwaddch(_win, _ch) \
-    ({ \
-        int rv = waddch(_win, _ch); \
-        if (rv == ERR) \
-            curs_err("waddch"); \
-        rv; \
-    })
-
-#define xwrefresh(_win) \
-    ({ \
-        int rv = wrefresh(_win); \
-        if (rv == ERR) \
-            curs_err("wrefresh"); \
-        rv; \
-    })
-
-#define xderwin(_orig, _nlines, _ncols, _begin_y, _begin_x) \
-    ({ \
-        WINDOW *rv = derwin(_orig, _nlines, _ncols, _begin_y, _begin_x); \
-        if (!rv) \
-            curs_err("derwin"); \
-        rv; \
-    })
-
-#define xwattron(_win, cp) \
-    ({ \
-        int rv = wattron(_win, cp); \
-        if (rv == ERR) \
-            curs_err("wattron"); \
-        rv; \
-    })
-
-#define xwattroff(_win, cp) \
-    ({ \
-        int rv = wattroff(_win, cp); \
-        if (rv == ERR) \
-            curs_err("wattroff"); \
-        rv; \
-    })
-
-#define xwerase(_win) \
-    ({ \
-        int rv = werase(_win); \
-        if (rv == ERR) \
-            curs_err("werase"); \
-        rv; \
-    })
-
-#define wcprintw(_win, cp_num, _fmt, ...) \
-    do { \
-        wattron(_win, COLOR_PAIR(cp_num)); \
-        wprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
-        wattroff(_win, COLOR_PAIR(cp_num)); \
-        wattron(_win, COLOR_PAIR(CP_DEFAULT)); \
-    } while (false)
-
-#define xwcprintw(_win, cp_num, _fmt, ...) \
-    do { \
-        xwattron(_win, COLOR_PAIR(cp_num)); \
-        xwprintw(_win, _fmt __VA_OPT__(,) __VA_ARGS__); \
-        xwattroff(_win, COLOR_PAIR(cp_num)); \
-        xwattron(_win, COLOR_PAIR(CP_DEFAULT)); \
-    } while (false)
+void new_shell(void);
+void delete_shell(void);
 
 #endif

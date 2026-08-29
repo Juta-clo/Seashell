@@ -1,94 +1,17 @@
 #define _GNU_SOURCE
 
+#include <locale.h>
 #include <string.h>
 #include <stdlib.h>
-#include <locale.h>
 #include <ncurses.h>
 
 #include "unity_fixture.h"
-#include "xfuncs.h"
-#include "llog.h"
 #include "pty_test.h"
 #include "dstr.h"
+#include "curses_win.h"
 
-static void test_init(void) {
-    set_xfatal_handler(pty_xfatal_func);
-    llog_set_sink(pty_test_sink);
-    xpipe2(sh_pipe, O_NONBLOCK);
-    xpipe2(val_pipe, O_NONBLOCK);
-    dstr_init(&unity_buf);
-
-    xtcgetattr(STDERR_FILENO, &tio);
-    tio.c_lflag &= ~ECHO; /* don't echo, non-interactive */
-    tio.c_oflag &= ~OPOST; /* no post processing, \r\n -> \n */
-}
-
-static void ncurses_cleanup(void) {
-    getch();
-    for (size_t i = 0; i < 4; ++i)
-        delwin(wins[i].win);
+void ncurses_cleanup(void) {
     endwin();
-}
-
-static void ncurses_setup(void) {
-    setlocale(LC_ALL, "");
-    initscr();
-    curs_set(0);
-    cbreak();
-    noecho();
-    start_color();
-    use_default_colors();
-    init_pair(CP_RED_CL, COLOR_RED, COLOR_BLACK);
-    init_pair(CP_GREEN_CL, COLOR_GREEN, COLOR_BLACK);
-    init_pair(CP_CYAN_CL, COLOR_CYAN, COLOR_BLACK);
-    init_pair(CP_MAGENTA_CL, COLOR_MAGENTA, COLOR_BLACK);
-    init_pair(CP_YELLOW_CL, COLOR_YELLOW, COLOR_BLACK);
-
-    refresh();
-    xatexit(ncurses_cleanup);
-}
-
-static void render_lines(curses_win *win) {
-    for (int i = 0, wn = 0; i < win->nlines; ++i) {
-        if (i + win->offset > (int) win->lines.size - 1)
-            continue;
-
-        if (i + win->offset < 0)
-            continue;
-
-        dstr *line = &win->lines.data[i - wn + win->offset];
-        mvwaddnstr(win->win, i, 0, line->c_str, win->ncols - 1);
-
-        char *p = line->c_str;
-
-        while ((int) strlen(p) > win->ncols - 1 && i + wn + 1 < win->nlines) {
-            p += win->ncols - 1;
-            mvwaddnstr(win->win, ++i, 0, p, win->ncols - 1);
-            ++wn;
-        }
-    }
-
-    mvwprintw(win->win, 0, 0, "lines[%d]", win->offset);
-}
-
-static bool handle_mouse_event(void) {
-    MEVENT mev;
-    if (getmouse(&mev) == ERR)
-        return false;
-
-    curses_win *win = &wins[mev_to_win(&mev)];
-
-    if (mev.bstate & BUTTON4_PRESSED)
-        --win->offset;
-
-    if (mev.bstate & BUTTON5_PRESSED)
-        ++win->offset;
-
-    werase(win->win);
-    render_lines(win);
-    wrefresh(win->win);
-
-    return true;
 }
 
 void run_all(void) {
@@ -96,12 +19,18 @@ void run_all(void) {
 }
 
 int main(int argc, const char **argv) {
-    ncurses_setup();
-    test_init();
-    init_wins(wins);
+    setlocale(LC_ALL, "");
+    initscr();
+    curs_set(0);
+    cbreak();
+    noecho();
+    start_color();
+    use_default_colors();
+    refresh();
+    xatexit(ncurses_cleanup);
 
-    // int argc = 2;
-    // const char *argv[] = { "./pty_test",  NULL };
+    init_curses_wins();
+    test_init();
 
     int tests_failed = UnityMain(argc, argv, run_all);
 

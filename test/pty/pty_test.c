@@ -4,19 +4,61 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "pty_test.h"
+#include "curses_win.h"
 #include "dstr.h"
 #include "llog.h"
+#include "proc_view.h"
+#include "unity.h"
 #include "xfuncs.h"
+
+da_pty_test all_tests;
 
 int sh_pipe[2];
 int val_pipe[2];
-int val_test_errs = 0;
-curses_win wins[4];
 dstr unity_buf;
+
 struct termios tio;
+struct pollfd pollfds[NFDS];
+
+bool first = true;
+int val_test_errs = 0;
+
+pty_test *cur_test;
+
+int mfd;
+int cpid;
+dstr ptydata;
+size_t pred_i;
+
+dstr reqdata;
+
+
+void test_init(void) {
+    da_init(&all_tests);
+
+    set_xfatal_handler(pty_xfatal_func);
+    llog_set_sink(pty_test_sink);
+
+    dstr_init(&unity_buf);
+
+    xtcgetattr(STDERR_FILENO, &tio);
+    tio.c_lflag &= ~ECHO; /* don't echo, non-interactive */
+    tio.c_oflag &= ~OPOST; /* no post processing, \r\n -> \n */
+
+    for (int i = 0; i < NFDS; ++i)
+        pollfds[i].events = POLLIN;
+
+    xpipe2(sh_pipe, O_NONBLOCK);
+    pollfds[POLL_SHELL].fd = sh_pipe[0];
+
+    xpipe2(val_pipe, O_NONBLOCK);
+    pollfds[POLL_VAL].fd = val_pipe[0];
+
+}
 
 XFATAL_HANDLER(pty_xfatal_func) {
     endwin();
@@ -48,6 +90,16 @@ void unity_output_char(int c) {
     dstr_push(&unity_buf, c);
 }
 
+dstr *push_line(da_dstr *lines) {
+    dstr *line = da_push(lines);
+    dstr_init(line);
+    return line;
+}
+
+dstr *last_line(da_dstr *lines) {
+    return &lines->data[lines->size - 1];
+}
+
 void add_lines(int win_num, const char *str) {
     assert(str);
 
@@ -57,16 +109,15 @@ void add_lines(int win_num, const char *str) {
     curses_win *win = &wins[win_num];
 
     if (win->lines.size == 0)
-        dstr_init(da_push(&win->lines));
+        push_line(&win->lines);
 
     for (const char *c = str; *c != '\0'; ++c) {
         if (*c == '\n') {
-            dstr_init(da_push(&win->lines));
+            push_line(&win->lines);
             continue;
         }
 
-        dstr *latest = &win->lines.data[win->lines.size - 1];
-        dstr_push(latest, *c);
+        dstr_push(last_line(&win->lines), *c);
     }
 }
 
@@ -134,55 +185,219 @@ char *flush_stream(int fd, bool break_on_eio) {
     return out;
 }
 
-curses_win *init_wins(curses_win wins[4]) {
-    int y, x;
-    getmaxyx(stdscr, y, x);
+void pty_ensure(const char *msg) {
+    size_t len = strlen(msg);
+    char *pty_chars = request_chars(len, &pred_i, 1000);
 
-    int by = (y % 2 == 0) ? y / 2 : y / 2 + 1;
-    int bx = (x % 2 == 0) ? x / 2 : x / 2 + 1;
+    TEST_ASSERT_EQUAL_size_t(len, strlen(pty_chars));
+    TEST_ASSERT_EQUAL_STRING(msg, pty_chars);
+}
 
-    wins[0] = (curses_win){
-        .nlines = by - 1, .ncols = bx - 1,
-        .y      = 0,      .x     = 0
-    };
+void child_pstat_snapshot(void) {
+#define INFO_BUF_SIZE 4096
+    char info_buf[INFO_BUF_SIZE];
 
-    wins[1] = (curses_win){
-        .nlines = by - 1, .ncols = x / 2,
-        .y      = 0,      .x     = bx
-    };
+    da_pstat pstats;
+    if (child_pstat(cpid, &pstats) == -1)
+        TEST_FAIL_MESSAGE("child_pstat");
 
-    wins[2] = (curses_win){
-        .nlines = y / 2, .ncols = bx - 1,
-        .y      = by,    .x     = 0
-    };
+    if (pstats.size > 0) {
+        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d)\n", cpid);
+        add_lines(TEST_WIN, info_buf);
 
-    wins[3] = (curses_win){
-        .nlines = y / 2, .ncols = x / 2,
-        .y      = by,    .x     = bx
-    };
-
-    for (size_t i = 0; i < 4; ++i) {
-        curses_win *cwin = &wins[i];
-
-        cwin->win = xderwin(stdscr, cwin->nlines, cwin->ncols, cwin->y, cwin->x);
-        xwrefresh(cwin->win);
-        scrollok(wins[i].win, true);
+        for (size_t i = 0; i < pstats.size; ++i) {
+            add_lines(TEST_WIN, "    ");
+            snprintf(info_buf, INFO_BUF_SIZE, "%s (%d)\n",
+                    pstats.data[i].name, pstats.data[i].pid);
+            add_lines(TEST_WIN, info_buf);
+        }
+    } else {
+        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d) no children\n", cpid);
+        add_lines(TEST_WIN, info_buf);
     }
 
-    for (int i = 0; i < y; ++i) {
-        if (i == by - 1) {
-            xmvaddch(i, bx - 1, ACS_PLUS);
-        } else
-            xmvaddch(i, bx - 1, ACS_VLINE);
+    da_free(&pstats);
+}
+
+void flush_win(int win_num) {
+    int fd;
+    bool break_on_eio;
+
+    switch (win_num) {
+    case RAW_WIN:
+        fd = mfd;
+        break_on_eio = true;
+        break;
+    case LOG_WIN:
+        fd = sh_pipe[0];
+        break_on_eio = false;
+        break;
+    case VAL_WIN:
+        fd = val_pipe[0];
+        break_on_eio = false;
+        break;
+    case TEST_WIN:
+        return;
     }
 
-    for (int i = 0; i < x; ++i) {
-        if (i == bx - 1) {
-            xmvaddch(by - 1, i, ACS_PLUS);
-        } else
-            xmvaddch(by - 1, i, ACS_HLINE);
+    char *data = flush_stream(fd, break_on_eio);
+    add_lines(win_num, data);
+    free(data);
+}
+
+char *request_chars(size_t nchars, size_t *index, int ms) {
+    assert(index);
+    assert(ptydata.len >= *index);
+
+    if (nchars == 0) {
+        LOG_WARN("requested 0 characters");
+        return "";
     }
 
-    refresh();
-    return wins;
+    int tfd = start_timerfd(ms);
+    pollfds[POLL_TFD] = (struct pollfd){.fd = tfd, .events = POLLIN};
+
+    while (true) {
+        if (ptydata.len - *index >= nchars) {
+            dstrncpy(&reqdata, &ptydata.c_str[*index], nchars);
+            *index += nchars;
+            goto done;
+        }
+
+        xpoll(pollfds, NFDS, -1);
+
+        if (pollfds[POLL_TFD].revents & POLLIN) {
+            TEST_FAIL_MESSAGE("timed out waiting for pty data");
+        }
+
+        if (pollfds[POLL_SHELL].revents & POLLIN) {
+            flush_win(LOG_WIN);
+        }
+
+        if (pollfds[POLL_VAL].revents & POLLIN) {
+            ++val_test_errs;
+            flush_win(VAL_WIN);
+        }
+
+        if (pollfds[POLL_MFD].revents & POLLIN) {
+            char *data = flush_stream(mfd, false);
+            dstrcat(&ptydata, data);
+            add_lines(RAW_WIN, data);
+
+            free(data);
+        }
+    }
+
+done:
+    xclose(tfd);
+    return reqdata.c_str;
+}
+
+void pty_send(const char *msg) {
+    int len = (int) strlen(msg);
+
+    if (write(mfd, msg, len) != len)
+        TEST_FAIL_MESSAGE("failed/partial write");
+
+    add_lines(RAW_WIN, msg);
+}
+
+void pty_cc(int cc_code) {
+    if (write(mfd, &tio.c_cc[cc_code], 1) != 1)
+        TEST_FAIL_MESSAGE("failed/partial write");
+
+    char *cc_out;
+
+    switch (cc_code) {
+    case VINTR: cc_out = "^C"; break;
+    case VSUSP: cc_out = "^Z"; break;
+    default: return;
+    }
+
+    add_lines(RAW_WIN, cc_out);
+}
+
+void new_shell(void) {
+    dstr_init(&ptydata);
+    dstr_init(&reqdata);
+    pred_i = 0;
+
+    cpid = xforkpty(&mfd, NULL, &tio, NULL);
+    pollfds[POLL_MFD].fd = mfd;
+
+    if (cpid == 0) {
+
+        char *val_lfd_arg;
+        if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
+            TEST_FAIL_MESSAGE("asprintf: input output error");
+
+        char *lfd_arg;
+        if (asprintf(&lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
+            TEST_FAIL_MESSAGE("asprintf: input output error");
+
+        char *argv[] = {
+            // "valgrind",
+            //     "--vgdb=no",
+            //     "--quiet",
+            //     "--leak-check=full",
+            //     "--errors-for-leak-kinds=definite,indirect",
+            //     "--show-leak-kinds=definite,indirect",
+            //     val_lfd_arg,
+
+            "/home/juta/Projects/Seashell/seashell",
+                "--prompt=simple",
+                lfd_arg,
+            NULL
+        };
+
+        execvp(argv[0], argv);
+        _exit(EXIT_FAILURE);
+    }
+
+    if (ioctl(mfd, FIONBIO, &(int){1}) == -1) {
+        LOG_ERR("ioctl");
+        TEST_FAIL_MESSAGE("ioctl");
+    }
+
+    for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
+        curses_win *win = &wins[win_i];
+
+        if (!first) {
+            if (win_i == RAW_WIN)
+                add_lines(win_i, "\n");
+
+            add_lines(win_i, "\n");
+        }
+
+        for (int y = 0 ; y < win->ncols - 1; ++y)
+            add_lines(win_i, "-");
+
+        add_lines(win_i, "\n");
+        add_lines(win_i, Unity.CurrentTestName);
+        add_lines(win_i, "\n");
+
+        for (int y = 0 ; y < win->ncols - 1; ++y)
+            add_lines(win_i, "-");
+
+        add_lines(win_i, "\n");
+        add_lines(win_i, "\n");
+    }
+
+    pty_ensure(PROMPT);
+}
+
+void delete_shell(void) {
+    xkill(cpid, SIGHUP);
+
+    if (waitpid(cpid, NULL, 0) == -1)
+        TEST_FAIL_MESSAGE("waitpid failed");
+
+    flush_win(LOG_WIN);
+    flush_win(RAW_WIN);
+
+    dstr_free(&ptydata);
+    dstr_free(&reqdata);
+    close(mfd);
+
+    first = false;
 }
