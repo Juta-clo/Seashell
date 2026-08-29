@@ -450,7 +450,7 @@ TEST(shell, jobs_builtin) {
 
     pty_send("jobs\n");
     pty_ensure("[1] Running\n");
-    pty_ensure("   'sleep 100' Running\n");
+    pty_ensure("   sleep 100 Running\n");
     pty_ensure(PROMPT);
 }
 
@@ -483,7 +483,7 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
 
     pty_send("jobs\n");
     pty_ensure("[1] Running\n");
-    pty_ensure("   'sleep 100' Running\n");
+    pty_ensure("   sleep 100 Running\n");
     pty_ensure(PROMPT);
 
     child_pstat_snapshot();

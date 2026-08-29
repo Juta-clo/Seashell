@@ -11,6 +11,11 @@
 #include "builtins.h"
 #include "llog.h"
 #include "utils.h"
+#include "args.h"
+
+typedef enum {
+    SHOW_PIDS,
+} jobs_opt_names;
 
 static int get_int(const char *arg) {
     if (arg[0] == '\0')
@@ -47,7 +52,7 @@ static int arg_to_sig(char *sig_arg) {
 
     return -1;
 }
-static bool validate_argc(char **argv, size_t min_argc, size_t max_argc) {
+static int validate_argc(char **argv, size_t min_argc, size_t max_argc) {
     if (!argv || !argv[0]) {
         LOG_ERR("validate_args: bad argv array");
         fatal("internal error; check logs");
@@ -59,19 +64,19 @@ static bool validate_argc(char **argv, size_t min_argc, size_t max_argc) {
 
     if (arg_n < min_argc) {
         fprintf(stderr, "%s: not enough arguments\n", argv[0]);
-        return false;
+        return -1;
     }
 
     if (arg_n > max_argc) {
         fprintf(stderr, "%s: too many arguments\n", argv[0]);
-        return false;
+        return -1;
     }
 
-    return true;
+    return arg_n;
 }
 
 static int run_echo_builtin(char **argv, shell_env *_) {
-    if (!validate_argc(argv, 1, 1))
+    if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
 
     printf("%s\n", argv[1]);
@@ -86,7 +91,7 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    if (!validate_argc(argv, 1, 1))
+    if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
 
     if (argv[1][0] != '%') {
@@ -125,7 +130,7 @@ static int run_bg_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    if (!validate_argc(argv, 1, 1))
+    if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
 
     if (argv[1][0] != '%') {
@@ -161,7 +166,7 @@ static int run_kill_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    if (!validate_argc(argv, 1, 2))
+    if (validate_argc(argv, 1, 2) == -1)
         return EXIT_FAILURE;
 
     pid_t jid;
@@ -234,7 +239,20 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    if (!validate_argc(argv, 0, 1))
+    int arg_n = validate_argc(argv, 0, 1);
+    if (arg_n == -1)
+        return EXIT_FAILURE;
+
+    opt_data jobs_opts[] = {
+        [SHOW_PIDS] = {
+            .long_name = "pid",
+            .short_name = 'p',
+            .has_arg = NO_ARG,
+        },
+        (opt_data){0}
+    };
+
+    if (arg_parse(arg_n + 1, argv, jobs_opts, ARG_NO_NON_OPTS) == -1)
         return EXIT_FAILURE;
 
     da_jevent jevs = get_job_info();
@@ -252,16 +270,13 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
         for (size_t i = 0; i < jev->pviews.size; ++i) {
             proc_view *pview = &jev->pviews.data[i];
 
-            if (argv[1] == NULL) {
-                printf("   '");
-                for (char **arg = pview->argv; *arg != NULL; ++arg) {
-                    printf("%s", *arg);
-                    if (arg[1] != NULL)
-                        printf(" ");
-                }
-                printf("' ");
-            } else
-                printf("   %d ", pview->pid);
+            printf("   ");
+
+            if (jobs_opts[SHOW_PIDS].found)
+                printf("%d ", pview->pid);
+
+            for (char **arg = pview->argv; *arg != NULL; ++arg)
+                printf("%s ", *arg);
 
             switch(pview->stat) {
                 case PROC_RUN:
@@ -293,7 +308,7 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
 }
 
 static int run_exit_builtin(char **argv, shell_env *_) {
-    if (!validate_argc(argv, 0, 1))
+    if (validate_argc(argv, 0, 1) == -1)
         return EXIT_FAILURE;
 
     int exit_status = EXIT_SUCCESS;
@@ -319,7 +334,7 @@ static int run_exit_builtin(char **argv, shell_env *_) {
 }
 
 static int run_cd_builtin(char **argv, shell_env *_) {
-    if (!validate_argc(argv, 1, 1))
+    if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
 
     if (chdir(argv[1]) == -1) {
@@ -331,14 +346,14 @@ static int run_cd_builtin(char **argv, shell_env *_) {
 }
 
 static int run_set_builtin(char **argv, shell_env *_) {
-    if (!validate_argc(argv, 2, 2))
+    if (validate_argc(argv, 2, 2) == -1)
         return EXIT_FAILURE;
 
     return EXIT_SUCCESS;
 }
 
 static int run_unset_builtin(char **argv, shell_env *_) {
-    if (!validate_argc(argv, 1, 1))
+    if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
 
     return EXIT_SUCCESS;
