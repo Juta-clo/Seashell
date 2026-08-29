@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <errno.h>
 #include <ncurses.h>
 #include <stddef.h>
@@ -48,46 +49,25 @@ void unity_output_char(int c) {
 }
 
 void add_lines(int win_num, const char *str) {
-    curses_win *win = &wins[win_num];
+    assert(str);
 
     if (strcmp(str, "") == 0)
         return;
 
-    if (str[0] == '\n') {
-        if (win->push_line)
-            dstr_init(da_push(&wins[win_num].lines));
+    curses_win *win = &wins[win_num];
 
-        win->push_line = true;
+    if (win->lines.size == 0)
+        dstr_init(da_push(&win->lines));
 
-        if (strlen(str) == 1)
-            return;
-    }
-
-    char *data = strdup(str);
-    char *tok = strtok(data, "\n");
-    dstr *line;
-
-    while (tok != NULL) {
-        if (win->push_line) {
-            line = da_push(&wins[win_num].lines);
-            dstr_init(line);
-        } else {
-            line = &win->lines.data[win->lines.size - 1];
-            win->push_line = true;
+    for (const char *c = str; *c != '\0'; ++c) {
+        if (*c == '\n') {
+            dstr_init(da_push(&win->lines));
+            continue;
         }
 
-        dstrcat(line, tok);
-
-        /* multiple '\n' are compressed so for programs
-         * that for example just emit \n a bunch of times
-         * the transcript will not be accurate. This is
-         * pretty rare though */
-
-        tok = strtok(NULL, "\n");
+        dstr *latest = &win->lines.data[win->lines.size - 1];
+        dstr_push(latest, *c);
     }
-
-    win->push_line = (str[strlen(str) - 1] == '\n');
-    free(data);
 }
 
 int mev_to_win(MEVENT *mev) {
@@ -202,9 +182,6 @@ curses_win *init_wins(curses_win wins[4]) {
         } else
             xmvaddch(by - 1, i, ACS_HLINE);
     }
-
-    for (size_t i = 0; i < MAX_WIN; ++i)
-        wins[i].push_line = true;
 
     refresh();
     return wins;

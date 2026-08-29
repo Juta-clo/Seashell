@@ -28,7 +28,6 @@ typedef enum {
 typedef struct {
     WINDOW *win;
     da_dstr lines;
-    bool push_line;
     int offset;
     int nlines;
     int ncols;
