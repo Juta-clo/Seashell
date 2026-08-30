@@ -16,10 +16,13 @@ struct pty_test {
     int cpid;
     dstr ptydata;
     size_t pred_i;
-    // da_dstr raw_lines;
-    // da_dstr shell_lines;
-    // da_dstr val_lines;
-    // da_dstr test_lines;
+    char *test_name;
+    bool success;
+    bool val_err;
+    da_dstr raw_lines;
+    da_dstr shell_log_lines;
+    da_dstr val_lines;
+    da_dstr test_lines;
 };
 
 typedef struct pty_test pty_test;
@@ -35,12 +38,13 @@ typedef enum {
 /* PERSISTS ACROSS TESTS */
 
 extern da_pty_test all_tests;
+extern bool verbose_mode;
+extern bool run_valgrind;
 
 extern int sh_pipe[2];
 extern int val_pipe[2];
 extern char *shell_lfd_arg;
 extern char *val_lfd_arg;
-extern dstr unity_buf;
 
 extern struct termios tio;
 extern struct pollfd pollfds[NFDS];/* some fds need to be reinitialized */
@@ -62,17 +66,15 @@ void harness_init(void);
 XFATAL_HANDLER(pty_xfatal_func);
 void curs_err(const char *msg);
 LLOG_SINK(pty_test_sink);
-void unity_output_char(int c);
 
 /****** UTILITIES *******/
 
 dstr *push_line(da_dstr *lines);
 dstr *last_line(da_dstr *lines);
-void add_lines(int win_num, const char *str);
+void add_lines(da_dstr *lines, const char *str);
 
 int mev_to_win(MEVENT *mev);
-char *flush_stream(int fd, bool break_on_eio);
-void flush_win(int win_num);
+char *flush_stream(int fd, bool err_on_eio);
 
 int start_timerfd(int ms);
 
@@ -81,6 +83,7 @@ void child_pstat_snapshot(void);
 char *request_chars(size_t nchars, size_t *index, int ms);
 void pty_send(const char *msg);
 void pty_cc(int cc_code);
+int val_test_fail_count(void);
 
 void new_test(void);
 void new_shell(void);

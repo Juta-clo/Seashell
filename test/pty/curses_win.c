@@ -5,14 +5,16 @@
 #include "curses_xfuncs.h"
 #include "pty_test.h"
 
+int y, x;
+int by, bx;
 curses_win wins[4];
 
 void init_curses_wins() {
-    int y, x;
     getmaxyx(stdscr, y, x);
+    y -= 1;
 
-    int by = (y % 2 == 0) ? y / 2 : y / 2 + 1;
-    int bx = (x % 2 == 0) ? x / 2 : x / 2 + 1;
+    by = (y % 2 == 0) ? y / 2 : y / 2 + 1;
+    bx = (x % 2 == 0) ? x / 2 : x / 2 + 1;
 
     wins[0] = (curses_win){
         .nlines = by - 1, .ncols = bx - 1,
@@ -41,7 +43,9 @@ void init_curses_wins() {
         xwrefresh(cwin->win);
         scrollok(wins[i].win, true);
     }
+}
 
+void print_window_borders(void) {
     for (int i = 0; i < y; ++i) {
         if (i == by - 1) {
             xmvaddch(i, bx - 1, ACS_PLUS);
@@ -59,53 +63,30 @@ void init_curses_wins() {
     refresh();
 }
 
-void print_divider(const char *text) {
-    for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
-        curses_win *win = &wins[win_i];
-
-        if (!first) {
-            if (win_i == RAW_WIN)
-                add_lines(win_i, "\n");
-
-            add_lines(win_i, "\n");
-        }
-
-        for (int y = 0 ; y < win->ncols - 1; ++y)
-            add_lines(win_i, "-");
-
-        add_lines(win_i, "\n");
-        add_lines(win_i, text);
-        add_lines(win_i, "\n");
-
-        for (int y = 0 ; y < win->ncols - 1; ++y)
-            add_lines(win_i, "-");
-
-        add_lines(win_i, "\n");
-        add_lines(win_i, "\n");
+void render_lines(curses_win *win, da_dstr *lines) {
+    if (lines->size == 0) {
+        mvwaddnstr(win->win, 0, 0, "[No data]", win->ncols - 1);
+        return;
     }
-}
 
-void render_lines(curses_win *win) {
     for (int i = 0, wn = 0; i < win->nlines; ++i) {
-        if (i + win->offset > (int) win->lines.size - 1)
+        if (i - wn + win->offset > (int) lines->size - 1)
             continue;
 
-        if (i + win->offset < 0)
+        if (i - wn + win->offset < 0)
             continue;
 
-        dstr *line = &win->lines.data[i - wn + win->offset];
+        dstr *line = &lines->data[i - wn + win->offset];
         mvwaddnstr(win->win, i, 0, line->c_str, win->ncols - 1);
 
         char *p = line->c_str;
 
-        while ((int) strlen(p) > win->ncols - 1 && i + wn + 1 < win->nlines) {
+        while ((int) strlen(p) > win->ncols - 1 && i + 1 < win->nlines) {
             p += win->ncols - 1;
             mvwaddnstr(win->win, ++i, 0, p, win->ncols - 1);
             ++wn;
         }
     }
-
-    mvwprintw(win->win, 0, 0, "lines[%d]", win->offset);
 }
 
 bool handle_mouse_event(void) {
@@ -121,9 +102,50 @@ bool handle_mouse_event(void) {
     if (mev.bstate & BUTTON5_PRESSED)
         ++win->offset;
 
-    werase(win->win);
-    render_lines(win);
-    wrefresh(win->win);
-
     return true;
+}
+
+void clear_win_offsets(void) {
+    for (int i = 0; i < MAX_WIN; ++i)
+        wins[i].offset = 0;
+}
+
+void refresh_wins(size_t test_i) {
+    erase();
+    print_window_borders();
+
+    if (!all_tests.data[test_i].success)
+        attron(COLOR_PAIR(BWHITE_RED));
+    else if (all_tests.data[test_i].val_err)
+        attron(COLOR_PAIR(BWHITE_YELLOW));
+    else
+        attron(COLOR_PAIR(BWHITE_GREEN));
+
+    mvprintw(y, 0, "[%ld/%ld]: %s",
+            test_i + 1, all_tests.size, all_tests.data[test_i].test_name);
+
+    if (!all_tests.data[test_i].success)
+        attroff(COLOR_PAIR(BWHITE_RED));
+    else if (all_tests.data[test_i].val_err)
+        attroff(COLOR_PAIR(BWHITE_YELLOW));
+    else
+        attroff(COLOR_PAIR(BWHITE_GREEN));
+
+    refresh();
+
+    for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
+        werase(wins[win_i].win);
+
+        if (win_i == RAW_WIN) {
+            render_lines(&wins[win_i], &all_tests.data[test_i].raw_lines);
+        } else if (win_i == LOG_WIN) {
+            render_lines(&wins[win_i], &all_tests.data[test_i].shell_log_lines);
+        } else if (win_i == VAL_WIN) {
+            render_lines(&wins[win_i], &all_tests.data[test_i].val_lines);
+        } else if (win_i == TEST_WIN) {
+            render_lines(&wins[win_i], &all_tests.data[test_i].test_lines);
+        }
+
+        wrefresh(wins[win_i].win);
+    }
 }

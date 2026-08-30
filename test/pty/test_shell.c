@@ -357,6 +357,15 @@ TEST(shell, stopped_process_then_kill_builtin) {
     pty_send("self_kill -STOP | sleep 100 | write_sleep &\n");
     pty_ensure("[1] Started\n");
     pty_ensure(PROMPT);
+
+    /* sleep a bit to let self_kill stop itself.
+     * If this test fails the sleep wasn't long enough.
+     *
+     * Running under valgrind this will probably timeout */
+    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1)
+        LOG_ERR("nanosleep: %m");
+
+    /* make sure every process is in the pgroup */
     pty_ensure("x\n");
 
     pty_send("kill %1\n");

@@ -13,9 +13,19 @@ typedef enum {
     MAX_WIN
 } win_names;
 
+typedef enum {
+    BRIGHT_WHITE = 8, /* ncurses uses 0-7 */
+} curs_colors;
+
+typedef enum {
+    DEFAULT,
+    BWHITE_RED,
+    BWHITE_GREEN,
+    BWHITE_YELLOW,
+} color_pairs;
+
 typedef struct {
     WINDOW *win;
-    da_dstr lines;
     int offset;
     int nlines;
     int ncols;
@@ -26,9 +36,10 @@ typedef struct {
 extern curses_win wins[MAX_WIN];
 
 void init_curses_wins(void);
-void print_divider(const char *text);
-void render_lines(curses_win *win);
+void print_window_borders(void);
+void render_lines(curses_win *win, da_dstr *lines);
 bool handle_mouse_event(void);
-
+void clear_win_offsets(void);
+void refresh_wins(size_t test_i);
 
 #endif
