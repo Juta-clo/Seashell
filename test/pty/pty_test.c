@@ -150,9 +150,25 @@ int start_timerfd(int ms) {
     return tfd;
 }
 
-/* assumes non blocking fd */
+#define flush_pty(_fd) \
+    flush_stream(_fd, true)
+#define flush_pipe(_fd) \
+    flush_stream(_fd, false)
+
 char *flush_stream(int fd, bool break_on_eio) {
 #define FLUSH_STREAM_BS 4096
+    int flags = fcntl(fd, F_GETFL);
+    if (flags == -1) {
+        endwin();
+        perror("fcntl");
+        _exit(EXIT_FAILURE);
+    }
+
+    if (!(flags & O_NONBLOCK)) {
+        endwin();
+        fprintf(stderr, "flush_stream receieved blocking fd\n");
+        _exit(EXIT_FAILURE);
+    }
 
     char *out = NULL;
     size_t out_size = 0;
@@ -167,8 +183,9 @@ char *flush_stream(int fd, bool break_on_eio) {
             } else if (break_on_eio && errno == EIO) {
                 break;
             } else {
-                LOG_ERR("read: %m");
-                exit(EXIT_FAILURE);
+                endwin();
+                perror("read");
+                _exit(EXIT_FAILURE);
             }
         }
 
@@ -218,32 +235,6 @@ void child_pstat_snapshot(void) {
     da_free(&pstats);
 }
 
-void flush_win(int win_num) {
-    int fd;
-    bool break_on_eio;
-
-    switch (win_num) {
-    case RAW_WIN:
-        fd = cur_test->mfd;
-        break_on_eio = true;
-        break;
-    case LOG_WIN:
-        fd = sh_pipe[0];
-        break_on_eio = false;
-        break;
-    case VAL_WIN:
-        fd = val_pipe[0];
-        break_on_eio = false;
-        break;
-    case TEST_WIN:
-        return;
-    }
-
-    char *data = flush_stream(fd, break_on_eio);
-    add_lines(win_num, data);
-    free(data);
-}
-
 char *request_chars(size_t nchars, size_t *index, int ms) {
     assert(index);
     assert(cur_test->ptydata.len >= *index);
@@ -270,19 +261,22 @@ char *request_chars(size_t nchars, size_t *index, int ms) {
         }
 
         if (pollfds[POLL_SHELL].revents & POLLIN) {
-            flush_win(LOG_WIN);
+            char *data = flush_pipe(sh_pipe[0]);
+            add_lines(LOG_WIN, data);
+            free(data);
         }
 
         if (pollfds[POLL_VAL].revents & POLLIN) {
             ++val_test_errs;
-            flush_win(VAL_WIN);
+            char *data = flush_pipe(val_pipe[0]);
+            add_lines(VAL_WIN, data);
+            free(data);
         }
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
-            char *data = flush_stream(cur_test->mfd, false);
+            char *data = flush_pty(cur_test->mfd);
             dstrcat(&cur_test->ptydata, data);
             add_lines(RAW_WIN, data);
-
             free(data);
         }
     }
@@ -366,8 +360,14 @@ void delete_shell(void) {
     if (waitpid(cur_test->cpid, NULL, 0) == -1)
         TEST_FAIL_MESSAGE("waitpid failed");
 
-    flush_win(LOG_WIN);
-    flush_win(RAW_WIN);
+
+    char *data = flush_pipe(sh_pipe[0]);
+    add_lines(LOG_WIN, data);
+    free(data);
+
+    data = flush_pipe(sh_pipe[0]);
+    add_lines(RAW_WIN, data);
+    free(data);
 
     dstr_free(&reqdata);
     close(cur_test->mfd);
