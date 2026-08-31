@@ -7,10 +7,11 @@
 #include <string.h>
 #include <assert.h>
 #include <fcntl.h>
+#include <string.h>
 
+#include "input.h"
 #include "variable.h"
 #include "map.h"
-#include "input.h"
 #include "shell_state.h"
 #include "sig_funcs.h"
 #include "xfuncs.h"
@@ -125,6 +126,25 @@ static void log_setup(int *log_fd) {
     llog_set_sink(shell_llog_sink);
 }
 
+static void var_setup(shell_env *env) {
+    mp_init(&env->vars, VAR_KEY_SIZE);
+
+    for (char **ep = environ; *ep != NULL; ++ep) {
+        char *match = strchr(*ep, '=');
+        if (!match)
+            xfatal("invalid environ entry");
+
+        char *lhs = strndup(*ep, match - *ep);
+        char *rhs = xstrdup(match + 1);
+
+        if (add_var(&sh_env.vars, lhs, rhs) == -1)
+            LOG_ERR("Failed to add environment variable");
+
+        free(lhs);
+        free(rhs);
+    }
+}
+
 bool shell_in_fg(void) {
     return sh_env.fg_jid == NOFG;
 }
@@ -133,6 +153,7 @@ void env_setup(shell_env *env) {
     log_setup(&env->log_fd);
     set_xfatal_handler(&xfatal_func);
     sig_setup(&env->og_mask);
+    var_setup(env);
 
     env->subshell = false;
     env->fg_jid = NOFG;
@@ -146,8 +167,6 @@ void env_setup(shell_env *env) {
     } else {
         env->prompt_style = PROMPT_CWD;
     }
-
-    mp_init(&env->vars, VAR_KEY_SIZE);
 
     LOG_INFO("seashell PID(%d)", getpid());
 }

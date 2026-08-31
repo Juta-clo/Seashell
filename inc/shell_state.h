@@ -45,6 +45,7 @@ typedef enum {
 } opt_names;
 
 extern opt_data opts[];
+extern char **environ;
 
 bool shell_in_fg(void);
 void env_setup(shell_env *env);
