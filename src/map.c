@@ -3,7 +3,7 @@
 
 #include "map.h"
 
-typedef void *(* key_func)(map_t *, void *);
+typedef void *(* key_func)(map_t *, const void *);
 
 int mp_init(map_t *map, size_t key_size) {
     *map = (map_t){0};
@@ -66,7 +66,7 @@ fail:
     return -1;
 }
 
-static int mp_lookup(map_t *map, void *key, void **value, key_func func) {
+static int mp_lookup(map_t *map, const void *key, void **value, key_func func) {
     assert(map && key && value);
 
     void *canon_key = func(map, key);
@@ -108,7 +108,7 @@ fail:
     return -1;
 }
 
-static void *str_canon_key(map_t *map, void *key) {
+static void *str_canon_key(map_t *map, const void *key) {
     assert(map && key && strlen(key) < map->key_size);
 
     void *canon_key = calloc(map->key_size, 1);
@@ -127,7 +127,7 @@ int mp_str_add(map_t *map, char *key, void *value) {
     return 0;
 }
 
-int mp_str_lookup(map_t *map, char *key, void **value) {
+int mp_str_lookup(map_t *map, const char *key, void **value) {
     if (mp_lookup(map, key, value, str_canon_key) == -1)
         return -1;
 
@@ -141,7 +141,7 @@ int mp_str_delete(map_t *map, char *key) {
     return 0;
 }
 
-static void *num_canon_key(map_t *map, void *key) {
+static void *num_canon_key(map_t *map, const void *key) {
     assert(map && key);
 
     int *canon_key = calloc(map->key_size, 1);

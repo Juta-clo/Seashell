@@ -8,6 +8,8 @@
 #include <assert.h>
 #include <fcntl.h>
 
+#include "variable.h"
+#include "map.h"
 #include "input.h"
 #include "shell_state.h"
 #include "sig_funcs.h"
@@ -144,6 +146,8 @@ void env_setup(shell_env *env) {
     } else {
         env->prompt_style = PROMPT_CWD;
     }
+
+    mp_init(&env->vars, VAR_KEY_SIZE);
 
     LOG_INFO("seashell PID(%d)", getpid());
 }

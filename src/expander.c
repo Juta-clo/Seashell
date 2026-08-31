@@ -3,15 +3,98 @@
 
 #include "parser.h" // IWYU pragma: keep - See 2026-06-25 Notes
 #include "expander.h"
+#include "darr.h"
 #include "dstr.h"
+#include "variable.h"
+#include "xfuncs.h"
+#include "shell_state.h"
+
+static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
+        ex_tok_type type) {
+    if (c == start)
+        return false;
+
+    ex_tok *tok = da_push(toks);
+    tok->type = type;
+    tok->str = start;
+    tok->str_len = c - start;
+
+    return true;
+}
+
+static void  ex_tokenize(const char *s, da_ex_tok *toks) {
+    *toks = (da_ex_tok){0};
+
+    ex_tok_type type = EXT_REG;
+    const char *c = s;
+    const char *start = s;
+
+    for (; *c != '\0'; ++c) {
+        if (*c == '\\') {
+            ++c;
+            continue;
+        }
+
+        if (*c == ' ' || *c == '/' || *c == '.') {
+            if (type == EXT_REG)
+                continue;
+
+            try_push_tok(toks, start, c, type);
+            type = EXT_REG;
+            start = c;
+        }
+
+        if (*c == '$') {
+            try_push_tok(toks, start, c, type);
+            type = EXT_KEY;
+            start = c + 1;
+        }
+    }
+
+    try_push_tok(toks, start, c, type);
+}
+
+static char *expand_seg(const char *seg) {
+    dstr out;
+    dstr_init(&out);
+
+    da_ex_tok toks;
+    ex_tokenize(seg, &toks);
+
+    for (size_t i = 0; i < toks.size; ++i) {
+        ex_tok *tok = &toks.data[i];
+        if (tok->type == EXT_KEY) {
+            char key[VAR_KEY_SIZE];
+            strncpy(key, tok->str, tok->str_len);
+            key[tok->str_len] = '\0';
+
+            sh_var *var = lookup_var(&sh_env.vars, key);
+            if (var)
+                dstrcat(&out, var->value);
+
+        } else if (tok->type == EXT_REG) {
+            dstrncat(&out, tok->str, tok->str_len);
+        }
+    }
+
+    da_free(&toks);
+    return out.c_str;
+}
 
 static int create_arg(ps_word *word) {
     dstr arg;
     dstr_init(&arg);
 
     for (size_t i = 0; i < word->segments.size; ++i) {
-        ps_segment *segment = &word->segments.data[i];
-        dstrcat(&arg, segment->raw);
+        ps_segment *seg = &word->segments.data[i];
+
+        if (seg->quote == PS_Q_SINGLE) {
+            dstrcat(&arg, xstrdup(seg->raw));
+        } else {
+            char *exp_seg = expand_seg(seg->raw);
+            dstrcat(&arg, exp_seg);
+            free(exp_seg);
+        }
     }
 
     word->arg = arg.c_str;
@@ -21,9 +104,7 @@ static int create_arg(ps_word *word) {
 static int create_argv(ps_cmd *cmd) {
     size_t argc = cmd->words.size;
 
-    char **argv = calloc(argc + 1, sizeof(char *));
-    if (!argv)
-        return -1;
+    char **argv = xcalloc(argc + 1, sizeof(char *));
 
     for (size_t i = 0; i < argc; ++i)
         argv[i] = cmd->words.data[i].arg;

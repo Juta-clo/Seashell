@@ -6,6 +6,7 @@
 #include <string.h>
 #include <errno.h>
 
+#include "variable.h"
 #include "shell_state.h"
 #include "job_state.h"
 #include "builtins.h"
@@ -345,16 +346,26 @@ static int run_cd_builtin(char **argv, shell_env *_) {
     return EXIT_SUCCESS;
 }
 
-static int run_set_builtin(char **argv, shell_env *_) {
+static int run_set_builtin(char **argv, shell_env *sh_env) {
     if (validate_argc(argv, 2, 2) == -1)
         return EXIT_FAILURE;
+
+    if (add_var(&sh_env->vars, argv[1], argv[2]) == -1) {
+        fprintf(stderr, "%s: failed to add variable\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
 
-static int run_unset_builtin(char **argv, shell_env *_) {
+static int run_unset_builtin(char **argv, shell_env *sh_env) {
     if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
+
+    if (delete_var(&sh_env->vars, argv[1])) {
+        fprintf(stderr, "%s: failed to delete variable\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }

@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "args.h"
+#include "map.h"
 #include "parser.h"
 
 #define NOFG -1
@@ -24,6 +25,7 @@ typedef struct {
     sigset_t og_mask;
     int log_fd;
     int prompt_style;
+    map_t vars;
 } shell_env;
 
 extern shell_env sh_env;

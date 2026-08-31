@@ -6,5 +6,6 @@
 #include "job_state.h" // IWYU pragma: export
 #include "dstr.h" // IWYU pragma: export
 #include "exec_funcs.h" // IWYU pragma: export
+#include "expander.h" // IWYU pragma: export
 #include "../test/pty/proc_view.h" // IWYU pragma: export
 #include "../test/pty/pty_test.h" // IWYU pragma: export
