@@ -3,7 +3,7 @@
 
 #include "shell_state.h"
 
-#define BUILTIN_COUNT 9
+#define BUILTIN_COUNT 11
 
 typedef int (*builtin_func)(char **, shell_env *);
 

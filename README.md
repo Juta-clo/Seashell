@@ -1,6 +1,6 @@
 # Seashell
 
-A simple linux shell for systems programming practice.
+A ~~simple~~ small linux shell for systems programming practice.
 
 ## Goals
 

@@ -28,13 +28,18 @@ static bool verify_key(const void *key) {
     return true;
 }
 
-int add_var(map_t *vars, char *key, char *value) {
+int add_var(map_t *vars, char *key, char *value, bool export) {
     if (!verify_key(key))
         return -1;
 
-    sh_var *var = xmalloc(sizeof(sh_var));
+    sh_var *var = lookup_var(vars, key);
+    if (var)
+        free(var->value);
+
+    var = xmalloc(sizeof(sh_var));
     var->value = xmalloc(strlen(value) + 1);
     strcpy(var->value, value);
+    var->export = export;
 
     if (mp_str_add(vars, key, var) == -1)
         xfatal("mp_str_add");
@@ -62,4 +67,15 @@ int delete_var(map_t *vars, char *key) {
     }
 
     return 0;
+}
+
+void export_vars(map_t *vars) {
+    for (size_t i = 0; i < vars->pairs.size; ++i) {
+        mpair *pair = &vars->pairs.data[i];
+        sh_var *var = pair->value;
+
+        if (var->export)
+            if (setenv(pair->key, var->value, 1) == -1)
+                err_exit("setenv");
+    }
 }

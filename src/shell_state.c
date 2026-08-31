@@ -136,8 +136,8 @@ static void var_setup(shell_env *env) {
 
         char *lhs = strndup(*ep, match - *ep);
         char *rhs = xstrdup(match + 1);
-
-        if (add_var(&sh_env.vars, lhs, rhs) == -1)
+                /* no need to re-export, already in env */
+        if (add_var(&sh_env.vars, lhs, rhs, false) == -1)
             LOG_ERR("Failed to add environment variable");
 
         free(lhs);

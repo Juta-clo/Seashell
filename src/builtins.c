@@ -350,7 +350,7 @@ static int run_set_builtin(char **argv, shell_env *sh_env) {
     if (validate_argc(argv, 2, 2) == -1)
         return EXIT_FAILURE;
 
-    if (add_var(&sh_env->vars, argv[1], argv[2]) == -1) {
+    if (add_var(&sh_env->vars, argv[1], argv[2], false) == -1) {
         fprintf(stderr, "%s: failed to add variable\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -370,11 +370,42 @@ static int run_unset_builtin(char **argv, shell_env *sh_env) {
     return EXIT_SUCCESS;
 }
 
+static int run_export_builtin(char **argv, shell_env *sh_env) {
+    if (validate_argc(argv, 2, 2) == -1)
+        return EXIT_FAILURE;
+
+    if (add_var(&sh_env->vars, argv[1], argv[2], true) == -1) {
+        fprintf(stderr, "%s: failed to add variable\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+static int run_vars_builtin(char **argv, shell_env *sh_env) {
+    if (validate_argc(argv, 0, 0) == -1)
+        return EXIT_FAILURE;
+
+    for (size_t i = 0; i < sh_env->vars.pairs.size; ++i) {
+        mpair *pair = &sh_env->vars.pairs.data[i];
+        sh_var *var = pair->value;
+
+        if (var->export)
+            printf("(export) ");
+
+        printf("%s=%s\n", (char *)pair->key, var->value);
+    }
+
+    return EXIT_SUCCESS;
+}
+
 static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "exit", .func = run_exit_builtin },
     { .name = "cd", .func = run_cd_builtin },
     { .name = "set", .func = run_set_builtin },
     { .name = "unset", .func = run_unset_builtin },
+    { .name = "export", .func = run_export_builtin },
+    { .name = "vars", .func = run_vars_builtin },
     { .name = "jobs", .func = run_jobs_builtin },
     { .name = "kill", .func = run_kill_builtin },
     { .name = "fg", .func = run_fg_builtin },
