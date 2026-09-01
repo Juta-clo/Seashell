@@ -12,6 +12,7 @@ typedef struct {
 
 int add_var(map_t *vars, char *key, char *value, bool export);
 sh_var *lookup_var(map_t *vars, const char *key);
+sh_var *lookup_var_n(map_t *vars, const char *key, size_t key_len);
 int delete_var(map_t *vars, char *key);
 void export_vars(map_t *vars);
 

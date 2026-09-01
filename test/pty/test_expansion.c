@@ -7,8 +7,14 @@ TEST_GROUP(expansion);
 
 /************ Fixture ************/
 
+const char *home;
+
 TEST_SETUP(expansion) {
     new_shell();
+
+    home = getenv("HOME");
+    if (!home)
+        TEST_FAIL_MESSAGE("could not find HOME env variable\n");
 
     pty_send("set FOO bar\n");
     pty_ensure(PROMPT);
@@ -139,6 +145,40 @@ TEST(expansion, variable_then_escaped_variable) {
     pty_ensure(PROMPT);
 }
 
+TEST(expansion, tilde_expansion) {
+    pty_send("echo ~\n");
+    pty_ensure(home);
+    pty_ensure("\n");
+    pty_ensure(PROMPT);
+}
+
+TEST(expansion, tilde_then_regular_text) {
+    pty_send("echo ~hi\n");
+    pty_ensure(home);
+    pty_ensure("hi\n");
+    pty_ensure(PROMPT);
+}
+
+TEST(expansion, regular_text_then_tilde) {
+    pty_send("echo hi~\n");
+    pty_ensure("hi");
+    pty_ensure(home);
+    pty_ensure("\n");
+    pty_ensure(PROMPT);
+}
+
+TEST(expansion, escaped_tilde) {
+    pty_send("echo \\~\n");
+    pty_ensure("~\n");
+    pty_ensure(PROMPT);
+}
+
+TEST(expansion, regular_text_around_escaped_tilde) {
+    pty_send("echo x\\~y\n");
+    pty_ensure("x~y\n");
+    pty_ensure(PROMPT);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(expansion) {
@@ -156,4 +196,9 @@ TEST_GROUP_RUNNER(expansion) {
     RUN_TEST_CASE(expansion, variable_with_space_expands);
     RUN_TEST_CASE(expansion, variable_with_quoted_and_unquoted_segments);
     RUN_TEST_CASE(expansion, variable_then_escaped_variable);
+    RUN_TEST_CASE(expansion, tilde_expansion);
+    RUN_TEST_CASE(expansion, tilde_then_regular_text);
+    RUN_TEST_CASE(expansion, regular_text_then_tilde);
+    RUN_TEST_CASE(expansion, escaped_tilde);
+    RUN_TEST_CASE(expansion, regular_text_around_escaped_tilde);
 }

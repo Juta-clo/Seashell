@@ -23,6 +23,13 @@ static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
     return true;
 }
 
+static void push_key(da_ex_tok *toks, const char *start, size_t n) {
+    ex_tok *tok = da_push(toks);
+    tok->type = EXT_KEY;
+    tok->str = start;
+    tok->str_len = n;
+}
+
 static void  ex_tokenize(const char *s, da_ex_tok *toks) {
     *toks = (da_ex_tok){0};
 
@@ -44,6 +51,13 @@ static void  ex_tokenize(const char *s, da_ex_tok *toks) {
                 xfatal("bad segment contents");
 
             continue;
+        }
+
+        if (*c == '~') {
+            try_push_tok(toks, start, c, type);
+            push_key(toks, "HOME", sizeof("HOME") - 1);
+            type = EXT_REG;
+            start = c + 1;
         }
 
         if (*c == ' ' || *c == '/' || *c == '.') {
@@ -77,17 +91,15 @@ static char *expand_seg(const char *seg) {
     for (size_t i = 0; i < toks.size; ++i) {
         ex_tok *tok = &toks.data[i];
         if (tok->type == EXT_KEY) {
-            char key[VAR_KEY_SIZE];
-            strncpy(key, tok->str, tok->str_len);
-            key[tok->str_len] = '\0';
-
-            sh_var *var = lookup_var(&sh_env.vars, key);
+            sh_var *var = lookup_var_n(&sh_env.vars, tok->str, tok->str_len);
             if (var)
                 dstrcat(&out, var->value);
 
         } else if (tok->type == EXT_REG) {
             dstrncat(&out, tok->str, tok->str_len);
-        }
+
+        } else
+            xfatal("unexpected ex_tok type");
     }
 
     da_free(&toks);
@@ -105,6 +117,7 @@ static int create_arg(ps_word *word) {
         if (seg->quote == PS_Q_SINGLE) {
             exp_seg = xstrdup(seg->raw);
             dstrcat(&arg, exp_seg);
+
         } else {
             exp_seg = expand_seg(seg->raw);
             dstrcat(&arg, exp_seg);

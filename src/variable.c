@@ -56,6 +56,19 @@ sh_var *lookup_var(map_t *vars, const char *key) {
     return value;
 }
 
+sh_var *lookup_var_n(map_t *vars, const char *key, size_t key_len) {
+    void *value;
+
+    char key_buf[VAR_KEY_SIZE];
+    strncpy(key_buf, key, key_len);
+    key_buf[key_len] = '\0';
+
+    if (mp_str_lookup(vars, key_buf, &value) == -1)
+        xfatal("mp_str_lookup");
+
+    return value;
+}
+
 int delete_var(map_t *vars, char *key) {
     if (!verify_key(key))
         return -1;
