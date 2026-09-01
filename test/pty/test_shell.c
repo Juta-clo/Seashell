@@ -373,6 +373,28 @@ TEST(shell, stopped_process_then_kill_builtin) {
     pty_ensure(PROMPT);
 }
 
+TEST(shell, stop_pline_with_plines_left) {
+    pty_send("sleep 1 || echo x &\n");
+    pty_ensure("[1] Started\n");
+    pty_ensure(PROMPT);
+
+    pty_send("kill -STOP %1\n");
+    pty_ensure("[1] Stopped\n");
+    pty_ensure(PROMPT);
+
+    pty_send("kill -CONT %1\n");
+    pty_ensure("[1] Continued\n");
+    pty_ensure(PROMPT);
+
+    pty_send("kill %1\n");
+    pty_ensure("[1] Done - Terminated by signal 15\n");
+    pty_ensure(PROMPT);
+
+    pty_ensure("x\n");
+    pty_ensure("\n[1] Done - Exited with status 0\n");
+    pty_ensure(PROMPT);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(shell) {
@@ -411,4 +433,5 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, fg_process_stopped_interactively);
     RUN_TEST_CASE(shell, send_sigint_to_process_that_catches_it);
     RUN_TEST_CASE(shell, stopped_process_then_kill_builtin);
+    RUN_TEST_CASE(shell, stop_pline_with_plines_left);
 }

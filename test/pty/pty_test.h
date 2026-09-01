@@ -59,7 +59,7 @@ extern dstr reqdata;
 
 /****** SETUP *******/
 
-void harness_init(void);
+void harness_init(int argc, const char *const *argv);
 
 /****** HANDLERS *******/
 
@@ -69,22 +69,19 @@ LLOG_SINK(pty_test_sink);
 
 /****** UTILITIES *******/
 
+void print_valgrind_overview(void);
 dstr *push_line(da_dstr *lines);
 dstr *last_line(da_dstr *lines);
 void add_lines(da_dstr *lines, const char *str);
-
-int mev_to_win(MEVENT *mev);
 char *flush_stream(int fd, bool err_on_eio);
-
 int start_timerfd(int ms);
-
 void pty_ensure(const char *msg);
 void child_pstat_snapshot(void);
 char *request_chars(size_t nchars, size_t *index, int ms);
 void pty_send(const char *msg);
 void pty_cc(int cc_code);
+int test_fail_count(void);
 int val_test_fail_count(void);
-
 void new_test(void);
 void new_shell(void);
 void delete_shell(void);

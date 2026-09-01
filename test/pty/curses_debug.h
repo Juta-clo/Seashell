@@ -3,8 +3,6 @@
 
 #include <ncurses.h>
 
-#include "darr.h"
-
 typedef enum {
     RAW_WIN,
     TEST_WIN,
@@ -35,11 +33,6 @@ typedef struct {
 
 extern curses_win wins[MAX_WIN];
 
-void init_curses_wins(void);
-void print_window_borders(void);
-void render_lines(curses_win *win, da_dstr *lines);
-bool handle_mouse_event(void);
-void clear_win_offsets(void);
-void refresh_wins(size_t test_i);
+void start_debug_repl(void);
 
 #endif

@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include "pty_test.h"
-#include "curses_win.h"
 #include "dstr.h"
 #include "llog.h"
 #include "proc_view.h"
@@ -33,7 +32,14 @@ bool first = true;
 pty_test *cur_test;
 dstr reqdata;
 
-void harness_init(void) {
+void harness_init(int argc, const char *const *argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp("-v", argv[i]) == 0) {
+            verbose_mode = true;
+        } else if (strcmp("-m", argv[i]) == 0)
+            run_valgrind = true;
+    }
+
     da_init(&all_tests);
 
     set_xfatal_handler(pty_xfatal_func);
@@ -83,6 +89,16 @@ LLOG_SINK(pty_test_sink) {
             info->site->line, info->msg);
 }
 
+void print_valgrind_overview(void) {
+    printf("\nValgrind memcheck -- ");
+
+    if (val_test_fail_count() == 0) {
+        printf("\x1b[97;42mCLEAN\x1b[m\n");
+    } else {
+        printf("\x1b[97;41m%d TESTS DIRTY\x1b[m\n", val_test_fail_count());
+    }
+}
+
 dstr *push_line(da_dstr *lines) {
     dstr *line = da_push(lines);
     dstr_init(line);
@@ -109,20 +125,6 @@ void add_lines(da_dstr *lines, const char *str) {
         }
 
         dstr_push(last_line(lines), *c);
-    }
-}
-
-int mev_to_win(MEVENT *mev) {
-    if (mev->x >= wins[TEST_WIN].x) {
-        if (mev->y >= wins[VAL_WIN].y)
-            return VAL_WIN;
-        else
-            return TEST_WIN;
-    } else {
-        if (mev->y >= wins[VAL_WIN].y)
-            return LOG_WIN;
-        else
-            return RAW_WIN;
     }
 }
 
@@ -302,12 +304,24 @@ void pty_cc(int cc_code) {
     add_lines(&cur_test->raw_lines, cc_out);
 }
 
+int test_fail_count(void) {
+    int fail_n = 0;
+
+    for (size_t i = 0; i < all_tests.size; ++i)
+        if (!all_tests.data[i].success || all_tests.data[i].val_err)
+            ++fail_n;
+
+    return fail_n;
+}
+
 int val_test_fail_count(void) {
-    int n = 0;
+    int vall_err_n = 0;
+
     for (size_t i = 0; i < all_tests.size; ++i)
         if (all_tests.data[i].val_err)
-            ++n;
-    return n;
+            ++vall_err_n;
+
+    return vall_err_n;
 }
 
 void new_test(void) {

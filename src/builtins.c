@@ -81,7 +81,6 @@ static int run_echo_builtin(char **argv, shell_env *_) {
         return EXIT_FAILURE;
 
     printf("%s\n", argv[1]);
-    fflush(stdout);
 
     return EXIT_SUCCESS;
 }
@@ -225,7 +224,17 @@ static int run_kill_builtin(char **argv, shell_env *sh_env) {
         }
     }
 
-    /* Report the signal more consistently when delivered immediately */
+    /* Report the signal more consistently when delivered immediately.
+     *
+     * This achieves that by allowing the wait event to be queued by
+     * the time we arrive at process_signals().
+     *
+     * This does not mean that the wait event will be queued before
+     * kill's builtin exit event, but that is fine because a builtin
+     * exit event does not cause any job control messaging or notis.
+     * It simply asks for the next job or the terminal if there aren't
+     * any left */
+
     if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1) {
         fprintf(stderr, "%s: nanosleep failed: %m\n", argv[0]);
         return EXIT_FAILURE;

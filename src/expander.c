@@ -5,6 +5,7 @@
 #include "expander.h"
 #include "darr.h"
 #include "dstr.h"
+#include "utils.h"
 #include "variable.h"
 #include "xfuncs.h"
 #include "shell_state.h"
@@ -31,12 +32,24 @@ static void  ex_tokenize(const char *s, da_ex_tok *toks) {
 
     for (; *c != '\0'; ++c) {
         if (*c == '\\') {
+            try_push_tok(toks, start, c, type);
+            type = EXT_REG;
+            start = c + 1;
+
             ++c;
+
+            /* sanity check. not really necessary, lexer ensures
+             * segment can not end with \ */
+            if (*c == '\0')
+                xfatal("bad segment contents");
+
             continue;
         }
 
         if (*c == ' ' || *c == '/' || *c == '.') {
-            if (type == EXT_REG)
+        /* as a convenience, you can achieve the same by just
+         * escaping the character after the variable name */
+            if (type != EXT_KEY)
                 continue;
 
             try_push_tok(toks, start, c, type);
@@ -87,14 +100,17 @@ static int create_arg(ps_word *word) {
 
     for (size_t i = 0; i < word->segments.size; ++i) {
         ps_segment *seg = &word->segments.data[i];
+        char *exp_seg;
 
         if (seg->quote == PS_Q_SINGLE) {
-            dstrcat(&arg, xstrdup(seg->raw));
-        } else {
-            char *exp_seg = expand_seg(seg->raw);
+            exp_seg = xstrdup(seg->raw);
             dstrcat(&arg, exp_seg);
-            free(exp_seg);
+        } else {
+            exp_seg = expand_seg(seg->raw);
+            dstrcat(&arg, exp_seg);
         }
+
+        free(exp_seg);
     }
 
     word->arg = arg.c_str;

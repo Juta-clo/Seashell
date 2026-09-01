@@ -96,7 +96,7 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
         sh_builtin *builtin = get_builtin(pline->cmds.data[0].argv[0]);
 
         if (builtin) {
-            LOG_INFO("[%d] Started (builtin)", jid);
+            LOG_INFO("[%d] Started %s (no fork)", jid, builtin->name);
 
             int status = builtin->func(pline->cmds.data[0].argv, &sh_env);
 
@@ -109,7 +109,7 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
     }
 
     if (!handled) {
-        LOG_INFO("[%d] Started", jid);
+        LOG_INFO("[%d] Started %s", jid, pline->cmds.data[0].argv[0]);
 
         pline_data pld = exec_pline(pline, bg);
         add_job(jid, &pld);
@@ -337,11 +337,6 @@ static void process_signals(void) {
 int main(int argc, char *const *argv) {
     if (arg_parse(argc, argv, opts, ARG_NO_NON_OPTS) == -1)
         exit(EXIT_FAILURE);
-
-    if (setvbuf(stdin, NULL, _IONBF, 0) != 0) {
-        LOG_ERR("setvbuf"); /* so fgets doesn't steal bytes */
-        exit(EXIT_FAILURE);
-    }
 
     env_setup(&sh_env);
     xatexit(hup_to_children);

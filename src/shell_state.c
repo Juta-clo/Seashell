@@ -150,6 +150,11 @@ bool shell_in_fg(void) {
 }
 
 void env_setup(shell_env *env) {
+    /* so fgets (and other stdio funcs) don't steal bytes */
+    xsetvbuf(stdin, NULL, _IONBF, 0);
+    xsetvbuf(stdout, NULL, _IONBF, 0);
+    xsetvbuf(stderr, NULL, _IONBF, 0);
+
     log_setup(&env->log_fd);
     set_xfatal_handler(&xfatal_func);
     sig_setup(&env->og_mask);

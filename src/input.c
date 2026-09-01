@@ -33,7 +33,6 @@ void display_prompt(int mode) {
         xfatal("unknown prompt mode");
 
     printf("%s", prompt.c_str);
-    fflush(stdout);
 
     dstr_free(&prompt);
 }

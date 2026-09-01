@@ -14,8 +14,6 @@
 /* error functions */
 
 static void output_err(const char *fmt, va_list *va, bool print_err) {
-    fflush(stdout);
-
     char user_msg[BUF_SIZE] = "";
     char err_str[BUF_SIZE] = "";
 
@@ -26,8 +24,6 @@ static void output_err(const char *fmt, va_list *va, bool print_err) {
         fprintf(stderr, "seashell: %s: %s\n", user_msg, err_str);
     } else
         fprintf(stderr, "seashell: %s\n", user_msg);
-
-    fflush(stderr);
 }
 
 void fatal(const char *fmt, ...) {
@@ -69,7 +65,6 @@ void errno_msg(const char *fmt, ...) {
 }
 
 void usage_err(const char *fmt, ...) {
-    fflush(stdout);
     fprintf(stderr, "Usage: ");
 
     va_list va;
@@ -78,7 +73,6 @@ void usage_err(const char *fmt, ...) {
     va_end(va);
 
     fprintf(stderr, "\n");
-    fflush(stderr);
     exit(EXIT_FAILURE);
 }
 
