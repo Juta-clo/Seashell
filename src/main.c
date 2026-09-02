@@ -78,7 +78,6 @@ static ps_ast *line_to_ast(void) {
     }
 
     if (ex_expand(ast) == -1) {
-        err_msg("expansion error");
         ps_free(ast);
         free(ast);
         lx_free(&toks);

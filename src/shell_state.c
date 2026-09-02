@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <stdarg.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,7 +45,14 @@ LLOG_SINK(shell_llog_sink) {
 }
 
 XFATAL_HANDLER(xfatal_func) {
-    LOG_ERR("%s: %s", XSYSNAME, strerror(XERRNO));
+    if (strcmp("opendir", XSYSNAME) == 0) {
+        LOG_ERR("%s(%s): %s", XSYSNAME, XARG(const char *), strerror(XERRNO));
+        XARG_END();
+
+    } else {
+        LOG_ERR("%s: %s", XSYSNAME, strerror(XERRNO));
+    }
+
     err_exit("%s", XSYSNAME);
 }
 

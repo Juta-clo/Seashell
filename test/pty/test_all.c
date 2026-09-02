@@ -10,7 +10,8 @@
 
 void run_all(void) {
     RUN_TEST_GROUP(shell);
-    RUN_TEST_GROUP(expansion);
+    RUN_TEST_GROUP(variable);
+    RUN_TEST_GROUP(glob);
 }
 
 int main(int argc, const char **argv) {

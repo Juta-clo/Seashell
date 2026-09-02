@@ -434,7 +434,7 @@ sh_builtin *get_builtin(const char *arg) {
 
 bool try_run_builtin(char **argv, int *status) {
     if (!argv || !argv[0]) {
-        LOG_ERR("try_run_builtin received bad argv structure");
+        LOG_ERR("receieved bad argv structure");
         fatal("internal error check logs\n");
     }
 

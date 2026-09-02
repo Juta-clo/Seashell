@@ -189,6 +189,13 @@ static size_t find_prev_failing_test(size_t test_i) {
         }
     }
 
+    if (test_i == 0) {
+        pty_test *test = &all_tests.data[test_i];
+
+        if (!test->success || test->val_err)
+            failed_test_found = true;
+    }
+
     if (!failed_test_found) {
         return (size_t) -1;
     } else
