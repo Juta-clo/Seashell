@@ -5,7 +5,6 @@
 #include "parser.h"
 #include "lexer.h" // IWYU pragma: keep - See 2026-06-25 Notes
 #include "darr.h"
-#include "llog.h"
 
 typedef struct {
     ps_pline *cur_pline;
@@ -80,10 +79,12 @@ static void free_cmd(ps_cmd *cmd) {
     if (!cmd)
         return;
 
-    for (char **arg = cmd->argv; *arg != NULL; ++arg)
-        free(*arg);
+    if (cmd->argv) {
+        for (char **arg = cmd->argv; *arg != NULL; ++arg)
+            free(*arg);
 
-    free(cmd->argv);
+        free(cmd->argv);
+    }
 
     for (size_t i = 0; i < cmd->words.size; ++i)
         free_word(&cmd->words.data[i]);

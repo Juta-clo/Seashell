@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <libgen.h>
 
 #include "parser.h" // IWYU pragma: keep - See 2026-06-25 Notes
 #include "expander.h"
@@ -18,6 +19,8 @@ static void free_charp_array(da_charp *arr) {
         free(arr->data[i]);
 
     da_free(arr);
+
+    *arr = (da_charp){0};
 }
 
 static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
@@ -119,38 +122,6 @@ static char *expand_seg(const char *seg, bool *has_glob) {
     return out.c_str;
 }
 
-static da_charp get_dir_entries(const char *path, bool dirs) {
-    DIR *dir = xopendir(path);
-    LOG_INFO("opendir(%s)", path);
-
-    struct dirent *dirent;
-
-    da_charp dents = {0};
-
-    while (true) {
-        errno = 0;
-        dirent = readdir(dir);
-        if (!dirent) {
-            if (errno != 0)
-                err_exit("readir");
-            break;
-        }
-
-        if (strcmp(dirent->d_name, ".")  == 0 ||
-            strcmp(dirent->d_name, "..") == 0)
-            continue;
-
-        if (dirs && dirent->d_type != DT_DIR)
-            continue;
-
-        *da_push(&dents) = xstrdup(dirent->d_name);
-        LOG_INFO("dents[%ld] = %s", dents.size - 1, dirent->d_name);
-    }
-
-    xclosedir(dir);
-    return dents;
-}
-
 static void get_path_components(char *str, da_charp *comps) {
     char *tok = strtok(str, "/");
     if (!tok)
@@ -198,23 +169,26 @@ static da_charp get_substrs(const char *comp, size_t *pre_n, size_t *suf_n) {
     }
 }
 
-static bool prefix_ok(const char *match, const char *comp, size_t pre_n) {
-    return (strncmp(match, comp, pre_n) == 0);
+static bool prefix_ok(const char *dent, const char *comp, size_t pre_n) {
+    return (strncmp(dent, comp, pre_n) == 0);
 }
 
-static bool suffix_ok(const char *match, const char *comp, size_t suf_n) {
+static bool suffix_ok(const char *dent, const char *comp, size_t suf_n) {
     size_t comp_len = strlen(comp);
-    size_t match_len = strlen(match);
+    size_t match_len = strlen(dent);
 
-    return (strncmp(&match[match_len - suf_n], &comp[comp_len - suf_n],
+    return (strncmp(&dent[match_len - suf_n], &comp[comp_len - suf_n],
                 suf_n) == 0);
 }
 
-static bool substrs_ok(const char *match, da_charp *substrs, size_t pre_n,
+static bool substrs_ok(const char *dent, da_charp *substrs, size_t pre_n,
         size_t suf_n) {
-    assert(match);
+    assert(dent && substrs);
 
-    char *trim = xstrndup(&match[pre_n], strlen(&match[pre_n]) - suf_n);
+    if (substrs->size == 0)
+        return true;
+
+    char *trim = xstrndup(&dent[pre_n], strlen(&dent[pre_n]) - suf_n);
     char *start = trim;
     bool all_found = true;
 
@@ -236,76 +210,134 @@ static bool substrs_ok(const char *match, da_charp *substrs, size_t pre_n,
     return all_found;
 }
 
+static void get_dir_entries(bool dirs, bool no_append, da_charp *dents) {
+    LOG_INFO("get_dir_entries(dirs=%d, no_append=%d)", dirs, no_append);
+
+    size_t og_dent_size = dents->size;
+
+    for (size_t i = 0; i < og_dent_size; ++i) {
+        const char *path = dents->data[i];
+
+        DIR *dir = xopendir(path);
+        LOG_INFO("opened path: %s", path);
+
+        while (true) {
+            errno = 0;
+            struct dirent *dirent = readdir(dir);
+            if (!dirent) {
+                if (errno != 0)
+                    err_exit("readir");
+                break;
+            }
+
+            LOG_INFO("readdir found %s", dirent->d_name);
+
+            if (strcmp(dirent->d_name, ".")  == 0 ||
+                strcmp(dirent->d_name, "..") == 0)
+                continue;
+
+            if (dirs && dirent->d_type != DT_DIR)
+                continue;
+
+            char **dent = da_push(dents);
+
+            if (no_append) {
+                *dent = xstrdup(dirent->d_name);
+            } else {
+                *dent = xmalloc(strlen(path) + strlen(dirent->d_name) + 2);
+                strcpy(*dent, path); /* +2 for '\0' and separating '/' */
+                strcat(*dent, "/");
+                strcat(*dent, dirent->d_name);
+            }
+        }
+
+        xclosedir(dir);
+    }
+
+    for (size_t i = 0; i < og_dent_size; ++i) {
+        free(dents->data[0]);
+        da_delete(dents, 0);
+    }
+
+    LOG_INFO("dents updated:");
+    for (size_t i = 0; i < dents->size; ++i)
+        LOG_INFO("dents[%ld] = %s", i, dents->data[i]);
+}
+
+static void filter_dents(const char *comp, da_charp *dents) {
+    size_t pre_n, suf_n;
+    da_charp substrs = get_substrs(comp, &pre_n, &suf_n);
+
+    for (size_t i = 0; i < dents->size; ++i) {
+        char *dent_cpy = xstrdup(dents->data[i]);
+        char *base_name = basename(dent_cpy);
+
+        if (!prefix_ok(base_name, comp, pre_n) ||
+            !suffix_ok(base_name, comp, suf_n) ||
+            !substrs_ok(base_name, &substrs, pre_n, suf_n)
+        ) {
+            free(dents->data[i]);
+            da_delete(dents, i--);
+        }
+
+        free(dent_cpy);
+    }
+
+    free_charp_array(&substrs);
+
+    LOG_INFO("filtered dents; new size %ld [%s]:", dents->size, comp);
+    for (size_t i = 0; i < dents->size; ++i)
+        LOG_INFO("dents[%ld] = %s", i, dents->data[i]);
+}
+
 static int expand_globs(dstr *arg, da_charp *argv) {
-    dstr open_path;
-    bool ends_with_slash = (arg->c_str[arg->size - 1] == '/');
+    int rv = -1;
+    bool slash_last = (arg->c_str[arg->size - 1] == '/');
     da_charp comps = {0};
-    size_t pre_n;
-    size_t suf_n;
-    bool is_dir_comp;
-    da_charp matches = {0};
+    da_charp dents = {0};
 
-    dstr_init(&open_path);
-    if (arg->c_str[0] == '/') {
-        dstrcat(&open_path, "/");
-    } else
-        dstrcat(&open_path, "./");
+    if (arg->c_str[0] == '/')
+        *da_push(&dents) = xstrdup("/");
 
-    /* returns at least 1 comp; c_str is modified */
-    char *orig_arg = xstrdup(arg->c_str);
-    get_path_components(arg->c_str, &comps);
+    char *glob_text = xstrdup(arg->c_str);
+    get_path_components(glob_text, &comps);
+
+    if (strcmp(".", comps.data[0]) == 0 || strcmp("..", comps.data[0]) == 0) {
+        *da_push(&dents) = xstrdup(comps.data[0]);
+        da_delete(&comps, 0); /* first component is really a path */
+    }
 
     for (size_t comp_i = 0; comp_i < comps.size; ++comp_i) {
         char *comp = comps.data[comp_i];
+        bool last_comp = (comp_i == comps.size - 1);
 
-        da_charp substrs = get_substrs(comp, &pre_n, &suf_n);
-        is_dir_comp = (comp_i < comps.size - 1 || ends_with_slash);
-        da_charp dents = get_dir_entries(open_path.c_str, is_dir_comp);
+        get_dir_entries(!last_comp || slash_last, last_comp, &dents);
+        filter_dents(comp, &dents);
 
-        for (size_t dent_i = 0; dent_i < dents.size; ++dent_i) {
-            char *dent = dents.data[dent_i];
-
-            if (!prefix_ok(dent, comp, pre_n))
-                continue;
-
-            if (!suffix_ok(dent, comp, suf_n))
-                continue;
-
-            if (!substrs_ok(dent, &substrs, pre_n, suf_n))
-                continue;
-
-            *da_push(&matches) = xstrdup(dent);
+        if (dents.size == 0) {
+            err_msg("no matches found: %s", arg->c_str);
+            goto cleanup;
         }
 
-        /* assumes its a open_path compenent for now */
-        if (matches.size == 0) {
-            err_msg("no matches found: %s", orig_arg);
-            goto fail;
+        if (last_comp) {
+            for (size_t match_i = 0; match_i < dents.size; ++match_i)
+                *da_push(argv) = xstrdup(dents.data[match_i]);
         }
-
-        for (size_t match_i = 0; match_i < matches.size; ++match_i)
-            *da_push(argv) = xstrdup(matches.data[match_i]);
-
-        free_charp_array(&substrs);
-        free_charp_array(&dents);
-        free_charp_array(&matches);
     }
 
-    free(orig_arg);
-    dstr_free(&open_path);
+    rv = 0;
+
+cleanup:
+    free(glob_text);
+    free_charp_array(&dents);
     da_free(&comps);
 
-    return 0;
-
-fail:
-    free(orig_arg);
-    dstr_free(&open_path);
-    da_free(&comps);
-
-    return -1;
+    return rv;
 }
 
 static int expand_word(ps_word *word, da_charp *argv, bool redir) {
+    int rv = -1;
+
     dstr arg;
     dstr_init(&arg);
 
@@ -338,23 +370,22 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
     /* globbing */
 
     if (has_glob) {
-        expand_globs(&arg, argv);
+        if (expand_globs(&arg, argv) == -1)
+            goto cleanup;
 
         if (redir && argv->size > 1) {
             err_msg("ambiguous redirect");
-            goto fail;
+            goto cleanup;
         }
     } else {
         *da_push(argv) = xstrdup(arg.c_str);
     }
 
-    dstr_free(&arg);
-    return 0;
+    rv = 0;
 
-fail:
+cleanup:
     dstr_free(&arg);
-    free_charp_array(argv);
-    return -1;
+    return rv;
 }
 
 static int create_argv(ps_cmd *cmd) {
@@ -362,15 +393,19 @@ static int create_argv(ps_cmd *cmd) {
 
     for (size_t i = 0; i < cmd->words.size; ++i)
         if (expand_word(&cmd->words.data[i], &argv, false) == -1)
-            return -1;
+            goto fail;
 
     *da_push(&argv) = NULL;
     cmd->argv = argv.data;
 
     return 0;
+
+fail:
+    free_charp_array(&argv);
+    return -1;
 }
 
-int ex_expand(ps_ast *ast) {
+int ex_expand(const ps_ast *ast) {
     for (size_t i = 0; i < ast->andors.size; ++i) {
         ps_andor *andor = &ast->andors.data[i];
         ps_pline *pline = &andor->pline;

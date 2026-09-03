@@ -13,8 +13,12 @@ TEST_GROUP(glob);
 da_charp files = {0};
 
 void add_file(const char *name) {
-    xclose(xopen(name, O_CREAT | O_RDWR, 0600));
-    *da_push(&files) = xstrdup(name);
+    char glob_file_path[PATH_MAX];
+    if (snprintf(glob_file_path, PATH_MAX, "%s%s", GLOB_DIR, name) < 0)
+        TEST_FAIL_MESSAGE("snprintf: io error");
+
+    xclose(xopen(glob_file_path, O_CREAT | O_RDWR, 0600));
+    *da_push(&files) = xstrdup(glob_file_path);
 }
 
 void dir_cleanup(void) {

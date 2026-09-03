@@ -16,6 +16,6 @@ struct ex_tok {
 
 typedef struct ex_tok ex_tok;
 
-int ex_expand(ps_ast *ast);
+int ex_expand(const ps_ast *ast);
 
 #endif
