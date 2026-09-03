@@ -65,7 +65,8 @@ void harness_init(int argc, const char *const *argv) {
 
 XFATAL_HANDLER(pty_xfatal_func) {
     endwin();
-    fprintf(stderr, "ERROR %s: %s\n", XSYSNAME, strerror(XERRNO));
+    fprintf(stderr, "%s:%d: ERROR %s: %s\n", XFUNC, XLINE, XSYSNAME,
+            strerror(XERRNO));
     _exit(EXIT_FAILURE);
 }
 
