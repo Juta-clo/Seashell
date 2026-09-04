@@ -383,12 +383,21 @@ void new_shell(void) {
 }
 
 void delete_shell(void) {
-    xkill(cur_test->cpid, SIGHUP);
+    if (Unity.CurrentTestFailed != 0) {
+        /* so the shell can write any final data to the mfd before
+         * exiting. If we don't sleep the transcript might be cut off */
+        nanosleep(&(struct timespec){ .tv_nsec  = 25000000, .tv_sec = 0}, NULL);
+    }
 
+    xkill(cur_test->cpid, SIGHUP);
     if (waitpid(cur_test->cpid, NULL, 0) == -1)
         TEST_FAIL_MESSAGE("waitpid failed");
 
-    char *data = flush_pipe(sh_pipe[0]);
+    char *data = flush_pty(cur_test->mfd);
+    add_lines(&cur_test->raw_lines, data);
+    free(data);
+
+    data = flush_pipe(sh_pipe[0]);
     add_lines(&cur_test->shell_log_lines, data);
     free(data);
 

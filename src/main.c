@@ -100,18 +100,21 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
             int status = builtin->func(pline->cmds.data[0].argv, &sh_env);
 
             /* fg "replaces" itself with the existing job */
-            if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE)
+            if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE) {
+                LOG_INFO("queued \"%s\" exit event", builtin->name);
                 queue_builtin_exit_event(jid, status);
+            }
 
             handled = true;
         }
     }
 
     if (!handled) {
-        LOG_INFO("[%d] Started %s", jid, pline->cmds.data[0].argv[0]);
-
         pline_data pld = exec_pline(pline, bg);
         add_job(jid, &pld);
+
+        LOG_INFO("[%d] Started %s %d", jid, pline->cmds.data[0].argv[0],
+                pld.pgid);
     }
 }
 
@@ -147,6 +150,15 @@ static job_plan *lookup_plan(pid_t jid, size_t *index) {
     }
 
     return NULL;
+}
+
+static void plan_done(pid_t jid) {
+    size_t plan_i;
+    job_plan *plan = lookup_plan(jid, &plan_i);
+    if (!plan)
+        return;
+
+    remove_plan(plan_i);
 }
 
 static bool run_next_job_in_plan(const job_event *jev, bool bg) {
@@ -227,21 +239,33 @@ bool fg_event(job_event *jev) {
 }
 
 static void handle_fg_event(shell_state *sst, const job_event *jev) {
-    bool run_next_job = false;
+    /* signaled: last process was terminated by a signal
+     * intr_int: at least one process was terminated by sigint */
 
     if (jev->type == JEXITED) {
-        if (jev->signaled)
-            sst->need_print = true;
-
-        if (jev->intr_int) {
-            printf("\n");
+        if (jev->signaled || jev->intr_int) {
+            /* signal cancels rest of andor chain so request removal */
+            plan_done(jev->jid);
             sst->need_terminal = true;
 
+            /* print on signaled to inform the user of the unusual exit */
+            if (jev->signaled)
+                sst->need_print = true;
+
+            /* print '\n' to clear echoed control char (^C) */
+            if (jev->intr_int)
+                printf("\n");
+
         } else {
-            run_next_job = true;
+            /* if there is no next job to run, we need the terminal back.
+            * If we ran a job then that job takes fg control */
+            if (!run_next_job_fg(jev))
+                sst->need_terminal = true;
         }
 
     } else if (jev->type == JSTOPPED) {
+        /* print '\n' to clear echoed control char (^Z) */
+        /* if fg job is stopped we need the terminal back; also print */
         if (jev->intr_stop)
             printf("\n");
 
@@ -249,20 +273,24 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
         sst->need_terminal = true;
 
     } else if (jev->type == JCONTINUED) {
+        /* simply print */
         sst->need_print = true;
     }
 
-    if (run_next_job && !run_next_job_fg(jev))
-        sst->need_terminal = true;
 }
 
 static void handle_bg_event(shell_state *sst, job_event *jev) {
     if (jev->type == JEXITED) {
-        if (jev->signaled)
+        if (jev->signaled) {
+            /* signal cancels the rest of the andor chain so we need
+            * the termianl, a print, and removal of the plan */
             sst->need_print = true;
+            plan_done(jev->jid);
 
-        if (!run_next_job_bg(jev))
-            sst->need_print = true;
+        } else {
+            if (!run_next_job_bg(jev))
+                sst->need_print = true;
+        }
 
     } else
         sst->need_print = true;
@@ -277,6 +305,8 @@ static void process_signals(void) {
     };
 
     if (sigchld_caught) {
+        LOG_INFO("SIGCHLD caught");
+
         wait_event wev;
         while (get_wstat(&wev) != -1)
             if (update_job_proc(wev) == -1)
@@ -309,7 +339,7 @@ static void process_signals(void) {
     }
 
     if (sigint_caught) {
-        LOG_INFO("sigint caught");
+        LOG_INFO("SIGINT caught");
 
         if (!sst.prompt_upset) {
             printf("\n");
@@ -318,7 +348,7 @@ static void process_signals(void) {
     }
 
     if (sighup_caught) {
-        LOG_INFO("sighup caught");
+        LOG_INFO("SIGHUP caught");
         exit(EXIT_FAILURE);
     }
 

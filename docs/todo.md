@@ -1,9 +1,8 @@
-- [ ] Remake the test_jobs.c unit test file
-- [ ] test stopping andor chain with plines left
 - [ ] config file? for prompt style initially
 
 ### PTY HARNESS
 
+- [ ] Implement resize handling for ncurses debug ui
 - [ ] Allow the test repl to restart tests without exiting
 - [ ] Make a script or program to relaunch seashell (vg replacement)
 - [ ] decouple ncurses debug display with pty test state. For example the
@@ -11,6 +10,11 @@
 - [ ] Figure out what pty_test.c really needs to expose in header
 
 ### Unresolved
+
+- What happens if an interactive termianal program (that modifies termio)
+  is suspended via SIGKILL or doesn't handle SIGTSTP?
+
+- Should job_state manage job id assignments?
 
 - Should we allow $ to show up inside of variable key/values?
 
@@ -25,6 +29,7 @@
   erase_line(), etc. Then comparing the actual screen state rather then
   just raw bytes being identicle. The pty test harness could then interact
   with the emulator instead for example feed(...) -> cells\[x,y\] = "..."
+  See libvterm.
 
 - Is fg_jid enough to replace the subshell boolean?
 
