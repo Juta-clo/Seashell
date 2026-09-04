@@ -163,6 +163,10 @@ void clear_job_table(void) {
 }
 
 void clear_job_events(void) {
+    job_event *jev;
+    while ((jev = pop_job_event()))
+        free_job_event(jev);
+
     da_free(&jevs);
 }
 

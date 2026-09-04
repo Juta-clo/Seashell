@@ -1,8 +1,14 @@
-- [ ] Add generic allocator interface to linc_tools
-- [ ] Add Arena allocater to linc_tools
-- [ ] Add linked list module to linc_tools
+- [ ] Remake the test_jobs.c unit test file
 - [ ] test stopping andor chain with plines left
 - [ ] config file? for prompt style initially
+
+### PTY HARNESS
+
+- [ ] Allow the test repl to restart tests without exiting
+- [ ] Make a script or program to relaunch seashell (vg replacement)
+- [ ] decouple ncurses debug display with pty test state. For example the
+      debug display should not have to know about the verbose_mode flag.
+- [ ] Figure out what pty_test.c really needs to expose in header
 
 ### Unresolved
 
