@@ -12,9 +12,17 @@
 #define PROMPT "> "
 #define PTY_RBUF 100000
 
+struct vt_snap {
+    VTermPos curs_pos;
+    da_charp lines;
+};
+
+typedef struct vt_snap vt_snap;
+
 struct virt_term {
     VTerm *tty;
     VTermScreen *scr;
+    VTermState *st;
     int rows;
     int cols;
 };
@@ -26,6 +34,7 @@ struct pty_test {
     int cpid;
     size_t pred_i;
     dstr ptydata;
+    da_vt_snap snaps;
     virt_term vterm;
 
     /* for display purposes */

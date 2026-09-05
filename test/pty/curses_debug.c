@@ -355,6 +355,69 @@ static void refresh_wins(size_t test_i) {
     }
 }
 
+void render_snap(vt_snap *snap, WINDOW *win) {
+    WINDOW *border_win = newwin(y, x, 0, 0);
+    wborder(border_win, 0, 0, 0, 0, 0, 0, 0 ,0);
+
+    for (int row = 0; row < (int) snap->lines.size; ++row) {
+        char *line = snap->lines.data[row];
+        int col = 0;
+
+        for (char *c = line; *c != '\0'; ++c, ++col) {
+            if (snap->curs_pos.row == row && snap->curs_pos.col == col)
+                wattron(win, A_REVERSE);
+
+            mvwaddch(win, row, col, *c);
+
+            wattroff(win, A_REVERSE);
+        }
+    }
+
+    xwrefresh(border_win);
+    xwrefresh(win);
+    delwin(border_win);
+}
+
+void view_vterm(size_t test_i) {
+    pty_test *test = &all_tests.data[test_i];
+
+    WINDOW *win = newwin(y - 2, x - 2, 1, 1);
+    wclear(win);
+
+    if (test->vterm.rows > y - 1 || test->vterm.cols > x - 1) {
+        mvwprintw(win, 0, 0, "[vterm too large to display]");
+        getch();
+        goto done;
+    }
+
+    size_t i = 0;
+    while (true) {
+        erase();
+        attron(A_BOLD);
+        mvprintw(y, 0, "VTerm Snapshot [%ld/%ld]", i + 1, test->snaps.size);
+        attroff(A_BOLD);
+        refresh();
+
+        render_snap(&test->snaps.data[i], win);
+
+        int c = getch();
+
+        if (c == 'v')
+            break;
+
+        if (c == 'l' && i < test->snaps.size - 1)
+            ++i;
+
+        if (c == 'h' && i > 0)
+            --i;
+    }
+
+done:
+    wrefresh(win);
+    delwin(win);
+    refresh_wins(test_i);
+}
+
 static void display_debug_wins(size_t test_i) {
     assert(all_tests.size > 0);
 
@@ -379,6 +442,10 @@ static void display_debug_wins(size_t test_i) {
         if (c == 'q' || c == '\n') {
             suspend_ncurses();
             break;
+        }
+
+        if (c == 'v') {
+            view_vterm(test_i);
         }
 
         if (c == KEY_MOUSE)

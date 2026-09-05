@@ -36,6 +36,7 @@ struct pline_proc;
 struct pty_test;
 
 struct ex_tok;
+struct vt_snap;
 
 #define DYN_ARR_TYPES(APPLY, arg) \
     /* lexer */ \
@@ -63,4 +64,5 @@ struct ex_tok;
     APPLY(arg, da_proc_view, struct proc_view) \
     APPLY(arg, da_pline_proc, struct pline_proc) \
     APPLY(arg, da_pty_test, struct pty_test) \
-    APPLY(arg, da_ex_tok, struct ex_tok)
+    APPLY(arg, da_ex_tok, struct ex_tok) \
+    APPLY(arg, da_vt_snap, struct vt_snap)

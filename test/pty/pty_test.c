@@ -364,17 +364,53 @@ void vterm_send(const char *msg) {
     }
 }
 
+void get_vt_snap(vt_snap *snap) {
+    vterm_state_get_cursorpos(cur_test->vterm.st, &snap->curs_pos);
+
+    for (int row = 0; row < cur_test->vterm.rows; ++row) {
+        char **line = da_push(&snap->lines);
+        *line = xcalloc(1, cur_test->vterm.cols + 1);
+
+        for (int col = 0; col < cur_test->vterm.cols; ++col) {
+            VTermScreenCell cell;
+            VTermPos pos = { .row = row, .col = col };
+
+            if (!vterm_screen_get_cell(cur_test->vterm.scr, pos, &cell))
+                TEST_FAIL_MESSAGE("vterm_screen_get_cell");
+
+            if (cell.chars[1] != 0 || cell.chars[0] > 127)
+                TEST_FAIL_MESSAGE("non-ascii character in vterm");
+
+            uint32_t ch = cell.chars[0];
+
+            if (ch == 0)
+                ch = ' ';
+
+            (*line)[col] = ch;
+        }
+    }
+}
+
+void take_vt_snapshot(void) {
+    vt_snap *snap = da_push(&cur_test->snaps);
+    *snap = (vt_snap){0};
+    get_vt_snap(snap);
+}
+
 void pty_send(const char *msg) {
+    take_vt_snapshot();
+
     int len = (int) strlen(msg);
 
     if (write(cur_test->mfd, msg, len) != len)
         TEST_FAIL_MESSAGE("failed/partial write");
 
-    vterm_send(msg);
-
     /* so we don't have to call pty_ensure for every command
      * that the shell echos we'll just do it here. */
+    vterm_send(msg);
     pty_ensure(msg);
+
+    take_vt_snapshot();
 }
 
 void pty_cc(int cc_code) {
@@ -454,6 +490,14 @@ void new_test(void) {
     if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
         TEST_FAIL_MESSAGE("ioctl");
 
+    /* so the status column at the bottom can render and
+     * so we can render a box around it */
+    if (ws.ws_row > 2)
+        ws.ws_row -= 2;
+
+    if (ws.ws_col > 1)
+        ws.ws_col -= 1;
+
     cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, &ws);
     if (cur_test->cpid == 0)
         exec_seashell();
@@ -473,6 +517,10 @@ void new_test(void) {
     if (!cur_test->vterm.scr)
         TEST_FAIL_MESSAGE("vterm_obtain_screen");
     vterm_screen_reset(cur_test->vterm.scr, 1);
+
+    cur_test->vterm.st = vterm_obtain_state(cur_test->vterm.tty);
+    if (!cur_test->vterm.st)
+        TEST_FAIL_MESSAGE("vterm_obtain_state");
 
     /* init misc data */
     dstr_init(&cur_test->ptydata);
@@ -495,6 +543,8 @@ void delete_shell(void) {
          * exiting. If we don't sleep the transcript might be cut off */
         nanosleep(&(struct timespec){ .tv_nsec  = 25000000, .tv_sec = 0}, NULL);
     }
+
+    take_vt_snapshot();
 
     xkill(cur_test->cpid, SIGHUP);
     if (waitpid(cur_test->cpid, NULL, 0) == -1)
