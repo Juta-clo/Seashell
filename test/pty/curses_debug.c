@@ -1,3 +1,8 @@
+#define _GNU_SOURCE
+
+#include <errno.h>
+#include <sys/poll.h>
+#include <signal.h>
 #include <assert.h>
 #include <locale.h>
 #include <ncurses.h>
@@ -5,13 +10,88 @@
 
 #include "curses_debug.h"
 #include "curses_xfuncs.h"
+#include "xfuncs.h"
 #include "pty_test.h"
+
+#define NFDS 1
 
 int y, x;
 int by, bx;
 curses_win wins[4];
 bool ncurses_initialized = false;
 size_t test_i = 0;
+sigset_t og_set;
+
+struct pollfd pfds[NFDS] = {
+    (struct pollfd){ .events = POLLIN, .fd = STDIN_FILENO }
+};
+
+static volatile sig_atomic_t caught_sigwinch = 0;
+
+static void sigwinch_handler(int _) {
+    caught_sigwinch = true;
+}
+
+static void init_curses_wins() {
+    getmaxyx(stdscr, y, x);
+    y -= 1;
+
+    by = (y % 2 == 0) ? y / 2 : y / 2 + 1;
+    bx = (x % 2 == 0) ? x / 2 : x / 2 + 1;
+
+    wins[0] = (curses_win){
+        .nlines = by - 1, .ncols = bx - 1,
+        .y      = 0,      .x     = 0
+    };
+
+    wins[1] = (curses_win){
+        .nlines = by - 1, .ncols = x / 2,
+        .y      = 0,      .x     = bx
+    };
+
+    wins[2] = (curses_win){
+        .nlines = y / 2, .ncols = bx - 1,
+        .y      = by,    .x     = 0
+    };
+
+    wins[3] = (curses_win){
+        .nlines = y / 2, .ncols = x / 2,
+        .y      = by,    .x     = bx
+    };
+
+    for (size_t i = 0; i < 4; ++i) {
+        curses_win *cwin = &wins[i];
+
+        cwin->win = xderwin(stdscr, cwin->nlines, cwin->ncols, cwin->y, cwin->x);
+        xwrefresh(cwin->win);
+        scrollok(wins[i].win, true);
+    }
+}
+
+void process_signals(void) {
+    if (!caught_sigwinch)
+        return;
+
+    struct winsize ws;
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
+        curs_err("ioctl");
+
+    if (ncurses_initialized)
+        if (resize_term(ws.ws_row, ws.ws_col) == ERR)
+            curs_err("resize_term");
+
+    if (!isendwin()) {
+        for (size_t i = 0; i < MAX_WIN; ++i)
+            delwin(wins[i].win);
+
+        init_curses_wins();
+
+        if (refresh() == ERR)
+            curs_err("refresh");
+    }
+
+    caught_sigwinch = false;
+}
 
 static char *get_line(void) {
 #define LINE_BUF 8192
@@ -68,52 +148,43 @@ static void clear_win_offsets(void) {
         wins[i].offset = 0;
 }
 
-static void init_curses_wins() {
-    getmaxyx(stdscr, y, x);
-    y -= 1;
-
-    by = (y % 2 == 0) ? y / 2 : y / 2 + 1;
-    bx = (x % 2 == 0) ? x / 2 : x / 2 + 1;
-
-    wins[0] = (curses_win){
-        .nlines = by - 1, .ncols = bx - 1,
-        .y      = 0,      .x     = 0
-    };
-
-    wins[1] = (curses_win){
-        .nlines = by - 1, .ncols = x / 2,
-        .y      = 0,      .x     = bx
-    };
-
-    wins[2] = (curses_win){
-        .nlines = y / 2, .ncols = bx - 1,
-        .y      = by,    .x     = 0
-    };
-
-    wins[3] = (curses_win){
-        .nlines = y / 2, .ncols = x / 2,
-        .y      = by,    .x     = bx
-    };
-
-    for (size_t i = 0; i < 4; ++i) {
-        curses_win *cwin = &wins[i];
-
-        cwin->win = xderwin(stdscr, cwin->nlines, cwin->ncols, cwin->y, cwin->x);
-        xwrefresh(cwin->win);
-        scrollok(wins[i].win, true);
-    }
-}
-
 static void ncurses_cleanup(void) {
     endwin();
 }
 
+void suspend_ncurses(void) {
+    for (size_t i = 0; i < MAX_WIN; ++i)
+        delwin(wins[i].win);
+
+    endwin();
+}
+
+void resume_ncurses(void) {
+    if (!isendwin())
+        curs_err("resume_ncurses: not suspended");
+
+    init_curses_wins();
+
+    if (refresh() == ERR)
+        curs_err("refresh");
+}
+
 static void init_ncurses(void) {
     if (ncurses_initialized) {
-        if (isendwin())
-            refresh();
+        resume_ncurses();
         return;
     }
+
+    /* Set signals before initscr so ncurses doesn't set its own */
+    /* block sigwinch and save original set for use with ppoll */
+    sigset_t new_set;
+    xsigprocmask(SIG_SETMASK, NULL, &new_set);
+    xsigaddset(&new_set, SIGWINCH);
+    xsigprocmask(SIG_SETMASK, &new_set, &og_set);
+    /* set sigwinch disposition */
+    struct sigaction sa = { .sa_handler = sigwinch_handler };
+    xsigemptyset(&sa.sa_mask);
+    xsigaction(SIGWINCH, &sa, NULL);
 
     if (!setlocale(LC_ALL, "")) {
         perror("setlocale");
@@ -150,13 +221,13 @@ static void init_ncurses(void) {
     if (!mousemask(ALL_MOUSE_EVENTS, NULL))
         curs_err("mousemask");
 
-    if (refresh() == ERR)
-        curs_err("refresh");
-
     xatexit(ncurses_cleanup);
+    ncurses_initialized = true;
+
     init_curses_wins();
 
-    ncurses_initialized = true;
+    if (refresh() == ERR)
+        curs_err("refresh");
 }
 
 static size_t find_next_failing_test(size_t test_i) {
@@ -291,10 +362,22 @@ static void display_debug_wins(size_t test_i) {
     refresh_wins(test_i);
 
     while (true) {
+        int ready = ppoll(pfds, NFDS, NULL, &og_set);
+
+        if (ready == -1) {
+            if (errno != EINTR)
+                curs_err("ppoll");
+
+            process_signals();
+            refresh_wins(test_i);
+
+            continue;
+        }
+
         int c = getch();
 
         if (c == 'q' || c == '\n') {
-            endwin();
+            suspend_ncurses();
             break;
         }
 
@@ -350,6 +433,18 @@ void start_debug_repl(void) {
 
     while (true) {
         printf("> ");
+        fflush(stdout);
+
+        int ready = ppoll(pfds, NFDS, NULL, &og_set);
+
+        if (ready == -1) {
+            if (errno != EINTR)
+                curs_err("ppoll");
+
+            process_signals();
+            continue;
+        }
+
         char *line = get_line(); /* probably should generalize this */
 
         if (strcmp("verbose", line) == 0) {
