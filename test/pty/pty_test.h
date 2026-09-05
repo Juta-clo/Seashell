@@ -2,6 +2,7 @@
 #define PTY_TEST_H
 
 #include <ncurses.h>
+#include <vterm.h>
 
 #include "darr.h"
 #include "dstr.h"
@@ -11,11 +12,23 @@
 #define PROMPT "> "
 #define PTY_RBUF 100000
 
+struct virt_term {
+    VTerm *tty;
+    VTermScreen *scr;
+    int rows;
+    int cols;
+};
+
+typedef struct virt_term virt_term;
+
 struct pty_test {
     int mfd;
     int cpid;
-    dstr ptydata;
     size_t pred_i;
+    dstr ptydata;
+    virt_term vterm;
+
+    /* for display purposes */
     char *test_name;
     bool success;
     bool val_err;
@@ -75,9 +88,11 @@ dstr *last_line(da_dstr *lines);
 void add_lines(da_dstr *lines, const char *str);
 char *flush_stream(int fd, bool err_on_eio);
 int start_timerfd(int ms);
-void pty_ensure(const char *msg);
 void child_pstat_snapshot(void);
+void write_to_term(const char *str);
 char *request_chars(size_t nchars, size_t *index, int ms);
+void term_ensure(const char *msg, int row, int col);
+void pty_ensure(const char *msg);
 void pty_send(const char *msg);
 void pty_cc(int cc_code);
 int test_fail_count(void);

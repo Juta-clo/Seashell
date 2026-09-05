@@ -46,8 +46,6 @@ void harness_init(int argc, const char *const *argv) {
     llog_set_sink(pty_test_sink);
 
     xtcgetattr(STDERR_FILENO, &tio);
-    tio.c_lflag &= ~ECHO; /* don't echo, non-interactive */
-    tio.c_oflag &= ~OPOST; /* no post processing, \r\n -> \n */
 
     for (int i = 0; i < NFDS; ++i)
         pollfds[i].events = POLLIN;
@@ -88,6 +86,20 @@ LLOG_SINK(pty_test_sink) {
     dstr_init(line);
     dstr_printf(line, "%s llog: %s:%d: %s\n", lvl_str, info->site->file,
             info->site->line, info->msg);
+}
+
+char *pty_output_process(const char *msg) {
+    dstr out;
+    dstr_init(&out);
+
+    for (const char *c = msg; *c != '\0'; ++c) {
+        if (*c == '\n') {
+            dstrcat(&out, "\r\n");
+        } else
+            dstr_push(&out, *c);
+    }
+
+    return out.c_str;
 }
 
 void print_valgrind_overview(void) {
@@ -196,12 +208,57 @@ char *flush_stream(int fd, bool break_on_eio) {
     return out;
 }
 
-void pty_ensure(const char *msg) {
+void term_ensure(const char *msg, int srow, int scol) {
     size_t len = strlen(msg);
+
+    if (!msg || len == 0)
+        TEST_FAIL_MESSAGE("term_ensure: bad input");
+    if (srow < 0 || srow >= cur_test->vterm.rows)
+        TEST_FAIL_MESSAGE("term_ensure: out of bounds start row");
+    if (scol < 0 || scol >= cur_test->vterm.cols)
+        TEST_FAIL_MESSAGE("term_ensure: out of bounds start col");
+
+    size_t n = 0;
+
+    for (int row = srow; row < cur_test->vterm.rows; ++row) {
+        scol = (row == srow) ? scol : 0;
+
+        for (int col = scol; col < cur_test->vterm.cols; ++col) {
+            VTermScreenCell cell;
+            VTermPos pos = { .row = row, .col = col };
+
+            if (!vterm_screen_get_cell(cur_test->vterm.scr, pos, &cell))
+                TEST_FAIL_MESSAGE("vterm_screen_get_cell");
+
+            uint32_t ch = cell.chars[0];
+            if (ch == 0)
+                ch = ' ';
+
+            LOG_INFO("vterm.screen[%d, %d] = '%c'", row, col, ch);
+            TEST_ASSERT_EQUAL_CHAR(ch, msg[n]);
+
+            if (++n >= len)
+                goto done;
+        }
+    }
+
+done:
+    if (n < len)
+        TEST_FAIL_MESSAGE("could not find string in vterm");
+
+    return;
+}
+
+void pty_ensure(const char *msg) {
+    char *expected = pty_output_process(msg);
+    size_t len = strlen(expected);
+
     char *pty_chars = request_chars(len, &cur_test->pred_i, 1000);
 
     TEST_ASSERT_EQUAL_size_t(len, strlen(pty_chars));
-    TEST_ASSERT_EQUAL_STRING(msg, pty_chars);
+    TEST_ASSERT_EQUAL_STRING(expected, pty_chars);
+
+    free(expected);
 }
 
 void child_pstat_snapshot(void) {
@@ -229,6 +286,16 @@ void child_pstat_snapshot(void) {
     }
 
     da_free(&pstats);
+}
+
+void write_to_term(const char *str) {
+    const char *c = str;
+    size_t left = strlen(str);
+    while (left != 0) {
+        size_t n = vterm_input_write(cur_test->vterm.tty, c, left);
+        c += n;
+        left -= n;
+    }
 }
 
 char *request_chars(size_t nchars, size_t *index, int ms) {
@@ -270,6 +337,7 @@ char *request_chars(size_t nchars, size_t *index, int ms) {
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
             char *data = flush_pty(cur_test->mfd);
+            write_to_term(data);
             dstrcat(&cur_test->ptydata, data);
             add_lines(&cur_test->raw_lines, data);
             free(data);
@@ -281,13 +349,32 @@ done:
     return reqdata.c_str;
 }
 
+void vterm_send(const char *msg) {
+    VTerm *vtty = cur_test->vterm.tty;
+
+    for (const char *c = msg; *c != '\0'; ++c) {
+        uint32_t key = *c;
+
+        if (*c == '\n') {
+            vterm_keyboard_key(vtty, VTERM_KEY_ENTER, VTERM_MOD_NONE);
+            continue;
+        }
+
+        vterm_keyboard_unichar(vtty, key, VTERM_MOD_NONE);
+    }
+}
+
 void pty_send(const char *msg) {
     int len = (int) strlen(msg);
 
     if (write(cur_test->mfd, msg, len) != len)
         TEST_FAIL_MESSAGE("failed/partial write");
 
-    add_lines(&cur_test->raw_lines, msg);
+    vterm_send(msg);
+
+    /* so we don't have to call pty_ensure for every command
+     * that the shell echos we'll just do it here. */
+    pty_ensure(msg);
 }
 
 void pty_cc(int cc_code) {
@@ -302,7 +389,9 @@ void pty_cc(int cc_code) {
     default: return;
     }
 
-    add_lines(&cur_test->raw_lines, cc_out);
+    /* so we don't have to call pty_ensure for every command
+     * that the shell echos we'll just do it here. */
+    pty_ensure(cc_out);
 }
 
 int test_fail_count(void) {
@@ -325,51 +414,69 @@ int val_test_fail_count(void) {
     return vall_err_n;
 }
 
+void exec_seashell(void) {
+    char **argv;
+
+    if (run_valgrind) {
+        argv = (char *[]){
+            "valgrind",
+                "--vgdb=no",
+                "--quiet",
+                "--leak-check=full",
+                "--errors-for-leak-kinds=definite,indirect",
+                "--show-leak-kinds=definite,indirect",
+                val_lfd_arg,
+
+            "/home/juta/Projects/Seashell/seashell",
+                "--prompt=simple",
+                shell_lfd_arg,
+            NULL
+        };
+    } else {
+        argv = (char *[]){
+            "/home/juta/Projects/Seashell/seashell",
+                "--prompt=simple",
+                shell_lfd_arg,
+            NULL
+        };
+    }
+
+    execvp(argv[0], argv);
+    _exit(EXIT_FAILURE);
+}
+
 void new_test(void) {
     cur_test = da_push(&all_tests);
     *cur_test = (pty_test){0};
 
-    cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, NULL);
-
-    if (cur_test->cpid == 0) {
-        char **argv;
-
-        if (run_valgrind) {
-            argv = (char *[]){
-                "valgrind",
-                    "--vgdb=no",
-                    "--quiet",
-                    "--leak-check=full",
-                    "--errors-for-leak-kinds=definite,indirect",
-                    "--show-leak-kinds=definite,indirect",
-                    val_lfd_arg,
-
-                "/home/juta/Projects/Seashell/seashell",
-                    "--prompt=simple",
-                    shell_lfd_arg,
-                NULL
-            };
-        } else {
-            argv = (char *[]){
-                "/home/juta/Projects/Seashell/seashell",
-                    "--prompt=simple",
-                    shell_lfd_arg,
-                NULL
-            };
-        }
-
-        execvp(argv[0], argv);
-        _exit(EXIT_FAILURE);
-    }
-
-    if (ioctl(cur_test->mfd, FIONBIO, &(int){1}) == -1) {
-        LOG_ERR("ioctl");
+    /* init pty */
+    struct winsize ws;
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
         TEST_FAIL_MESSAGE("ioctl");
-    }
 
+    cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, &ws);
+    if (cur_test->cpid == 0)
+        exec_seashell();
+
+    if (ioctl(cur_test->mfd, FIONBIO, &(int){1}) == -1)
+        TEST_FAIL_MESSAGE("ioctl");
+
+    /* init vterm */
+    cur_test->vterm.tty = vterm_new(ws.ws_row, ws.ws_col);
+    if (!cur_test->vterm.tty)
+        TEST_FAIL_MESSAGE("vterm_new");
+    cur_test->vterm.rows = ws.ws_row;
+    cur_test->vterm.cols = ws.ws_col;
+
+    vterm_set_utf8(cur_test->vterm.tty, 1);
+    cur_test->vterm.scr = vterm_obtain_screen(cur_test->vterm.tty);
+    if (!cur_test->vterm.scr)
+        TEST_FAIL_MESSAGE("vterm_obtain_screen");
+    vterm_screen_reset(cur_test->vterm.scr, 1);
+
+    /* init misc data */
     dstr_init(&cur_test->ptydata);
     cur_test->pred_i = 0;
-
     cur_test->test_name = strdup(Unity.CurrentTestName);
 }
 
@@ -407,6 +514,7 @@ void delete_shell(void) {
 
     dstr_free(&reqdata);
     close(cur_test->mfd);
+    vterm_free(cur_test->vterm.tty);
 
     cur_test->success = (Unity.CurrentTestFailed == 0);
     cur_test->val_err = (cur_test->val_lines.size > 0);

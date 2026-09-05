@@ -27,11 +27,14 @@ TEST_TEAR_DOWN(shell) {
 TEST(shell, prompt_after_reclaim_tty) {
     pty_send("/bin/echo x\n");
     pty_ensure("x\n" PROMPT);
+    term_ensure("x", 1, 0);
+    term_ensure(PROMPT, 2, 0);
 }
 
 TEST(shell, prompt_after_launch_bg_cmd) {
     pty_send("sleep 100 &\n");
     pty_ensure("[1] Started\n" PROMPT);
+    term_ensure("[1] Started", 1, 0);
 }
 
 TEST(shell, prompt_after_bg_job_done) {
