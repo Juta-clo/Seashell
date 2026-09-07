@@ -17,7 +17,7 @@ CPPFLAGS += -DUNITY_REPEAT_TEST_NAME
 
 DEPFLAGS := -MMD -MP
 
-LDFLAGS := -lncurses -lvterm
+LDFLAGS := -lncurses -lvterm -lm
 
 SRCS := $(filter-out $(SRC_DIR)/main.c,$(wildcard $(SRC_DIR)/*.c))
 SRCS += $(wildcard $(DEP_DIR)/linc_tools/src/*.c)

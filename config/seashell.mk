@@ -4,6 +4,7 @@ COMPCOM := compile_commands.json
 
 SRC_DIR := src
 DEP_DIR := deps
+LT_DIR  := $(DEP_DIR)/linc_tools/src
 
 CC := clang
 
@@ -12,7 +13,7 @@ CPPFLAGS := -Iinc -I$(DEP_DIR)/linc_tools/inc
 DEPFLAGS := -MMD -MP
 
 SRCS := $(wildcard $(SRC_DIR)/*.c)
-SRCS += $(wildcard $(DEP_DIR)/linc_tools/src/*.c)
+SRCS += $(filter-out $(LT_DIR)/termsplit.c,$(wildcard $(LT_DIR)/*.c))
 
 OBJS := $(patsubst %.c,$(BLD_DIR)/%.o,$(SRCS))
 DEPS := $(patsubst %.c,$(BLD_DIR)/%.d,$(SRCS))

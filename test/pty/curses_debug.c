@@ -8,6 +8,7 @@
 #include <ncurses.h>
 #include <string.h>
 
+#include "termsplit.h"
 #include "curses_debug.h"
 #include "curses_xfuncs.h"
 #include "xfuncs.h"
@@ -19,7 +20,6 @@ int y, x;
 int by, bx;
 curses_win wins[4];
 bool ncurses_initialized = false;
-size_t test_i = 0;
 sigset_t og_set;
 
 struct pollfd pfds[NFDS] = {
@@ -230,47 +230,46 @@ static void init_ncurses(void) {
         curs_err("refresh");
 }
 
-static size_t find_next_failing_test(size_t test_i) {
-    bool failed_test_found = false;
+static void get_test_next(size_t *start_i) {
+    assert(*start_i < all_tests.size);
 
-    for (; test_i < all_tests.size; ++test_i) {
-        pty_test *test = &all_tests.data[test_i];
+    if (*start_i == all_tests.size - 1)
+        return;
+
+    if (verbose_mode) {
+        ++*start_i;
+        return;
+    }
+
+    for (size_t i = *start_i + 1; i < all_tests.size; ++i) {
+        pty_test *test = &all_tests.data[i];
 
         if (!test->success || test->val_err) {
-            failed_test_found = true;
+            *start_i = i;
             break;
         }
     }
-
-    if (!failed_test_found) {
-        return (size_t) -1;
-    } else
-        return test_i;
 }
 
-static size_t find_prev_failing_test(size_t test_i) {
-    bool failed_test_found = false;
+static void get_test_prev(size_t *start_i) {
+    assert(*start_i < all_tests.size);
 
-    for (; test_i != 0; --test_i) {
-        pty_test *test = &all_tests.data[test_i];
+    if (*start_i == 0)
+        return;
+
+    if (verbose_mode) {
+        --*start_i;
+        return;
+    }
+
+    for (size_t i = *start_i - 1; (int) i >= 0; --i) {
+        pty_test *test = &all_tests.data[i];
 
         if (!test->success || test->val_err) {
-            failed_test_found = true;
-            break;
+            *start_i = i;
+            return;
         }
     }
-
-    if (test_i == 0) {
-        pty_test *test = &all_tests.data[test_i];
-
-        if (!test->success || test->val_err)
-            failed_test_found = true;
-    }
-
-    if (!failed_test_found) {
-        return (size_t) -1;
-    } else
-        return test_i;
 }
 
 static void render_lines(curses_win *win, da_dstr *lines) {
@@ -453,37 +452,12 @@ static void display_debug_wins(size_t test_i) {
                 continue;
 
         if (c == 'l') {
-            if (test_i >= all_tests.size - 1)
-                continue;
-
-            ++test_i;
-
-            if (!verbose_mode) {
-                size_t next = find_next_failing_test(test_i);
-                if (next != (size_t) -1) {
-                    test_i = next;
-                } else
-                    --test_i;
-            }
-
+            get_test_next(&test_i);
             clear_win_offsets();
         }
 
         if (c == 'h') {
-            if (test_i == 0)
-                continue;
-
-            --test_i;
-
-            if (!verbose_mode) {
-                size_t next = find_prev_failing_test(test_i);
-                if (next != (size_t) -1) {
-                    test_i = next;
-                } else {
-                    ++test_i;
-                }
-            }
-
+            get_test_prev(&test_i);
             clear_win_offsets();
         }
 
@@ -491,13 +465,162 @@ static void display_debug_wins(size_t test_i) {
     }
 }
 
+void init_curses(void) {
+    if (!setlocale(LC_ALL, "")) {
+        perror("setlocale");
+        exit(EXIT_FAILURE);
+    }
+    if (!initscr()) {
+        fprintf(stderr, "initscr failed!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (curs_set(0) == ERR) curs_err("curs_set");
+    if (cbreak() == ERR) curs_err("cbreak");
+    if (noecho() == ERR) curs_err("noecho");
+    xatexit(ncurses_cleanup);
+    if (refresh() == ERR) curs_err("refresh");
+}
+
+void split_init(ts_node *node) {
+    if (node->rect.rows <= 0 || node->rect.cols <= 0)
+        curs_err("terminal too small!");
+
+    ts_rect rect = node->rect;
+
+    WINDOW *win = newwin(rect.rows, rect.cols, rect.y, rect.x);
+    if (!win)
+        curs_err("newwin");
+
+    node->user_data = win;
+}
+
+void split_resize(ts_node *node, uint32_t _) {
+    if (node->rect.rows <= 0 || node->rect.cols <= 0)
+        curs_err("terminal too small!");
+
+    if (wresize(node->user_data, node->rect.rows, node->rect.cols) == ERR)
+        curs_err("wresize");
+
+    if (mvwin(node->user_data, node->rect.y, node->rect.x) == ERR)
+        curs_err("mvwin");
+}
+
+void split_free(ts_node *node) {
+    if (delwin(node->user_data) == ERR)
+        curs_err("delwin");
+}
+
+ts_rect get_term_rect(void) {
+    int y, x;
+    getmaxyx(stdscr, y, x);
+    return (ts_rect){ .rows = y, .cols = x, .y = 0, .x = 0 };
+}
+
+__attribute__ ((__format__(printf, 1, 2)))
+void CURS_LOG(const char *fmt, ...) {
+    endwin();
+
+    va_list va;
+    va_start(va, fmt);
+    vprintf(fmt, va);
+    va_end(va);
+
+    refresh();
+}
+
+void render_quad(ts_node *quad) {
+    for (size_t i = 0; i < TS_QUAD_CHILD_MAX; ++i) {
+        ts_rect rect = quad->children[i]->rect;
+        WINDOW *win = quad->children[i]->user_data;
+
+        CURS_LOG("quad index = %ld\n", i);
+
+        if (i < TS_QUAD_GL)
+            continue;
+
+        for (int row = 0; row < rect.rows; ++row) {
+            for (int col = 0; col < rect.cols; ++col) {
+                if (i == TS_QUAD_GJ) {
+                    if (mvwaddchnstr(win, row, col, &(chtype){ACS_PLUS}, 1) == ERR)
+                        curs_err("mvwaddch - '+'");
+
+                } else if (i == TS_QUAD_GL || i == TS_QUAD_GR) {
+                    if (mvwaddchnstr(win, row, col, &(chtype){ACS_HLINE}, 1) == ERR) {
+                        endwin();
+                        fprintf(stderr, "rows=%d cols=%d y=%d x=%d\n",
+                                rect.rows, rect.cols, rect.y, rect.x);
+                        fprintf(stderr, "cur_row=%d cur_col=%d\n",
+                                row, col);
+                        _exit(EXIT_FAILURE);
+                    }
+                } else if (i == TS_QUAD_GT || i == TS_QUAD_GB) {
+                    if (mvwaddchnstr(win, row, col, &(chtype){ACS_VLINE}, 1) == ERR) {
+                        endwin();
+                        fprintf(stderr, "rows=%d cols=%d y=%d x=%d\n",
+                                rect.rows, rect.cols, rect.y, rect.x);
+                        fprintf(stderr, "cur_row=%d cur_col=%d\n",
+                                row, col);
+                        _exit(EXIT_FAILURE);
+                    }
+                }
+            }
+        }
+
+        if (wrefresh(win) == ERR)
+            curs_err("wrefresh");
+    }
+}
+
+void new_curses_ui() {
+    init_curses();
+
+    ts_node *quad_nodes[TS_QUAD_CHILD_MAX];
+
+    for (int i = 0; i < TS_QUAD_CHILD_MAX; ++i)
+        quad_nodes[i] = ts_new_leaf(split_init, split_resize, split_free);
+
+    ts_node *quad = ts_new_quad((ts_quad_config) {
+        .ratio_y = 0.3F, .ratio_x = 0.8F, .quad_gap = 1,
+        .tl = quad_nodes[0], .tr = quad_nodes[1],
+        .bl = quad_nodes[2], .br = quad_nodes[3],
+        .gl = quad_nodes[4], .gr = quad_nodes[5],
+        .gt = quad_nodes[6], .gb = quad_nodes[7],
+        .gj = quad_nodes[8],
+    });
+
+    ts_refresh(quad, get_term_rect());
+    render_quad(quad);
+
+    while (true) {
+        int ch = getch();
+
+        if (ch == KEY_RESIZE) {
+            if (untouchwin(stdscr) == ERR)
+                curs_err("untouchwin");
+
+            erase();
+            ts_refresh(quad, get_term_rect());
+            render_quad(quad);
+        }
+
+        if (ch == 'q')
+            break;
+    }
+
+    ts_free(quad);
+    exit(EXIT_SUCCESS);
+}
+
 void start_debug_repl(void) {
-    test_i = (verbose_mode) ? 0 : find_next_failing_test(0);
-    if (test_i == (size_t)-1)
-        return;
+    bool use_new_ui = false;
+
+    size_t test_i = 0;
+
+    if (all_tests.data[test_i].success && !all_tests.data[test_i].val_err)
+        get_test_next(&test_i);
 
     printf("\n");
-
     while (true) {
         printf("> ");
         fflush(stdout);
@@ -514,24 +637,7 @@ void start_debug_repl(void) {
 
         char *line = get_line(); /* probably should generalize this */
 
-        if (strcmp("verbose", line) == 0) {
-            if (verbose_mode) {
-                size_t next = find_next_failing_test(0);
-                if (next == (size_t)-1) {
-                    printf("No failed tests\n");
-
-                } else {
-                    test_i = next;
-                    verbose_mode = false;
-                    printf("disabled - wont show passed tests\n");
-                }
-            } else {
-                test_i = 0;
-                verbose_mode = true;
-                printf("enabled - will show passed tests\n");
-            }
-
-        } else if (strcmp("h", line) == 0) {
+        if (strcmp("h", line) == 0) {
             printf("<Enter> - Toggle debug view\n"
                    "shell - Shell command\n"
                    "verbose - toggle verbose mode\n"
@@ -547,7 +653,10 @@ void start_debug_repl(void) {
             return;
 
         } else if (strcmp("", line) == 0) /* newline */
-            display_debug_wins(test_i);
+            if (use_new_ui)
+                new_curses_ui();
+            else
+                display_debug_wins(test_i);
 
         else {
             printf("Unrecognized command\n");

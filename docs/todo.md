@@ -2,12 +2,8 @@
 
 ### PTY HARNESS
 
-- [ ] Implement resize handling for ncurses debug ui
 - [ ] Allow the test repl to restart tests without exiting
 - [ ] Make a script or program to relaunch seashell (vg replacement)
-- [ ] decouple ncurses debug display with pty test state. For example the
-      debug display should not have to know about the verbose_mode flag.
-- [ ] Figure out what pty_test.c really needs to expose in header
 
 ### Unresolved
 
