@@ -214,6 +214,11 @@ static bool substrs_ok(const char *dent, da_charp *substrs, size_t pre_n,
 }
 
 static void get_dir_entries(bool dirs, da_charp *dents) {
+    if (dirs) {
+        LOG_INFO("get_dir_entries: dirs=true");
+    } else
+        LOG_INFO("get_dir_entries: dirs=false");
+
     size_t og_dent_size = dents->size;
 
     for (size_t i = 0; i < og_dent_size; ++i) {
@@ -227,18 +232,20 @@ static void get_dir_entries(bool dirs, da_charp *dents) {
             struct dirent *dirent = readdir(dir);
             if (!dirent) {
                 if (errno != 0)
-                    err_exit("readir");
+                    err_exit("readdir");
                 break;
             }
-
-            LOG_INFO("readdir found %s", dirent->d_name);
 
             if (strcmp(dirent->d_name, ".")  == 0 ||
                 strcmp(dirent->d_name, "..") == 0)
                 continue;
 
-            if (dirs && dirent->d_type != DT_DIR)
+            if (!dirs || dirent->d_type == DT_DIR) {
+                LOG_INFO("readdir found %s", dirent->d_name);
+            } else {
+                LOG_INFO("readdir skipped non-dir %s", dirent->d_name);
                 continue;
+            }
 
             char **dent = da_push(dents);
             *dent = xmalloc(strlen(path) + strlen(dirent->d_name) + 2);
@@ -292,7 +299,13 @@ static int cmp_match(const void *p1, const void *p2) {
 
 static int expand_globs(dstr *arg, da_charp *argv) {
     int rv = -1;
-    bool slash_last = (arg->c_str[arg->size - 1] == '/');
+    bool slash_last = (arg->c_str[arg->len - 1] == '/');
+
+    if (slash_last) {
+        LOG_INFO("expand_globs called slash_last=true");
+    } else
+        LOG_INFO("expand_globs called slash_last=false");
+
     da_charp comps = {0};
     da_charp dents = {0};
 
