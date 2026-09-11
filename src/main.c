@@ -244,11 +244,11 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
 
     if (jev->type == JEXITED) {
         if (jev->signaled || jev->intr_int) {
-            /* signal cancels rest of andor chain so request removal */
+            /* signal cancels andor chain so remove the plan */
             plan_done(jev->jid);
-            sst->need_terminal = true;
+            reclaim_terminal();
+            sst->need_prompt = true;
 
-            /* print on signaled to inform the user of the unusual exit */
             if (jev->signaled)
                 sst->need_print = true;
 
@@ -259,24 +259,27 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
         } else {
             /* if there is no next job to run, we need the terminal back.
             * If we ran a job then that job takes fg control */
-            if (!run_next_job_fg(jev))
-                sst->need_terminal = true;
+            if (!run_next_job_fg(jev)) {
+                reclaim_terminal();
+                sst->need_prompt = true;
+            }
         }
 
     } else if (jev->type == JSTOPPED) {
+        reclaim_terminal();
+        sst->need_print = true;
+        sst->need_prompt = true;
+
         /* print '\n' to clear echoed control char (^Z) */
         /* if fg job is stopped we need the terminal back; also print */
         if (jev->intr_stop)
             printf("\n");
 
-        sst->need_print = true;
-        sst->need_terminal = true;
-
     } else if (jev->type == JCONTINUED) {
-        /* simply print */
-        sst->need_print = true;
+      /* Don't print here? If a interactive terminal program was resumed
+       * then printing will not be desired. We shouldn't print when we
+       * arenot in the foreground (This case only triggers by fg). */
     }
-
 }
 
 static void handle_bg_event(shell_state *sst, job_event *jev) {
@@ -284,8 +287,8 @@ static void handle_bg_event(shell_state *sst, job_event *jev) {
         if (jev->signaled) {
             /* signal cancels the rest of the andor chain so we need
             * the termianl, a print, and removal of the plan */
-            sst->need_print = true;
             plan_done(jev->jid);
+            sst->need_print = true;
 
         } else {
             if (!run_next_job_bg(jev))
@@ -299,7 +302,6 @@ static void handle_bg_event(shell_state *sst, job_event *jev) {
 static void process_signals(void) {
     shell_state sst = {
         .need_prompt = false,
-        .need_terminal = false,
         .need_print = false,
         .prompt_upset = !shell_in_fg()
     };
@@ -350,11 +352,6 @@ static void process_signals(void) {
     if (sighup_caught) {
         LOG_INFO("SIGHUP caught");
         exit(EXIT_FAILURE);
-    }
-
-    if (sst.need_terminal) {
-        reclaim_terminal();
-        sst.need_prompt = true;
     }
 
     if (sst.need_prompt || (shell_in_fg() && sst.prompt_upset))

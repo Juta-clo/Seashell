@@ -12,7 +12,6 @@
 #define NOFG -1
 
 typedef struct {
-    bool need_terminal;
     bool need_prompt;
     bool need_print;
     bool prompt_upset;
