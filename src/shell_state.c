@@ -23,6 +23,7 @@
 #define DEFAULT_LOG_DIR "/home/juta/Projects/Seashell/logs/shell/"
 
 shell_env sh_env = {0};
+da_plan plans = {0};
 
 LLOG_SINK(shell_llog_sink) {
     dstr output_msg;
@@ -151,6 +152,18 @@ static void var_setup(shell_env *env) {
         free(lhs);
         free(rhs);
     }
+}
+
+job_plan *lookup_plan(pid_t jid, size_t *index) {
+    for (size_t i = 0; i < plans.size; ++i) {
+        if (jid == plans.data[i].jid) {
+            if (index)
+                *index = i;
+            return &plans.data[i];
+        }
+    }
+
+    return NULL;
 }
 
 bool shell_in_fg(void) {

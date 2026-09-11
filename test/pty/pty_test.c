@@ -23,6 +23,7 @@ int val_pipe[2];
 char *shell_lfd_arg;
 char *val_lfd_arg;
 dstr unity_buf;
+char pty_expect_buf[BUFSIZ];
 
 struct termios tio;
 struct pollfd pollfds[NFDS];
@@ -263,12 +264,18 @@ void pty_ensure(const char *msg) {
     char *expected = pty_output_process(msg);
     size_t len = strlen(expected);
 
+    if (len >= BUFSIZ) {
+        free(expected);
+        TEST_FAIL_MESSAGE("expected string too large!");
+    }
+
+    strcpy(pty_expect_buf, expected);
+    free(expected);
+
     char *pty_chars = request_chars(len, &cur_test->pred_i, 1000);
 
     TEST_ASSERT_EQUAL_size_t(len, strlen(pty_chars));
-    TEST_ASSERT_EQUAL_STRING(expected, pty_chars);
-
-    free(expected);
+    TEST_ASSERT_EQUAL_STRING(pty_expect_buf, pty_chars);
 }
 
 void child_pstat_snapshot(void) {

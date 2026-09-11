@@ -255,6 +255,7 @@ TEST(shell, fg_stopped_bg_job) {
     pty_ensure(PROMPT);
 
     pty_send("fg %1\n");
+    pty_ensure("[1] Continued\n");
 }
 
 TEST(shell, kill_builtin_works_on_bg_jobs) {

@@ -27,8 +27,6 @@
 #define SIG_READY 1
 #define STDIN_READY 2
 
-static da_plan plans = {0};
-
 static void hup_to_children(void) {
     for (size_t i = 0; i < get_jctl()->jobs.size; ++i) {
         jc_job *job = &get_jctl()->jobs.data[i];
@@ -89,6 +87,9 @@ static ps_ast *line_to_ast(void) {
 }
 
 static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
+    if (!bg)
+        xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);
+
     bool handled = false;
 
     if (pline->cmds.size == 1 && !bg) {
@@ -126,6 +127,7 @@ static void add_plan(pid_t jid, ps_ast *ast) {
     LOG_INFO("added plan jid=%d", jid);
 
     job_plan *plan = da_push(&plans);
+    *plan = (job_plan){0};
 
     plan->jid = jid;
     plan->index = 1;
@@ -139,17 +141,6 @@ static void remove_plan(size_t index) {
     free(plans.data[index].ast);
 
     da_delete(&plans, index);
-}
-
-static job_plan *lookup_plan(pid_t jid, size_t *index) {
-    for (size_t i = 0; i < plans.size; ++i) {
-        if (jid == plans.data[i].jid) {
-            *index = i;
-            return &plans.data[i];
-        }
-    }
-
-    return NULL;
 }
 
 static void plan_done(pid_t jid) {
@@ -267,18 +258,30 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
 
     } else if (jev->type == JSTOPPED) {
         reclaim_terminal();
+
+        job_plan *plan = lookup_plan(jev->jid, NULL);
+        xtcgetattr(sh_env.tty_fd, &plan->tty_state);
+        xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tty_state);
+        plan->tty_state_saved = true;
+
         sst->need_print = true;
         sst->need_prompt = true;
 
-        /* print '\n' to clear echoed control char (^Z) */
-        /* if fg job is stopped we need the terminal back; also print */
         if (jev->intr_stop)
-            printf("\n");
+            printf("\n"); /* print '\n' to clear echoed cc (^Z) */
 
     } else if (jev->type == JCONTINUED) {
       /* Don't print here? If a interactive terminal program was resumed
        * then printing will not be desired. We shouldn't print when we
-       * arenot in the foreground (This case only triggers by fg). */
+       * arenot in the foreground (This case only triggers by fg).
+       *
+       * zsh handles this by lying. It prints the job continued msg
+       * before even sending SIGCONT. Thats probably a decent
+       * compromise. In any case I would never print here. Going to
+       * do that for now. See builtins.c
+       *
+       * fg builtin applies the saved termios for the stopped fg
+       * job because it needs to do it before resuming it. */
     }
 }
 
@@ -407,14 +410,7 @@ int main(int argc, char *const *argv) {
         }
 
         launch_job(first_pline, ast->bg, jid);
-
-        if (ast->andors.size > 1) {
-            add_plan(jid, ast);
-
-        } else {
-            ps_free(ast);
-            free(ast);
-        }
+        add_plan(jid, ast);
     }
 
     return EXIT_SUCCESS;

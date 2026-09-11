@@ -3,6 +3,7 @@
 
 #include <bits/types/sigset_t.h>
 #include <fcntl.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include "args.h"
@@ -25,12 +26,15 @@ typedef struct {
     int log_fd;
     int prompt_style;
     map_t vars;
+    struct termios tty_state;
 } shell_env;
 
 extern shell_env sh_env;
 
 struct job_plan {
     pid_t jid;
+    bool tty_state_saved;
+    struct termios tty_state;
     size_t index;
     ps_ast *ast;
 };
@@ -45,7 +49,9 @@ typedef enum {
 
 extern opt_data opts[];
 extern char **environ;
+extern da_plan plans;
 
+job_plan *lookup_plan(pid_t jid, size_t *index);
 bool shell_in_fg(void);
 void env_setup(shell_env *env);
 
