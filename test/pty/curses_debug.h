@@ -3,13 +3,24 @@
 
 #include <ncurses.h>
 
+#include "termsplit.h"
+
 typedef enum {
-    RAW_WIN,
-    TEST_WIN,
-    LOG_WIN,
-    VAL_WIN,
-    MAX_WIN
+    WIN_RAW,
+    WIN_TEST,
+    WIN_LOG,
+    WIN_VAL,
+    WIN_MAX
 } win_names;
+
+typedef enum {
+    GAP_L,
+    GAP_R,
+    GAP_T,
+    GAP_B,
+    GAP_J,
+    GAP_MAX
+} gap_names;
 
 typedef enum {
     BRIGHT_WHITE = 8, /* ncurses uses 0-7 */
@@ -23,15 +34,10 @@ typedef enum {
 } color_pairs;
 
 typedef struct {
-    WINDOW *win;
-    int offset;
-    int nlines;
-    int ncols;
-    int y;
-    int x;
-} curses_win;
-
-extern curses_win wins[MAX_WIN];
+    WINDOW* winp;
+    ts_rect *rect;
+    bool realized;
+} curs_win;
 
 void start_debug_repl(void);
 

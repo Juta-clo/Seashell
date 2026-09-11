@@ -12,6 +12,12 @@
 #define PROMPT "> "
 #define PTY_RBUF 100000
 
+#define MAX(a, b) \
+    ((a) > (b)) ? a : b
+
+#define MIN(a, b) \
+    ((a) < (b)) ? a : b
+
 struct vt_snap {
     VTermPos curs_pos;
     da_charp lines;

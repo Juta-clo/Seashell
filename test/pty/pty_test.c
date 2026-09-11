@@ -82,10 +82,20 @@ LLOG_SINK(pty_test_sink) {
     case LLOG_ERR:  lvl_str = "ERROR"; break;
     }
 
-    dstr *line = da_push(&cur_test->test_lines);
-    dstr_init(line);
-    dstr_printf(line, "%s llog: %s:%d: %s\n", lvl_str, info->site->file,
-            info->site->line, info->msg);
+    char log_buf[BUFSIZ];
+
+    int n = snprintf(log_buf, BUFSIZ, "%s llog: %s:%d: %s\n",
+            lvl_str, info->site->file, info->site->line, info->msg);
+
+    if (n < 0)
+        return;
+
+    if (n >= BUFSIZ) {
+        log_buf[BUFSIZ - 2] = '\n';
+        log_buf[BUFSIZ - 1] = '\0';
+    }
+
+    add_lines(&cur_test->test_lines, log_buf);
 }
 
 char *pty_output_process(const char *msg) {
@@ -409,8 +419,6 @@ void pty_send(const char *msg) {
      * that the shell echos we'll just do it here. */
     vterm_send(msg);
     pty_ensure(msg);
-
-    take_vt_snapshot();
 }
 
 void pty_cc(int cc_code) {
@@ -490,13 +498,8 @@ void new_test(void) {
     if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
         TEST_FAIL_MESSAGE("ioctl");
 
-    /* so the status column at the bottom can render and
-     * so we can render a box around it */
-    if (ws.ws_row > 2)
-        ws.ws_row -= 2;
-
-    if (ws.ws_col > 1)
-        ws.ws_col -= 1;
+    ws.ws_row = MAX(60, ws.ws_row / 2);
+    ws.ws_col = MAX(30, ws.ws_col / 2);
 
     cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, &ws);
     if (cur_test->cpid == 0)
@@ -538,11 +541,10 @@ void new_shell(void) {
 }
 
 void delete_shell(void) {
-    if (Unity.CurrentTestFailed != 0) {
+    if (Unity.CurrentTestFailed != 0)
         /* so the shell can write any final data to the mfd before
          * exiting. If we don't sleep the transcript might be cut off */
-        nanosleep(&(struct timespec){ .tv_nsec  = 25000000, .tv_sec = 0}, NULL);
-    }
+        nanosleep(&(struct timespec){.tv_nsec = 25000000, .tv_sec = 0}, NULL);
 
     take_vt_snapshot();
 

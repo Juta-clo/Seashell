@@ -1,8 +1,6 @@
 #define _GNU_SOURCE
 
-#include <errno.h>
 #include <sys/poll.h>
-#include <signal.h>
 #include <assert.h>
 #include <locale.h>
 #include <ncurses.h>
@@ -16,81 +14,10 @@
 
 #define NFDS 1
 
-int y, x;
-int by, bx;
-curses_win wins[4];
 bool ncurses_initialized = false;
-sigset_t og_set;
 
-struct pollfd pfds[NFDS] = {
-    (struct pollfd){ .events = POLLIN, .fd = STDIN_FILENO }
-};
-
-static volatile sig_atomic_t caught_sigwinch = 0;
-
-static void sigwinch_handler(int _) {
-    caught_sigwinch = true;
-}
-
-static void init_curses_wins() {
-    getmaxyx(stdscr, y, x);
-    y -= 1;
-
-    by = (y % 2 == 0) ? y / 2 : y / 2 + 1;
-    bx = (x % 2 == 0) ? x / 2 : x / 2 + 1;
-
-    wins[0] = (curses_win){
-        .nlines = by - 1, .ncols = bx - 1,
-        .y      = 0,      .x     = 0
-    };
-
-    wins[1] = (curses_win){
-        .nlines = by - 1, .ncols = x / 2,
-        .y      = 0,      .x     = bx
-    };
-
-    wins[2] = (curses_win){
-        .nlines = y / 2, .ncols = bx - 1,
-        .y      = by,    .x     = 0
-    };
-
-    wins[3] = (curses_win){
-        .nlines = y / 2, .ncols = x / 2,
-        .y      = by,    .x     = bx
-    };
-
-    for (size_t i = 0; i < 4; ++i) {
-        curses_win *cwin = &wins[i];
-
-        cwin->win = xderwin(stdscr, cwin->nlines, cwin->ncols, cwin->y, cwin->x);
-        xwrefresh(cwin->win);
-        scrollok(wins[i].win, true);
-    }
-}
-
-void process_signals(void) {
-    if (!caught_sigwinch)
-        return;
-
-    struct winsize ws;
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
-        curs_err("ioctl");
-
-    if (ncurses_initialized)
-        if (resize_term(ws.ws_row, ws.ws_col) == ERR)
-            curs_err("resize_term");
-
-    if (!isendwin()) {
-        for (size_t i = 0; i < MAX_WIN; ++i)
-            delwin(wins[i].win);
-
-        init_curses_wins();
-
-        if (refresh() == ERR)
-            curs_err("refresh");
-    }
-
-    caught_sigwinch = false;
+static void ncurses_cleanup(void) {
+    endwin();
 }
 
 static char *get_line(void) {
@@ -109,125 +36,6 @@ static char *get_line(void) {
         input_line[strlen(input_line) - 1 ] = '\0';
 
     return input_line;
-}
-
-static int mev_to_win(MEVENT *mev) {
-    if (mev->x >= wins[TEST_WIN].x) {
-        if (mev->y >= wins[VAL_WIN].y)
-            return VAL_WIN;
-        else
-            return TEST_WIN;
-    } else {
-        if (mev->y >= wins[VAL_WIN].y)
-            return LOG_WIN;
-        else
-            return RAW_WIN;
-    }
-}
-
-static void print_window_borders(void) {
-    for (int i = 0; i < y; ++i) {
-        if (i == by - 1) {
-            xmvaddch(i, bx - 1, ACS_PLUS);
-        } else
-            xmvaddch(i, bx - 1, ACS_VLINE);
-    }
-
-    for (int i = 0; i < x; ++i) {
-        if (i == bx - 1) {
-            xmvaddch(by - 1, i, ACS_PLUS);
-        } else
-            xmvaddch(by - 1, i, ACS_HLINE);
-    }
-
-    refresh();
-}
-
-static void clear_win_offsets(void) {
-    for (int i = 0; i < MAX_WIN; ++i)
-        wins[i].offset = 0;
-}
-
-static void ncurses_cleanup(void) {
-    endwin();
-}
-
-void suspend_ncurses(void) {
-    for (size_t i = 0; i < MAX_WIN; ++i)
-        delwin(wins[i].win);
-
-    endwin();
-}
-
-void resume_ncurses(void) {
-    if (!isendwin())
-        curs_err("resume_ncurses: not suspended");
-
-    init_curses_wins();
-
-    if (refresh() == ERR)
-        curs_err("refresh");
-}
-
-static void init_ncurses(void) {
-    if (ncurses_initialized) {
-        resume_ncurses();
-        return;
-    }
-
-    /* Set signals before initscr so ncurses doesn't set its own */
-    /* block sigwinch and save original set for use with ppoll */
-    sigset_t new_set;
-    xsigprocmask(SIG_SETMASK, NULL, &new_set);
-    xsigaddset(&new_set, SIGWINCH);
-    xsigprocmask(SIG_SETMASK, &new_set, &og_set);
-    /* set sigwinch disposition */
-    struct sigaction sa = { .sa_handler = sigwinch_handler };
-    xsigemptyset(&sa.sa_mask);
-    xsigaction(SIGWINCH, &sa, NULL);
-
-    if (!setlocale(LC_ALL, "")) {
-        perror("setlocale");
-        exit(EXIT_FAILURE);
-    }
-
-    /* terminal opts */
-    if (!initscr())
-        curs_err("initscr");
-    if (curs_set(0) == ERR)
-        curs_err("curs_set");
-    if (cbreak() == ERR)
-        curs_err("cbreak");
-    if (noecho() == ERR)
-        curs_err("noecho");
-
-    /* color */
-    if (start_color() == ERR)
-        curs_err("noecho");
-    if (use_default_colors() == ERR)
-        curs_err("use_default_colors");
-    if (init_color(BRIGHT_WHITE, 984, 945, 780) == ERR)
-        curs_err("init_color");
-    if (init_pair(BWHITE_RED, BRIGHT_WHITE, COLOR_RED) == ERR)
-        curs_err("init_pair");
-    if (init_pair(BWHITE_GREEN, BRIGHT_WHITE, COLOR_GREEN) == ERR)
-        curs_err("init_pair");
-    if (init_pair(BWHITE_YELLOW, BRIGHT_WHITE, COLOR_YELLOW) == ERR)
-        curs_err("init_pair");
-
-    /* input */
-    if (keypad(stdscr, true) == ERR)
-        curs_err("keypad");
-    if (!mousemask(ALL_MOUSE_EVENTS, NULL))
-        curs_err("mousemask");
-
-    xatexit(ncurses_cleanup);
-    ncurses_initialized = true;
-
-    init_curses_wins();
-
-    if (refresh() == ERR)
-        curs_err("refresh");
 }
 
 static void get_test_next(size_t *start_i) {
@@ -272,370 +80,437 @@ static void get_test_prev(size_t *start_i) {
     }
 }
 
-static void render_lines(curses_win *win, da_dstr *lines) {
-    if (lines->size == 0) {
-        mvwaddnstr(win->win, 0, 0, "[No data]", win->ncols - 1);
+/* TERMSPLIT HANDLERS */
+int split_init(ts_node *node) {
+    if (!node->user_data)
+        node->user_data = xmalloc(sizeof(curs_win));
+
+    ts_rect rect = node->rect;
+    curs_win *win = node->user_data;
+
+    win->winp = NULL;
+    win->realized = false;
+
+    if (rect.rows <= 0 || rect.cols <= 0)
+        return -1;
+
+    WINDOW *winp = newwin(rect.rows, rect.cols, rect.y, rect.x);
+    if (!winp)
+        return -1;
+
+    if (scrollok(winp, true) == ERR)
+        curs_err("scrollok");
+
+    win->winp = winp;
+    win->rect = &node->rect;
+    win->realized = true;
+
+    return 0;
+}
+
+void split_resize(ts_node *node, uint32_t _) {
+    curs_win *win = node->user_data;
+
+    win->realized = false;
+
+    if (node->rect.rows <= 0 || node->rect.cols <= 0)
         return;
-    }
 
-    for (int i = 0, wn = 0; i < win->nlines; ++i) {
-        if (i - wn + win->offset > (int) lines->size - 1)
-            continue;
+    if (wresize(win->winp, node->rect.rows, node->rect.cols) == ERR)
+        return;
 
-        if (i - wn + win->offset < 0)
-            continue;
+    if (mvwin(win->winp, node->rect.y, node->rect.x) == ERR)
+        return;
 
-        dstr *line = &lines->data[i - wn + win->offset];
-        mvwaddnstr(win->win, i, 0, line->c_str, win->ncols - 1);
-
-        char *p = line->c_str;
-
-        while ((int) strlen(p) > win->ncols - 1 && i + 1 < win->nlines) {
-            p += win->ncols - 1;
-            mvwaddnstr(win->win, ++i, 0, p, win->ncols - 1);
-            ++wn;
-        }
-    }
+    win->realized = true;
 }
 
-static bool handle_mouse_event(void) {
-    MEVENT mev;
-    if (getmouse(&mev) == ERR)
-        return false;
+void split_free(ts_node *node) {
+    curs_win *win = node->user_data;
 
-    curses_win *win = &wins[mev_to_win(&mev)];
+    if (win && delwin(win->winp) == ERR)
+        curs_err("delwin");
 
-    if (mev.bstate & BUTTON4_PRESSED)
-        --win->offset;
-
-    if (mev.bstate & BUTTON5_PRESSED)
-        ++win->offset;
-
-    return true;
+    free(win);
 }
 
-static void refresh_wins(size_t test_i) {
-    erase();
-    print_window_borders();
-
-    if (!all_tests.data[test_i].success)
-        attron(COLOR_PAIR(BWHITE_RED));
-    else if (all_tests.data[test_i].val_err)
-        attron(COLOR_PAIR(BWHITE_YELLOW));
-    else
-        attron(COLOR_PAIR(BWHITE_GREEN));
-
-    mvprintw(y, 0, "[%ld/%ld]: %s",
-            test_i + 1, all_tests.size, all_tests.data[test_i].test_name);
-
-    if (!all_tests.data[test_i].success)
-        attroff(COLOR_PAIR(BWHITE_RED));
-    else if (all_tests.data[test_i].val_err)
-        attroff(COLOR_PAIR(BWHITE_YELLOW));
-    else
-        attroff(COLOR_PAIR(BWHITE_GREEN));
-
-    refresh();
-
-    for (int win_i = 0; win_i < MAX_WIN; ++win_i) {
-        werase(wins[win_i].win);
-
-        if (win_i == RAW_WIN) {
-            render_lines(&wins[win_i], &all_tests.data[test_i].raw_lines);
-        } else if (win_i == LOG_WIN) {
-            render_lines(&wins[win_i], &all_tests.data[test_i].shell_log_lines);
-        } else if (win_i == VAL_WIN) {
-            render_lines(&wins[win_i], &all_tests.data[test_i].val_lines);
-        } else if (win_i == TEST_WIN) {
-            render_lines(&wins[win_i], &all_tests.data[test_i].test_lines);
-        }
-
-        wrefresh(wins[win_i].win);
-    }
-}
-
-void render_snap(vt_snap *snap, WINDOW *win) {
-    WINDOW *border_win = newwin(y, x, 0, 0);
-    wborder(border_win, 0, 0, 0, 0, 0, 0, 0 ,0);
-
-    for (int row = 0; row < (int) snap->lines.size; ++row) {
-        char *line = snap->lines.data[row];
-        int col = 0;
-
-        for (char *c = line; *c != '\0'; ++c, ++col) {
-            if (snap->curs_pos.row == row && snap->curs_pos.col == col)
-                wattron(win, A_REVERSE);
-
-            mvwaddch(win, row, col, *c);
-
-            wattroff(win, A_REVERSE);
-        }
-    }
-
-    xwrefresh(border_win);
-    xwrefresh(win);
-    delwin(border_win);
-}
-
-void view_vterm(size_t test_i) {
-    pty_test *test = &all_tests.data[test_i];
-
-    WINDOW *win = newwin(y - 2, x - 2, 1, 1);
-    wclear(win);
-
-    if (test->vterm.rows > y - 1 || test->vterm.cols > x - 1) {
-        mvwprintw(win, 0, 0, "[vterm too large to display]");
-        getch();
-        goto done;
-    }
-
-    size_t i = 0;
-    while (true) {
-        erase();
-        attron(A_BOLD);
-        mvprintw(y, 0, "VTerm Snapshot [%ld/%ld]", i + 1, test->snaps.size);
-        attroff(A_BOLD);
-        refresh();
-
-        render_snap(&test->snaps.data[i], win);
-
-        int c = getch();
-
-        if (c == 'v')
-            break;
-
-        if (c == 'l' && i < test->snaps.size - 1)
-            ++i;
-
-        if (c == 'h' && i > 0)
-            --i;
-    }
-
-done:
-    wrefresh(win);
-    delwin(win);
-    refresh_wins(test_i);
-}
-
-static void display_debug_wins(size_t test_i) {
-    assert(all_tests.size > 0);
-
-    init_ncurses();
-    refresh_wins(test_i);
-
-    while (true) {
-        int ready = ppoll(pfds, NFDS, NULL, &og_set);
-
-        if (ready == -1) {
-            if (errno != EINTR)
-                curs_err("ppoll");
-
-            process_signals();
-            refresh_wins(test_i);
-
-            continue;
-        }
-
-        int c = getch();
-
-        if (c == 'q' || c == '\n') {
-            suspend_ncurses();
-            break;
-        }
-
-        if (c == 'v') {
-            view_vterm(test_i);
-        }
-
-        if (c == KEY_MOUSE)
-            while (handle_mouse_event())
-                continue;
-
-        if (c == 'l') {
-            get_test_next(&test_i);
-            clear_win_offsets();
-        }
-
-        if (c == 'h') {
-            get_test_prev(&test_i);
-            clear_win_offsets();
-        }
-
-        refresh_wins(test_i);
-    }
-}
-
+/* NEW UI */
 void init_curses(void) {
+    if (ncurses_initialized)
+        return;
+
     if (!setlocale(LC_ALL, "")) {
         perror("setlocale");
         exit(EXIT_FAILURE);
     }
+
     if (!initscr()) {
         fprintf(stderr, "initscr failed!\n");
         exit(EXIT_FAILURE);
     }
 
-    if (curs_set(0) == ERR) curs_err("curs_set");
-    if (cbreak() == ERR) curs_err("cbreak");
-    if (noecho() == ERR) curs_err("noecho");
+    /* options */
+    if (curs_set(0) == ERR)
+        curs_err("curs_set");
+    if (cbreak() == ERR)
+        curs_err("cbreak");
+    if (noecho() == ERR)
+        curs_err("noecho");
+
+    /* color */
+    if (start_color() == ERR)
+        curs_err("noecho");
+    if (use_default_colors() == ERR)
+        curs_err("use_default_colors");
+    if (init_color(BRIGHT_WHITE, 984, 945, 780) == ERR)
+        curs_err("init_color");
+    if (init_pair(BWHITE_RED, BRIGHT_WHITE, COLOR_RED) == ERR)
+        curs_err("init_pair");
+    if (init_pair(BWHITE_GREEN, BRIGHT_WHITE, COLOR_GREEN) == ERR)
+        curs_err("init_pair");
+    if (init_pair(BWHITE_YELLOW, BRIGHT_WHITE, COLOR_YELLOW) == ERR)
+        curs_err("init_pair");
+
+    /* input */
+    if (keypad(stdscr, true) == ERR)
+        curs_err("keypad");
+    if (!mousemask(ALL_MOUSE_EVENTS, NULL))
+        curs_err("mousemask");
+
     xatexit(ncurses_cleanup);
-    if (refresh() == ERR) curs_err("refresh");
+
+    if (refresh() == ERR)
+        curs_err("refresh");
+
+    ncurses_initialized = true;
 }
 
-void split_init(ts_node *node) {
-    if (node->rect.rows <= 0 || node->rect.cols <= 0)
-        curs_err("terminal too small!");
-
-    ts_rect rect = node->rect;
-
-    WINDOW *win = newwin(rect.rows, rect.cols, rect.y, rect.x);
-    if (!win)
-        curs_err("newwin");
-
-    node->user_data = win;
-}
-
-void split_resize(ts_node *node, uint32_t _) {
-    if (node->rect.rows <= 0 || node->rect.cols <= 0)
-        curs_err("terminal too small!");
-
-    if (wresize(node->user_data, node->rect.rows, node->rect.cols) == ERR)
-        curs_err("wresize");
-
-    if (mvwin(node->user_data, node->rect.y, node->rect.x) == ERR)
-        curs_err("mvwin");
-}
-
-void split_free(ts_node *node) {
-    if (delwin(node->user_data) == ERR)
-        curs_err("delwin");
-}
-
-ts_rect get_term_rect(void) {
+/* UTILS */
+ts_rect get_quad_rect(void) {
     int y, x;
     getmaxyx(stdscr, y, x);
-    return (ts_rect){ .rows = y, .cols = x, .y = 0, .x = 0 };
+    return (ts_rect){ .rows = y - 1, .cols = x, .y = 0, .x = 0 };
 }
 
-__attribute__ ((__format__(printf, 1, 2)))
-void CURS_LOG(const char *fmt, ...) {
-    endwin();
+ts_rect get_info_bar_rect(void) {
+    int y, x;
+    getmaxyx(stdscr, y, x);
+    return (ts_rect){ .rows = 1, .cols = x, .y = y - 1, .x = 0 };
+}
 
+chtype *str_to_chtype_arr(const char *s, size_t n, chtype attrs) {
+    chtype *out = xmalloc(sizeof(chtype) * (n + 1));
+
+    size_t i = 0;
+
+    for (; i < n; ++i) {
+        if (s[i] == '\0')
+            break;
+        out[i] = (chtype){s[i]} | attrs;
+    }
+
+    out[i] = (chtype){0};
+
+    return out;
+}
+
+__attribute__ ((__format__(printf, 6, 7)))
+void rnprintf(WINDOW *winp, int y, int x, size_t n, chtype attrs,
+        const char *fmt, ...)
+{
     va_list va;
+    char *str;
+
     va_start(va, fmt);
-    vprintf(fmt, va);
+    if (vasprintf(&str, fmt, va) == -1)
+        curs_err("vasprintf");
     va_end(va);
 
-    refresh();
+    chtype *chstr = str_to_chtype_arr(str, n, attrs);
+
+    if (mvwaddchnstr(winp, y, x, chstr, n) == ERR)
+        curs_err("mvwaddchnstr");
+
+    free(str);
+    free(chstr);
 }
 
-void render_quad(ts_node *quad) {
-    for (size_t i = 0; i < TS_QUAD_CHILD_MAX; ++i) {
-        ts_rect rect = quad->children[i]->rect;
-        WINDOW *win = quad->children[i]->user_data;
+/* RENDER FUNCS */
+void render_quad_borders(curs_win *gaps[GAP_MAX]) {
+    for (size_t i = 0; i < GAP_MAX; ++i) {
+        curs_win *gap = gaps[i];
+        ts_rect rect = *gap->rect;
 
-        CURS_LOG("quad index = %ld\n", i);
-
-        if (i < TS_QUAD_GL)
+        if (!gap->realized)
             continue;
+
+        if (werase(gap->winp) == ERR)
+            curs_err("werase");
 
         for (int row = 0; row < rect.rows; ++row) {
             for (int col = 0; col < rect.cols; ++col) {
-                if (i == TS_QUAD_GJ) {
-                    if (mvwaddchnstr(win, row, col, &(chtype){ACS_PLUS}, 1) == ERR)
-                        curs_err("mvwaddch - '+'");
+                int ch;
 
-                } else if (i == TS_QUAD_GL || i == TS_QUAD_GR) {
-                    if (mvwaddchnstr(win, row, col, &(chtype){ACS_HLINE}, 1) == ERR) {
-                        endwin();
-                        fprintf(stderr, "rows=%d cols=%d y=%d x=%d\n",
-                                rect.rows, rect.cols, rect.y, rect.x);
-                        fprintf(stderr, "cur_row=%d cur_col=%d\n",
-                                row, col);
-                        _exit(EXIT_FAILURE);
-                    }
-                } else if (i == TS_QUAD_GT || i == TS_QUAD_GB) {
-                    if (mvwaddchnstr(win, row, col, &(chtype){ACS_VLINE}, 1) == ERR) {
-                        endwin();
-                        fprintf(stderr, "rows=%d cols=%d y=%d x=%d\n",
-                                rect.rows, rect.cols, rect.y, rect.x);
-                        fprintf(stderr, "cur_row=%d cur_col=%d\n",
-                                row, col);
-                        _exit(EXIT_FAILURE);
-                    }
-                }
+                if (i == GAP_J) {
+                    ch = ACS_PLUS;
+                } else if (i == GAP_L || i == GAP_R) {
+                    ch = ACS_HLINE;
+                } else if (i == GAP_T || i == GAP_B)
+                    ch = ACS_VLINE;
+
+                if (mvwaddchnstr(gap->winp, row, col, &(chtype){ch}, 1) == ERR)
+                    curs_err("mvwaddch - '+'");
             }
         }
 
-        if (wrefresh(win) == ERR)
-            curs_err("wrefresh");
+        xwrefresh(gap->winp);
+    }
+}
+
+void render_test_bar(curs_win *test_bar, size_t test_i) {
+    if (!test_bar->realized)
+        return;
+
+    pty_test *test = &all_tests.data[test_i];
+    char test_bar_str[BUFSIZ];
+    int cp_n;
+
+    if (werase(test_bar->winp) == ERR)
+        curs_err("werase");
+
+    int n = snprintf(test_bar_str, sizeof(test_bar_str),
+            "[%zu/%zu]: %s", test_i + 1, all_tests.size, test->test_name);
+
+    if (n < 0)
+        curs_err("snprintf");
+
+    if (n >= (int)sizeof(test_bar_str))
+        n = sizeof(test_bar_str) - 1;
+
+    if (n > test_bar->rect->cols)
+        n = test_bar->rect->cols;
+
+    if      (!test->success) cp_n = BWHITE_RED;
+    else if (test->val_err)  cp_n = BWHITE_YELLOW;
+    else                     cp_n = BWHITE_GREEN;
+
+    rnprintf(test_bar->winp, 0, 0, n, COLOR_PAIR(cp_n), "%s", test_bar_str);
+    xwrefresh(test_bar->winp);
+}
+
+void render_vterm_snap(curs_win *win, int trows, int tcols, vt_snap *snap) {
+    if (!win->realized)
+        return;
+
+    if (werase(win->winp) == ERR)
+        curs_err("werase");
+
+    ts_rect rect = *win->rect;
+    int avail_rows = MIN(rect.rows, trows);
+    int avail_cols = MIN(rect.cols, tcols);
+
+    for (int row = 0; row < avail_rows; ++row) {
+        char *line = snap->lines.data[row];
+        rnprintf(win->winp, row, 0, avail_cols, 0, "%s", line);
+    }
+
+    int curs_row = snap->curs_pos.row;
+    int curs_col = snap->curs_pos.col;
+
+    if (curs_row < avail_rows && curs_col < avail_cols)
+        mvwchgat(win->winp, curs_row, curs_col, 1, A_REVERSE, 0, NULL);
+
+    xwrefresh(win->winp);
+}
+
+static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
+    if (!win->realized)
+        return;
+
+    if (werase(win->winp) == ERR)
+        curs_err("werase");
+
+    if (lines->size == 0) {
+        rnprintf(win->winp, 0, 0, win->rect->cols, 0, "[No data]");
+        xwrefresh(win->winp);
+        return;
+    }
+
+    for (int i = 0, wn = 0; i < win->rect->rows; ++i) {
+        if (i - wn + offset > (int)lines->size - 1)
+            continue;
+
+        if (i - wn + offset < 0)
+            continue;
+
+        dstr *line = &lines->data[i - wn + offset];
+        rnprintf(win->winp, i, 0, win->rect->cols, 0, "%s", line->c_str);
+        char *p = line->c_str;
+
+        while ((int) strlen(p) > win->rect->cols - 1 && i + 1 < win->rect->rows) {
+            p += win->rect->cols - 1;
+            rnprintf(win->winp, ++i, 0, win->rect->cols, 0, "%s", p);
+            ++wn;
+        }
+    }
+
+    xwrefresh(win->winp);
+}
+
+static int lookup_win(curs_win *wins[WIN_MAX], int y, int x) {
+    if (x >= wins[WIN_TEST]->rect->x) {
+        if (y >= wins[WIN_VAL]->rect->y) {
+            return WIN_VAL;
+        } else
+            return WIN_TEST;
+    } else {
+        if (y >= wins[WIN_VAL]->rect->y) {
+            return WIN_LOG;
+        } else
+            return WIN_RAW;
+    }
+}
+
+static void process_mevs(curs_win *wins[WIN_MAX], int offsets[WIN_MAX]) {
+    MEVENT mev;
+
+    while (getmouse(&mev) != ERR) {
+        int win_i = lookup_win(wins, mev.y, mev.x);
+
+        if (mev.bstate & BUTTON4_PRESSED)
+            --offsets[win_i];
+
+        if (mev.bstate & BUTTON5_PRESSED)
+            ++offsets[win_i];
     }
 }
 
 void new_curses_ui() {
     init_curses();
 
-    ts_node *quad_nodes[TS_QUAD_CHILD_MAX];
+    /* initialize main quad display */
+    ts_node *nodes[TS_QUAD_CHILD_MAX];
 
     for (int i = 0; i < TS_QUAD_CHILD_MAX; ++i)
-        quad_nodes[i] = ts_new_leaf(split_init, split_resize, split_free);
+        nodes[i] = ts_new_leaf(split_init, split_resize, split_free);
 
     ts_node *quad = ts_new_quad((ts_quad_config) {
-        .ratio_y = 0.3F, .ratio_x = 0.8F, .quad_gap = 1,
-        .tl = quad_nodes[0], .tr = quad_nodes[1],
-        .bl = quad_nodes[2], .br = quad_nodes[3],
-        .gl = quad_nodes[4], .gr = quad_nodes[5],
-        .gt = quad_nodes[6], .gb = quad_nodes[7],
-        .gj = quad_nodes[8],
+        .ratio_y = 0.5F, .ratio_x = 0.5F, .quad_gap = 1,
+        .tl = nodes[TS_QUAD_TL], .tr = nodes[TS_QUAD_TR],
+        .bl = nodes[TS_QUAD_BL], .br = nodes[TS_QUAD_BR],
+        .gl = nodes[TS_QUAD_GL], .gr = nodes[TS_QUAD_GR],
+        .gt = nodes[TS_QUAD_GT], .gb = nodes[TS_QUAD_GB],
+        .gj = nodes[TS_QUAD_GJ],
     });
 
-    ts_refresh(quad, get_term_rect());
-    render_quad(quad);
+    ts_refresh(quad, get_quad_rect());
+
+    curs_win *wins[WIN_MAX] = {
+        [WIN_RAW] = nodes[TS_QUAD_TL]->user_data,
+        [WIN_TEST] = nodes[TS_QUAD_TR]->user_data,
+        [WIN_LOG] = nodes[TS_QUAD_BL]->user_data,
+        [WIN_VAL] = nodes[TS_QUAD_BR]->user_data
+    };
+
+    curs_win *gaps[GAP_MAX] = {
+        [GAP_L] = nodes[TS_QUAD_GL]->user_data,
+        [GAP_R] = nodes[TS_QUAD_GR]->user_data,
+        [GAP_T] = nodes[TS_QUAD_GT]->user_data,
+        [GAP_B] = nodes[TS_QUAD_GB]->user_data,
+        [GAP_J] = nodes[TS_QUAD_GJ]->user_data
+    };
+
+    /* initialize test bar */
+    ts_node *bottom_bar = ts_new_leaf(split_init, split_resize, split_free);
+    ts_refresh(bottom_bar, get_info_bar_rect());
+    curs_win *test_bar = bottom_bar->user_data;
+
+    /* get test data to display */
+    size_t test_i = 0;
+    if (!verbose_mode)
+        if (all_tests.data[test_i].success && !all_tests.data[test_i].val_err)
+            get_test_next(&test_i);
+
+    int offsets[WIN_MAX] = {0};
+    size_t snap_i = all_tests.data[test_i].snaps.size - 1;
 
     while (true) {
+        ts_refresh(quad, get_quad_rect());
+        ts_refresh(bottom_bar, get_info_bar_rect());
+
+        erase();
+        refresh();
+
+        pty_test *test = &all_tests.data[test_i];
+
+        render_quad_borders(gaps);
+        render_test_bar(test_bar, test_i);
+        render_debug_win(wins[WIN_TEST], &test->test_lines, offsets[WIN_TEST]);
+        render_debug_win(wins[WIN_LOG], &test->shell_log_lines, offsets[WIN_LOG]);
+        render_debug_win(wins[WIN_VAL], &test->val_lines, offsets[WIN_VAL]);
+        render_vterm_snap(wins[WIN_RAW], test->vterm.rows, test->vterm.cols,
+                &test->snaps.data[snap_i]);
+
         int ch = getch();
 
-        if (ch == KEY_RESIZE) {
-            if (untouchwin(stdscr) == ERR)
-                curs_err("untouchwin");
-
-            erase();
-            ts_refresh(quad, get_term_rect());
-            render_quad(quad);
-        }
+        if (ch == ERR)
+            curs_err("getch");
 
         if (ch == 'q')
             break;
+
+        if (ch == KEY_MOUSE)
+            process_mevs(wins, offsets);
+
+        if (ch == 'h') {
+            for (size_t i = 0; i < WIN_MAX; ++i)
+                offsets[i] = 0;
+            get_test_prev(&test_i);
+            snap_i = all_tests.data[test_i].snaps.size - 1;
+        }
+
+        if (ch == 'l') {
+            for (size_t i = 0; i < WIN_MAX; ++i)
+                offsets[i] = 0;
+            get_test_next(&test_i);
+            snap_i = all_tests.data[test_i].snaps.size - 1;
+        }
+
+        if (ch == 'j')
+            snap_i = MIN(test->snaps.size - 1, snap_i + 1);
+
+        if (ch == 'k')
+            snap_i = MAX(0, (int) snap_i - 1);
+
+        if (ch == KEY_LEFT)
+            if (quad->ratio_x > 0.05F)
+                quad->ratio_x -= 0.05F;
+
+        if (ch == KEY_RIGHT)
+            if (quad->ratio_x < 0.95F)
+                quad->ratio_x += 0.05F;
+
+        if (ch == KEY_UP)
+            if (quad->ratio_y > 0.05F)
+                quad->ratio_y -= 0.05F;
+
+        if (ch == KEY_DOWN)
+            if (quad->ratio_y < 0.95F)
+                quad->ratio_y += 0.05F;
     }
 
     ts_free(quad);
-    exit(EXIT_SUCCESS);
+    ts_free(bottom_bar);
+    endwin();
 }
 
 void start_debug_repl(void) {
-    bool use_new_ui = false;
-
-    size_t test_i = 0;
-
-    if (all_tests.data[test_i].success && !all_tests.data[test_i].val_err)
-        get_test_next(&test_i);
-
     printf("\n");
     while (true) {
         printf("> ");
         fflush(stdout);
 
-        int ready = ppoll(pfds, NFDS, NULL, &og_set);
-
-        if (ready == -1) {
-            if (errno != EINTR)
-                curs_err("ppoll");
-
-            process_signals();
-            continue;
-        }
-
-        char *line = get_line(); /* probably should generalize this */
+        char *line = get_line();
 
         if (strcmp("h", line) == 0) {
             printf("<Enter> - Toggle debug view\n"
@@ -653,10 +528,7 @@ void start_debug_repl(void) {
             return;
 
         } else if (strcmp("", line) == 0) /* newline */
-            if (use_new_ui)
-                new_curses_ui();
-            else
-                display_debug_wins(test_i);
+            new_curses_ui();
 
         else {
             printf("Unrecognized command\n");
