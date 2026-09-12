@@ -6,7 +6,7 @@
 #include <ncurses.h>
 #include <string.h>
 
-#include "termsplit.h"
+#include "splitty.h"
 #include "curses_debug.h"
 #include "curses_xfuncs.h"
 #include "xfuncs.h"
@@ -80,12 +80,12 @@ static void get_test_prev(size_t *start_i) {
     }
 }
 
-/* TERMSPLIT HANDLERS */
-int split_init(ts_node *node) {
+/* SPLITTY HANDLERS */
+int split_init(sp_node *node) {
     if (!node->user_data)
         node->user_data = xmalloc(sizeof(curs_win));
 
-    ts_rect rect = node->rect;
+    sp_rect rect = node->rect;
     curs_win *win = node->user_data;
 
     win->winp = NULL;
@@ -108,7 +108,7 @@ int split_init(ts_node *node) {
     return 0;
 }
 
-void split_resize(ts_node *node, uint32_t _) {
+void split_resize(sp_node *node, uint32_t _) {
     curs_win *win = node->user_data;
 
     win->realized = false;
@@ -125,7 +125,7 @@ void split_resize(ts_node *node, uint32_t _) {
     win->realized = true;
 }
 
-void split_free(ts_node *node) {
+void split_free(sp_node *node) {
     curs_win *win = node->user_data;
 
     if (win && delwin(win->winp) == ERR)
@@ -186,16 +186,16 @@ void init_curses(void) {
 }
 
 /* UTILS */
-ts_rect get_quad_rect(void) {
+sp_rect get_quad_rect(void) {
     int y, x;
     getmaxyx(stdscr, y, x);
-    return (ts_rect){ .rows = y - 1, .cols = x, .y = 0, .x = 0 };
+    return (sp_rect){ .rows = y - 1, .cols = x, .y = 0, .x = 0 };
 }
 
-ts_rect get_info_bar_rect(void) {
+sp_rect get_info_bar_rect(void) {
     int y, x;
     getmaxyx(stdscr, y, x);
-    return (ts_rect){ .rows = 1, .cols = x, .y = y - 1, .x = 0 };
+    return (sp_rect){ .rows = 1, .cols = x, .y = y - 1, .x = 0 };
 }
 
 chtype *str_to_chtype_arr(const char *s, size_t n, chtype attrs) {
@@ -239,7 +239,7 @@ void rnprintf(WINDOW *winp, int y, int x, size_t n, chtype attrs,
 void render_quad_borders(curs_win *gaps[GAP_MAX]) {
     for (size_t i = 0; i < GAP_MAX; ++i) {
         curs_win *gap = gaps[i];
-        ts_rect rect = *gap->rect;
+        sp_rect rect = *gap->rect;
 
         if (!gap->realized)
             continue;
@@ -305,7 +305,7 @@ void render_vterm_snap(curs_win *win, int trows, int tcols, vt_snap *snap) {
     if (werase(win->winp) == ERR)
         curs_err("werase");
 
-    ts_rect rect = *win->rect;
+    sp_rect rect = *win->rect;
     int avail_rows = MIN(rect.rows, trows);
     int avail_cols = MIN(rect.cols, tcols);
 
@@ -389,40 +389,40 @@ void new_curses_ui() {
     init_curses();
 
     /* initialize main quad display */
-    ts_node *nodes[TS_QUAD_CHILD_MAX];
+    sp_node *nodes[SP_QUAD_CHILD_MAX];
 
-    for (int i = 0; i < TS_QUAD_CHILD_MAX; ++i)
-        nodes[i] = ts_new_leaf(split_init, split_resize, split_free);
+    for (int i = 0; i < SP_QUAD_CHILD_MAX; ++i)
+        nodes[i] = sp_new_leaf(split_init, split_resize, split_free);
 
-    ts_node *quad = ts_new_quad((ts_quad_config) {
+    sp_node *quad = sp_new_quad((sp_quad_config) {
         .ratio_y = 0.5F, .ratio_x = 0.5F, .quad_gap = 1,
-        .tl = nodes[TS_QUAD_TL], .tr = nodes[TS_QUAD_TR],
-        .bl = nodes[TS_QUAD_BL], .br = nodes[TS_QUAD_BR],
-        .gl = nodes[TS_QUAD_GL], .gr = nodes[TS_QUAD_GR],
-        .gt = nodes[TS_QUAD_GT], .gb = nodes[TS_QUAD_GB],
-        .gj = nodes[TS_QUAD_GJ],
+        .tl = nodes[SP_QUAD_TL], .tr = nodes[SP_QUAD_TR],
+        .bl = nodes[SP_QUAD_BL], .br = nodes[SP_QUAD_BR],
+        .gl = nodes[SP_QUAD_GL], .gr = nodes[SP_QUAD_GR],
+        .gt = nodes[SP_QUAD_GT], .gb = nodes[SP_QUAD_GB],
+        .gj = nodes[SP_QUAD_GJ],
     });
 
-    ts_refresh(quad, get_quad_rect());
+    sp_refresh(quad, get_quad_rect());
 
     curs_win *wins[WIN_MAX] = {
-        [WIN_RAW] = nodes[TS_QUAD_TL]->user_data,
-        [WIN_TEST] = nodes[TS_QUAD_TR]->user_data,
-        [WIN_LOG] = nodes[TS_QUAD_BL]->user_data,
-        [WIN_VAL] = nodes[TS_QUAD_BR]->user_data
+        [WIN_RAW] = nodes[SP_QUAD_TL]->user_data,
+        [WIN_TEST] = nodes[SP_QUAD_TR]->user_data,
+        [WIN_LOG] = nodes[SP_QUAD_BL]->user_data,
+        [WIN_VAL] = nodes[SP_QUAD_BR]->user_data
     };
 
     curs_win *gaps[GAP_MAX] = {
-        [GAP_L] = nodes[TS_QUAD_GL]->user_data,
-        [GAP_R] = nodes[TS_QUAD_GR]->user_data,
-        [GAP_T] = nodes[TS_QUAD_GT]->user_data,
-        [GAP_B] = nodes[TS_QUAD_GB]->user_data,
-        [GAP_J] = nodes[TS_QUAD_GJ]->user_data
+        [GAP_L] = nodes[SP_QUAD_GL]->user_data,
+        [GAP_R] = nodes[SP_QUAD_GR]->user_data,
+        [GAP_T] = nodes[SP_QUAD_GT]->user_data,
+        [GAP_B] = nodes[SP_QUAD_GB]->user_data,
+        [GAP_J] = nodes[SP_QUAD_GJ]->user_data
     };
 
     /* initialize test bar */
-    ts_node *bottom_bar = ts_new_leaf(split_init, split_resize, split_free);
-    ts_refresh(bottom_bar, get_info_bar_rect());
+    sp_node *bottom_bar = sp_new_leaf(split_init, split_resize, split_free);
+    sp_refresh(bottom_bar, get_info_bar_rect());
     curs_win *test_bar = bottom_bar->user_data;
 
     /* get test data to display */
@@ -435,8 +435,8 @@ void new_curses_ui() {
     size_t snap_i = all_tests.data[test_i].snaps.size - 1;
 
     while (true) {
-        ts_refresh(quad, get_quad_rect());
-        ts_refresh(bottom_bar, get_info_bar_rect());
+        sp_refresh(quad, get_quad_rect());
+        sp_refresh(bottom_bar, get_info_bar_rect());
 
         erase();
         refresh();
@@ -499,8 +499,8 @@ void new_curses_ui() {
                 quad->ratio_y += 0.05F;
     }
 
-    ts_free(quad);
-    ts_free(bottom_bar);
+    sp_free(quad);
+    sp_free(bottom_bar);
     endwin();
 }
 

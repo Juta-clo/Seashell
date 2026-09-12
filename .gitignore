@@ -18,3 +18,4 @@ vg.err
 pty_test
 unit_test
 self_kill
+launch_seashell

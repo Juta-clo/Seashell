@@ -3,7 +3,7 @@
 
 #include <ncurses.h>
 
-#include "termsplit.h"
+#include "splitty.h"
 
 typedef enum {
     WIN_RAW,
@@ -35,7 +35,7 @@ typedef enum {
 
 typedef struct {
     WINDOW* winp;
-    ts_rect *rect;
+    sp_rect *rect;
     bool realized;
 } curs_win;
 

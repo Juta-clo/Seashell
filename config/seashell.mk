@@ -3,17 +3,19 @@ BLD_DIR := build/seashell
 COMPCOM := compile_commands.json
 
 SRC_DIR := src
+INC_DIR := inc
 DEP_DIR := deps
-LT_DIR  := $(DEP_DIR)/linc_tools/src
+
+LT_DIR  := $(DEP_DIR)/linc_tools
 
 CC := clang
 
 CFLAGS := -g -O0 -std=gnu23 -Wall -Wextra -fcolor-diagnostics
-CPPFLAGS := -Iinc -I$(DEP_DIR)/linc_tools/inc
+CPPFLAGS := -I$(INC_DIR) -I$(LT_DIR)/inc
 DEPFLAGS := -MMD -MP
 
 SRCS := $(wildcard $(SRC_DIR)/*.c)
-SRCS += $(filter-out $(LT_DIR)/termsplit.c,$(wildcard $(LT_DIR)/*.c))
+SRCS += $(wildcard $(LT_DIR)/src/*.c)
 
 OBJS := $(patsubst %.c,$(BLD_DIR)/%.o,$(SRCS))
 DEPS := $(patsubst %.c,$(BLD_DIR)/%.d,$(SRCS))
