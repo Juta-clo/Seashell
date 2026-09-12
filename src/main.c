@@ -23,6 +23,7 @@
 #include "job_state.h"
 #include "sig_funcs.h"
 #include "args.h"
+#include "plan.h"
 
 #define SIG_READY 1
 #define STDIN_READY 2
@@ -100,7 +101,9 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
 
             int status = builtin->func(pline->cmds.data[0].argv, &sh_env);
 
-            /* fg "replaces" itself with the existing job */
+            /* fg "replaces" itself with the existing job. Because we
+             * don't queue fg's exit event we only reclaim the termianl
+             * when the job that was fg'd exits (or stops) */
             if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE) {
                 LOG_INFO("queued \"%s\" exit event", builtin->name);
                 queue_builtin_exit_event(jid, status);
@@ -119,67 +122,30 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
     }
 }
 
-static ps_andor *pnxt(job_plan *plan) {
-    return &plan->ast->andors.data[plan->index];
-}
-
-static void add_plan(pid_t jid, ps_ast *ast) {
-    LOG_INFO("added plan jid=%d", jid);
-
-    job_plan *plan = da_push(&plans);
-    *plan = (job_plan){0};
-
-    plan->jid = jid;
-    plan->index = 1;
-    plan->ast = ast;
-}
-
-static void remove_plan(size_t index) {
-    LOG_INFO("removed plan jid=%d", plans.data[index].jid);
-
-    ps_free(plans.data[index].ast);
-    free(plans.data[index].ast);
-
-    da_delete(&plans, index);
-}
-
-static void plan_done(pid_t jid) {
-    size_t plan_i;
-    job_plan *plan = lookup_plan(jid, &plan_i);
-    if (!plan)
-        return;
-
-    remove_plan(plan_i);
-}
-
 static bool run_next_job_in_plan(const job_event *jev, bool bg) {
-    size_t plan_i;
     bool execed_pline = false;
 
-    job_plan *plan = lookup_plan(jev->jid, &plan_i);
+    job_plan *plan = lookup_plan(jev->jid, NULL);
     if (!plan)
-        return execed_pline;
+        return false;
 
-    for (; plan->index < plan->ast->andors.size; ++plan->index) {
-
-        if (jev->success && pnxt(plan)->op == PS_OR_IF)
+    ps_andor *andor;
+    while ((andor = plan_next(plan))) {
+        if (jev->success && andor->op == PS_OR_IF)
             continue;
 
-        if (!jev->success && pnxt(plan)->op == PS_AND_IF)
+        if (!jev->success && andor->op == PS_AND_IF)
             continue;
 
-        plan->jid = request_job_id(plan->jid);
-        if (plan->jid == -1)
-            xfatal("job id unexpectedly unavailable");
+        /* We can reuse the same job_id. When control
+         * flow reaches arrives here we are directly
+         * responding to that jobs exit and no other
+         * job can be started during this window. */
 
-        launch_job(&pnxt(plan)->pline, bg, plan->jid);
-
+        launch_job(&andor->pline, bg, plan->jid);
         execed_pline = true;
         break;
     }
-
-    if (++plan->index >= plan->ast->andors.size)
-        remove_plan(plan_i);
 
     return execed_pline;
 }
@@ -225,17 +191,30 @@ void reclaim_terminal(void) {
     sh_env.fg_jid = NOFG;
 }
 
+bool shell_in_fg(void) {
+    return sh_env.fg_jid == NOFG;
+}
+
 bool fg_event(job_event *jev) {
     return sh_env.fg_jid  == jev->jid;
 }
 
-static void handle_fg_event(shell_state *sst, const job_event *jev) {
-    /* signaled: last process was terminated by a signal
-     * intr_int: at least one process was terminated by sigint */
+/* If a job is signaled, the andor chain is cancelled so
+ * its plan is freed.
+ *
+ * on intr_int or intr_stop we print a newline so that the
+ * next print will be after the echoed control character.
+ *
+ * If  foreground job exits normally we try to run the next
+ * job in its plan (andor list). If it has one, then we do
+ * nothing. The existing job keeps the foreground and we
+ * simply go back to waiting. If there is no more jobs in
+ * the plan we remove the plan, take back the termianl and
+ * draw the prompt. */
 
+static void handle_fg_event(shell_state *sst, const job_event *jev) {
     if (jev->type == JEXITED) {
         if (jev->signaled || jev->intr_int) {
-            /* signal cancels andor chain so remove the plan */
             plan_done(jev->jid);
             reclaim_terminal();
             sst->need_prompt = true;
@@ -243,14 +222,12 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
             if (jev->signaled)
                 sst->need_print = true;
 
-            /* print '\n' to clear echoed control char (^C) */
             if (jev->intr_int)
                 printf("\n");
 
         } else {
-            /* if there is no next job to run, we need the terminal back.
-            * If we ran a job then that job takes fg control */
             if (!run_next_job_fg(jev)) {
+                plan_done(jev->jid);
                 reclaim_terminal();
                 sst->need_prompt = true;
             }
@@ -268,7 +245,7 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
         sst->need_prompt = true;
 
         if (jev->intr_stop)
-            printf("\n"); /* print '\n' to clear echoed cc (^Z) */
+            printf("\n");
 
     } else if (jev->type == JCONTINUED) {
       /* Don't print here? If a interactive terminal program was resumed
@@ -288,14 +265,14 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
 static void handle_bg_event(shell_state *sst, job_event *jev) {
     if (jev->type == JEXITED) {
         if (jev->signaled) {
-            /* signal cancels the rest of the andor chain so we need
-            * the termianl, a print, and removal of the plan */
             plan_done(jev->jid);
             sst->need_print = true;
 
         } else {
-            if (!run_next_job_bg(jev))
+            if (!run_next_job_bg(jev)) {
+                plan_done(jev->jid);
                 sst->need_print = true;
+            }
         }
 
     } else

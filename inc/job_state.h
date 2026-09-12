@@ -72,6 +72,9 @@ struct proc_view {
     };
 };
 
+/* signaled: last process was terminated by a signal
+*  intr_int/stop: at least one process was interactively signaled */
+
 struct job_event {
     pid_t jid;
     job_event_type type;

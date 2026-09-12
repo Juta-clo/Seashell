@@ -13,6 +13,7 @@
 #include "llog.h"
 #include "utils.h"
 #include "args.h"
+#include "plan.h"
 
 typedef enum {
     SHOW_PIDS,

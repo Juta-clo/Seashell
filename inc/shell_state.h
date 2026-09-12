@@ -49,10 +49,7 @@ typedef enum {
 
 extern opt_data opts[];
 extern char **environ;
-extern da_plan plans;
 
-job_plan *lookup_plan(pid_t jid, size_t *index);
-bool shell_in_fg(void);
 void env_setup(shell_env *env);
 
 #endif
