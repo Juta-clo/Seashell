@@ -296,6 +296,15 @@ TEST(glob, intermediary_component_with_complex_glob_pattern) {
     pty_ensure(PROMPT);
 }
 
+TEST(glob, relative_dirent_works) {
+    add_file(add_dir("a"), "foo");
+    add_dir("a/b");
+
+    pty_send("/bin/echo a/b/../*\n");
+    pty_ensure("./a/b/../b ./a/b/../foo\n");
+    pty_ensure(PROMPT);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(glob) {
@@ -321,4 +330,5 @@ TEST_GROUP_RUNNER(glob) {
     RUN_TEST_CASE(glob, double_nested_directory_globs);
     RUN_TEST_CASE(glob, intermediary_component_with_complex_glob_pattern);
     RUN_TEST_CASE(glob, multiple_stars_are_compressed);
+    RUN_TEST_CASE(glob, relative_dirent_works);
 }

@@ -213,7 +213,7 @@ static bool substrs_ok(const char *dent, da_charp *substrs, size_t pre_n,
     return all_found;
 }
 
-static void get_dir_entries(bool dirs, da_charp *dents) {
+static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
     if (dirs) {
         LOG_INFO("get_dir_entries: dirs=true");
     } else
@@ -236,11 +236,15 @@ static void get_dir_entries(bool dirs, da_charp *dents) {
                 break;
             }
 
-            if (strcmp(dirent->d_name, ".")  == 0 ||
-                strcmp(dirent->d_name, "..") == 0)
+            if (strcmp(dirent->d_name, ".")  == 0)
                 continue;
 
-            if (!dirs || dirent->d_type == DT_DIR) {
+            bool is_prev_dirent = (strcmp(dirent->d_name, "..") == 0);
+
+            if (!inc_prev && is_prev_dirent)
+                continue;
+
+            if (!dirs || (dirent->d_type == DT_DIR || is_prev_dirent)) {
                 LOG_INFO("readdir found %s", dirent->d_name);
             } else {
                 LOG_INFO("readdir skipped non-dir %s", dirent->d_name);
@@ -325,11 +329,23 @@ static int expand_globs(dstr *arg, da_charp *argv) {
         *da_push(&dents) = xstrdup(".");
     }
 
+    /* To make this more efficient, it might make sense to
+     * decouple gathering directory entries from appending
+     * them to the existing ones. That way in the case of
+     * the componenet being "..", which we know always exits,
+     * we can just supply it driectly to the append function
+     * instead of iterating over every directory to "discover"
+     * it. Currently disovering directory entries and appending
+     * them to the list of existing ones at the current layer
+     * is coupled such that it is difficult to supply a comp
+     * to append */
+
     for (size_t comp_i = 0; comp_i < comps.size; ++comp_i) {
         char *comp = comps.data[comp_i];
         bool last_comp = (comp_i == comps.size - 1);
+        bool inc_prev = (strcmp("..", comp) == 0);
 
-        get_dir_entries(!last_comp || slash_last, &dents);
+        get_dir_entries(inc_prev, !last_comp || slash_last, &dents);
         filter_dents(comp, &dents);
 
         if (dents.size == 0) {

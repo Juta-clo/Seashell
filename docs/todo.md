@@ -8,6 +8,10 @@
 - [ ] Make a script or program to relaunch seashell (vg replacement)
 
 **LEAK!!!**
+
+I think its todo with the new "everything has a plan" logic. It really
+is time to make the plan seams and life time clear.
+
 ==1258339== 18 (8 direct, 10 indirect) bytes in 1 blocks are definitely lost
 ==1258339==    at 0x4849835: realloc (vg_replace_malloc.c:1741)
 ==1258339==    by 0x40E7F7: da_charp_reserve (deps/linc_tools/src/darr.c:81)
