@@ -18,12 +18,16 @@
 #define MIN(a, b) \
     ((a) < (b)) ? a : b
 
+DA_TYPE(da_charp, char *);
+
 struct vt_snap {
     VTermPos curs_pos;
     da_charp lines;
 };
 
 typedef struct vt_snap vt_snap;
+DA_TYPE(da_vt_snap, vt_snap);
+DA_TYPE(da_dstr, dstr);
 
 struct virt_term {
     VTerm *tty;
@@ -54,6 +58,7 @@ struct pty_test {
 };
 
 typedef struct pty_test pty_test;
+DA_TYPE(da_pty_test, pty_test);
 
 typedef enum {
     POLL_MFD,

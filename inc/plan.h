@@ -6,6 +6,7 @@
 #include "parser.h"
 
 typedef struct job_plan job_plan;
+DA_TYPE(da_plan, job_plan);
 
 struct job_plan {
     pid_t jid;

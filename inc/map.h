@@ -9,6 +9,7 @@ struct mpair {
 };
 
 typedef struct mpair mpair;
+DA_TYPE(da_mpair, mpair);
 
 struct map_t {
     da_mpair pairs;
