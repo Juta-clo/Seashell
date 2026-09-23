@@ -1,8 +1,6 @@
 #ifndef SIGNAL_FUNCS_H
 #define SIGNAL_FUNCS_H
 
-#define _GNU_SOURCE
-
 #include <signal.h>
 
 extern volatile sig_atomic_t sigchld_caught;

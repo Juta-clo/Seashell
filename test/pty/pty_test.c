@@ -33,47 +33,7 @@ bool first = true;
 pty_test *cur_test;
 dstr reqdata;
 
-void harness_init(int argc, const char *const *argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp("-v", argv[i]) == 0) {
-            verbose_mode = true;
-        } else if (strcmp("-m", argv[i]) == 0)
-            run_valgrind = true;
-    }
-
-    da_init(&all_tests);
-
-    set_xfatal_handler(pty_xfatal_func);
-
-    xtcgetattr(STDERR_FILENO, &tio);
-
-    for (int i = 0; i < NFDS; ++i)
-        pollfds[i].events = POLLIN;
-
-    xpipe2(sh_pipe, O_NONBLOCK);
-    pollfds[POLL_SHELL].fd = sh_pipe[0];
-    if (asprintf(&shell_lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
-        TEST_FAIL_MESSAGE("asprintf: input output error");
-
-    xpipe2(val_pipe, O_NONBLOCK);
-    pollfds[POLL_VAL].fd = val_pipe[0];
-    if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
-        TEST_FAIL_MESSAGE("asprintf: input output error");
-}
-
-XFATAL_HANDLER(pty_xfatal_func) {
-    endwin();
-    fprintf(stderr, "%s:%d: ERROR %s: %s\n", XFUNC, XLINE, XSYSNAME,
-            strerror(XERRNO));
-    _exit(EXIT_FAILURE);
-}
-
-void curs_err(const char *msg) {
-    endwin();
-    fprintf(stderr, "ERROR ncurses: %s\n", msg);
-    _exit(EXIT_FAILURE);
-}
-
+// LLOG SET UP
 void pty_test_sink(const llog_info *info) {
     char *lvl_str;
     switch (info->log_level) {
@@ -97,9 +57,49 @@ void pty_test_sink(const llog_info *info) {
 
     add_lines(&cur_test->test_lines, log_buf);
 }
-
 static llog pty_log = { .sink = pty_test_sink };
 LLOG_DEFAULT(&pty_log);
+
+// XFUNCS SET UP
+XFATAL_HANDLER(pty_xfatal_func) {
+    endwin();
+    fprintf(stderr, "%s:%d: ERROR %s: %s\n", XFUNC, XLINE, XSYSNAME,
+            strerror(XERRNO));
+    _exit(EXIT_FAILURE);
+}
+static xfatal xf = { .handler = pty_xfatal_func };
+XFATAL_DEFAULT(&xf);
+
+void harness_init(int argc, const char *const *argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp("-v", argv[i]) == 0) {
+            verbose_mode = true;
+        } else if (strcmp("-m", argv[i]) == 0)
+            run_valgrind = true;
+    }
+
+    da_init(&all_tests);
+    xtcgetattr(STDERR_FILENO, &tio);
+
+    for (int i = 0; i < NFDS; ++i)
+        pollfds[i].events = POLLIN;
+
+    xpipe2(sh_pipe, O_NONBLOCK);
+    pollfds[POLL_SHELL].fd = sh_pipe[0];
+    if (asprintf(&shell_lfd_arg, "--logfd=%d", sh_pipe[1]) < 0)
+        TEST_FAIL_MESSAGE("asprintf: input output error");
+
+    xpipe2(val_pipe, O_NONBLOCK);
+    pollfds[POLL_VAL].fd = val_pipe[0];
+    if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
+        TEST_FAIL_MESSAGE("asprintf: input output error");
+}
+
+void curs_err(const char *msg) {
+    endwin();
+    fprintf(stderr, "ERROR ncurses: %s\n", msg);
+    _exit(EXIT_FAILURE);
+}
 
 char *pty_output_process(const char *msg) {
     dstr out;

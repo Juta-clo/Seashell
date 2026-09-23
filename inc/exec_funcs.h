@@ -1,8 +1,6 @@
 #ifndef EXEC_FUNCS_H
 #define EXEC_FUNCS_H
 
-#define _GNU_SOURCE
-
 #include "parser.h"
 
 typedef struct pline_data pline_data;

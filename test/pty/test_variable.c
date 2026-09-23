@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include "unity_fixture.h"
 #include "pty_test.h"
 

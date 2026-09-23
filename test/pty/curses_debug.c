@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <sys/poll.h>
 #include <assert.h>
 #include <locale.h>

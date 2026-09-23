@@ -11,7 +11,7 @@ LT_DIR  := $(DEP_DIR)/linc_tools
 CC := clang
 
 CFLAGS := -g -O0 -std=gnu23 -Wall -Wextra -fcolor-diagnostics
-CPPFLAGS := -I$(INC_DIR) -I$(LT_DIR)/inc
+CPPFLAGS := -I$(INC_DIR) -I$(LT_DIR)/src -D_GNU_SOURCE
 DEPFLAGS := -MMD -MP
 
 SRCS := $(wildcard $(SRC_DIR)/*.c)

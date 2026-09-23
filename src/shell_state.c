@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <stdarg.h>
 #include <errno.h>
 #include <stdio.h>
@@ -24,6 +22,7 @@
 
 shell_env sh_env = {0};
 
+// LLOG SET UP
 void shell_llog_sink(const llog_info *info) {
     dstr output_msg;
     dstr_init(&output_msg);
@@ -43,21 +42,16 @@ void shell_llog_sink(const llog_info *info) {
 
     dstr_free(&output_msg);
 }
-
 static llog shell_log = { .sink = shell_llog_sink };
 LLOG_DEFAULT(&shell_log);
 
+// XFUNCS SET UP
 XFATAL_HANDLER(xfatal_func) {
-    if (strcmp("opendir", XSYSNAME) == 0) {
-        LOG_ERR("%s(%s): %s", XSYSNAME, XARG(const char *), strerror(XERRNO));
-        XARG_END();
-
-    } else {
-        LOG_ERR("%s: %s", XSYSNAME, strerror(XERRNO));
-    }
-
+    LOG_ERR("%s: %s", XSYSNAME, strerror(XERRNO));
     err_exit("%s", XSYSNAME);
 }
+static xfatal xf = { .handler = xfatal_func };
+XFATAL_DEFAULT(&xf);
 
 opt_data opts[] = {
     [LOGFD] = {
@@ -161,7 +155,6 @@ void env_setup(shell_env *env) {
     xsetvbuf(stderr, NULL, _IONBF, 0);
 
     log_setup(&env->log_fd);
-    set_xfatal_handler(&xfatal_func);
     sig_setup(&env->og_mask);
     var_setup(env);
 

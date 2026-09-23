@@ -11,9 +11,9 @@ CC := clang
 
 CFLAGS := -g -O0 -std=gnu23 -Wall -Wextra -fcolor-diagnostics
 
-CPPFLAGS := -Iinc -I$(DEP_DIR)/linc_tools/inc -I$(TEST_DIR) -I$(UNITY_DIR)
+CPPFLAGS := -Iinc -I$(DEP_DIR)/linc_tools/src -I$(TEST_DIR) -I$(UNITY_DIR)
 CPPFLAGS += -DUNITY_FIXTURE_NO_EXTRAS -DUNITY_OUTPUT_COLOR
-CPPFLAGS += -DUNITY_REPEAT_TEST_NAME
+CPPFLAGS += -DUNITY_REPEAT_TEST_NAME -D_GNU_SOURCE
 
 DEPFLAGS := -MMD -MP
 
