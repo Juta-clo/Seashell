@@ -24,7 +24,7 @@
 
 shell_env sh_env = {0};
 
-LLOG_SINK(shell_llog_sink) {
+void shell_llog_sink(const llog_info *info) {
     dstr output_msg;
     dstr_init(&output_msg);
 
@@ -43,6 +43,9 @@ LLOG_SINK(shell_llog_sink) {
 
     dstr_free(&output_msg);
 }
+
+static llog shell_log = { .sink = shell_llog_sink };
+LLOG_DEFAULT(&shell_log);
 
 XFATAL_HANDLER(xfatal_func) {
     if (strcmp("opendir", XSYSNAME) == 0) {
@@ -130,8 +133,6 @@ static void log_setup(int *log_fd) {
 
     } else
         *log_fd = open_log_file(DEFAULT_LOG_DIR);
-
-    llog_set_sink(shell_llog_sink);
 }
 
 static void var_setup(shell_env *env) {

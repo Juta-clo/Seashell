@@ -44,7 +44,6 @@ void harness_init(int argc, const char *const *argv) {
     da_init(&all_tests);
 
     set_xfatal_handler(pty_xfatal_func);
-    llog_set_sink(pty_test_sink);
 
     xtcgetattr(STDERR_FILENO, &tio);
 
@@ -75,7 +74,7 @@ void curs_err(const char *msg) {
     _exit(EXIT_FAILURE);
 }
 
-LLOG_SINK(pty_test_sink) {
+void pty_test_sink(const llog_info *info) {
     char *lvl_str;
     switch (info->log_level) {
     case LLOG_INFO: lvl_str = "INFO"; break;
@@ -98,6 +97,9 @@ LLOG_SINK(pty_test_sink) {
 
     add_lines(&cur_test->test_lines, log_buf);
 }
+
+static llog pty_log = { .sink = pty_test_sink };
+LLOG_DEFAULT(&pty_log);
 
 char *pty_output_process(const char *msg) {
     dstr out;

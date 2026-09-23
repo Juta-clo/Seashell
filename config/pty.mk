@@ -19,7 +19,6 @@ DEPFLAGS := -MMD -MP
 
 LDFLAGS := -lncurses -lvterm -lm
 
-SRCS := $(filter-out $(SRC_DIR)/main.c,$(wildcard $(SRC_DIR)/*.c))
 SRCS += $(wildcard $(DEP_DIR)/linc_tools/src/*.c)
 SRCS += $(wildcard $(TEST_DIR)/*.c)
 SRCS += $(wildcard $(UNITY_DIR)/*.c)

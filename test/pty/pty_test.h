@@ -98,7 +98,7 @@ void harness_init(int argc, const char *const *argv);
 
 XFATAL_HANDLER(pty_xfatal_func);
 void curs_err(const char *msg);
-LLOG_SINK(pty_test_sink);
+void pty_test_sink(const llog_info *info);
 
 /****** UTILITIES *******/
 
