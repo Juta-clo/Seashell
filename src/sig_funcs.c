@@ -1,7 +1,7 @@
 #include <signal.h>
 
+#include "linc_tools.h"
 #include "sig_funcs.h"
-#include "xfuncs.h"
 
 volatile sig_atomic_t sigchld_caught = false;
 volatile sig_atomic_t sighup_caught = false;

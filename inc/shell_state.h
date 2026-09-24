@@ -6,7 +6,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include "args.h"
+#include "linc_tools.h"
 #include "map.h"
 #include "parser.h"
 
@@ -47,7 +47,7 @@ typedef enum {
     PROMPT,
 } opt_names;
 
-extern opt_data opts[];
+extern args_opt_data opts[];
 extern char **environ;
 
 void env_setup(shell_env *env);

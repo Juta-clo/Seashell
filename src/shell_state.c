@@ -8,15 +8,13 @@
 #include <fcntl.h>
 #include <string.h>
 
+#include "linc_tools.h"
 #include "input.h"
 #include "variable.h"
 #include "map.h"
 #include "shell_state.h"
 #include "sig_funcs.h"
-#include "xfuncs.h"
-#include "llog.h"
 #include "utils.h"
-#include "dstr.h"
 
 #define DEFAULT_LOG_DIR "/home/juta/Projects/Seashell/logs/shell/"
 
@@ -53,26 +51,26 @@ XFATAL_HANDLER(xfatal_func) {
 static xfatal xf = { .handler = xfatal_func };
 XFATAL_DEFAULT(&xf);
 
-opt_data opts[] = {
+args_opt_data opts[] = {
     [LOGFD] = {
         .long_name = "logfd",
         .short_name = 'l',
-        .has_arg = REQUIRED_ARG,
-        .arg_type = INT_ARG
+        .has_arg = ARGS_REQUIRED_ARG,
+        .arg_type = ARGS_INT_ARG
     },
     [LOGDIR] = {
         .long_name = "logdir",
         .short_name = 'p',
-        .has_arg = REQUIRED_ARG,
-        .arg_type = STR_ARG
+        .has_arg = ARGS_REQUIRED_ARG,
+        .arg_type = ARGS_STR_ARG
     },
     [PROMPT] = {
         .long_name = "prompt",
         .short_name = 'x',
-        .has_arg = REQUIRED_ARG,
-        .arg_type = STR_ARG
+        .has_arg = ARGS_REQUIRED_ARG,
+        .arg_type = ARGS_STR_ARG
     },
-    (opt_data){0}
+    (args_opt_data){0}
 };
 
 static int open_log_file(const char *log_dir) {

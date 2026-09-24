@@ -5,13 +5,11 @@
 #include <string.h>
 #include <libgen.h>
 
-#include "parser.h" // IWYU pragma: keep - See 2026-06-25 Notes
+#include "linc_tools.h"
+#include "parser.h"
 #include "expander.h"
-#include "darr.h"
-#include "dstr.h"
 #include "utils.h"
 #include "variable.h"
-#include "xfuncs.h"
 #include "shell_state.h"
 
 static void free_charp_array(da_charp *arr) {

@@ -3,13 +3,13 @@
 #include <errno.h>
 #include <assert.h>
 
+#include "linc_tools.h"
 #include "variable.h"
 #include "utils.h"
 #include "builtins.h"
 #include "parser.h"
 #include "sig_funcs.h"
 #include "exec_funcs.h"
-#include "xfuncs.h"
 
 void move_fd(int fd1, int fd2) {
     if (fd1 == fd2)

@@ -3,7 +3,7 @@
 
 #include <sys/wait.h>
 
-#include "darr.h"
+#include "linc_tools.h"
 
 typedef enum {
     PEXITED,

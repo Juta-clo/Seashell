@@ -5,9 +5,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "linc_tools.h"
 #include "utils.h"
 #include "shell_state.h"
-#include "xfuncs.h"
 
 #define BUF_SIZE 1024
 

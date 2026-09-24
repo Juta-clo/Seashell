@@ -1,7 +1,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "xfuncs.h"
+#include "linc_tools.h"
 #include "variable.h"
 #include "map.h"
 #include "utils.h"

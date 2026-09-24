@@ -10,12 +10,11 @@ UNITY_DIR := deps/unity
 CC := clang
 
 CFLAGS := -g -O0 -std=gnu23 -Wall -Wextra -fcolor-diagnostics
-CPPFLAGS := -Iinc -I$(DEP_DIR)/linc_tools/inc -I$(TEST_DIR) -I$(UNITY_DIR)
-CPPFLAGS += -DUNITY_OUTPUT_COLOR -DUNITY_FIXTURE_NO_EXTRAS
+CPPFLAGS := -Iinc -I$(DEP_DIR)/linc_tools -I$(TEST_DIR) -I$(UNITY_DIR)
+CPPFLAGS += -DUNITY_OUTPUT_COLOR -DUNITY_FIXTURE_NO_EXTRAS -D_GNU_SOURCE
 DEPFLAGS := -MMD -MP
 
 SRCS := $(filter-out $(SRC_DIR)/main.c,$(wildcard $(SRC_DIR)/*.c))
-SRCS += $(wildcard $(DEP_DIR)/linc_tools/src/*.c)
 SRCS += $(wildcard $(TEST_DIR)/*.c)
 SRCS += $(wildcard $(UNITY_DIR)/*.c)
 

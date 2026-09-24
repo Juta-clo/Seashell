@@ -1,7 +1,7 @@
 #include <assert.h>
 
+#include "linc_tools.h"
 #include "plan.h"
-#include "llog.h"
 
 da_plan plans = {0};
 

@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "linc_tools.h"
 #include "parser.h"
-#include "lexer.h" // IWYU pragma: keep - See 2026-06-25 Notes
-#include "darr.h"
+#include "lexer.h"
 
 typedef struct {
     ps_pline *cur_pline;

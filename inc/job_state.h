@@ -1,7 +1,7 @@
 #ifndef JOB_STATE_H
 #define JOB_STATE_H
 
-#include "darr.h"
+#include "linc_tools.h"
 #include "exec_funcs.h"
 #include "wait_stat.h"
 

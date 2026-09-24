@@ -8,8 +8,7 @@
 #include <wait.h>
 #include <getopt.h>
 
-#include "dstr.h"
-#include "xfuncs.h"
+#include "linc_tools.h"
 #include "builtins.h"
 #include "exec_funcs.h"
 #include "expander.h"
@@ -20,7 +19,6 @@
 #include "utils.h"
 #include "job_state.h"
 #include "sig_funcs.h"
-#include "args.h"
 #include "plan.h"
 
 #define SIG_READY 1
@@ -339,7 +337,7 @@ static void process_signals(void) {
 }
 
 int main(int argc, char *const *argv) {
-    if (arg_parse(argc, argv, opts, ARG_NO_NON_OPTS) == -1)
+    if (args_parse(argc, argv, opts, ARGS_NO_NON_OPTS) == -1)
         exit(EXIT_FAILURE);
 
     env_setup(&sh_env);

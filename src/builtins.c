@@ -5,13 +5,12 @@
 #include <errno.h>
 #include <assert.h>
 
+#include "linc_tools.h"
 #include "variable.h"
 #include "shell_state.h"
 #include "job_state.h"
 #include "builtins.h"
-#include "llog.h"
 #include "utils.h"
-#include "args.h"
 #include "plan.h"
 
 typedef enum {
@@ -280,16 +279,16 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
     if (arg_n == -1)
         return EXIT_FAILURE;
 
-    opt_data jobs_opts[] = {
+    args_opt_data jobs_opts[] = {
         [SHOW_PIDS] = {
             .long_name = "pid",
             .short_name = 'p',
-            .has_arg = NO_ARG,
+            .has_arg = ARGS_NO_ARG,
         },
-        (opt_data){0}
+        (args_opt_data){0}
     };
 
-    if (arg_parse(arg_n + 1, argv, jobs_opts, ARG_NO_NON_OPTS) == -1)
+    if (args_parse(arg_n + 1, argv, jobs_opts, ARGS_NO_NON_OPTS) == -1)
         return EXIT_FAILURE;
 
     da_jevent jevs = get_job_info();

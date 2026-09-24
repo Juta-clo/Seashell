@@ -5,10 +5,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "linc_tools.h"
 #include "input.h"
-#include "dstr.h"
 #include "utils.h"
-#include "xfuncs.h"
 
 static char input_line[LINE_BUF];
 

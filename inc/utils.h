@@ -3,7 +3,7 @@
 
 #include <stdnoreturn.h>
 
-#include "llog.h"
+#include "linc_tools.h"
 
 #define UTIL_PFFORMAT(x, y) __attribute__ ((__format__(printf, (x), (y))))
 #define UTIL_NORETURN __attribute__ ((__noreturn__))

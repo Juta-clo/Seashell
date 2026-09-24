@@ -2,10 +2,10 @@
 #include <string.h>
 #include <assert.h>
 
+#include "linc_tools.h"
 #include "job_state.h"
 #include "wait_stat.h"
 #include "utils.h"
-#include "xfuncs.h"
 #include "exec_funcs.h"
 
 static job_table jctl = {0};
