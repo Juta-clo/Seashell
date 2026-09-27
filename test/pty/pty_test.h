@@ -4,10 +4,7 @@
 #include <ncurses.h>
 #include <vterm.h>
 
-#include "darr.h"
-#include "dstr.h"
-#include "llog.h"
-#include "xfuncs.h"
+#include "linc_tools.h"
 
 #define PROMPT "> "
 #define PTY_RBUF 100000

@@ -7,8 +7,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#include "darr.h"
-#include "llog.h"
+#include "linc_tools.h"
 #include "proc_view.h"
 
 #define PPID "PPid"

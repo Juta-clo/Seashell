@@ -52,7 +52,6 @@ static void hup_to_children(void) {
 }
 
 static ps_ast *line_to_ast(void) {
-
     char *line = get_line();
     if (strlen(line) == 0)
         return NULL;

@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <linux/limits.h>
 
-#include "darr.h"
+#include "linc_tools.h"
 
 struct ps_pstat {
     pid_t pid;

@@ -7,12 +7,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "linc_tools.h"
+
 #include "pty_test.h"
-#include "dstr.h"
-#include "llog.h"
 #include "proc_view.h"
 #include "unity.h"
-#include "xfuncs.h"
 
 da_pty_test all_tests;
 bool verbose_mode = false;

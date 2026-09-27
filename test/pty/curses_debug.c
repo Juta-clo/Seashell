@@ -4,11 +4,10 @@
 #include <ncurses.h>
 #include <string.h>
 
-#include "splitty.h"
-#include "curses_debug.h"
+#include "linc_tools.h"
 #include "curses_xfuncs.h"
-#include "xfuncs.h"
 #include "pty_test.h"
+#include "curses_debug.h"
 
 #define NFDS 1
 
