@@ -51,16 +51,14 @@ static void hup_to_children(void) {
     LOG_INFO("seashell shutting down");
 }
 
-static ps_ast *line_to_ast(void) {
-    char *line = get_line();
-    if (strlen(line) == 0)
-        return NULL;
-
+static ps_ast *line_to_ast(char *line) {
     da_tok toks;
     if (lx_tokenize(line, &toks) != LX_OK) {
         err_msg("lex error");
+        hds_free(line);
         return NULL;
     }
+    hds_free(line);
 
     ps_ast *ast = xmalloc(sizeof(ps_ast));
 
@@ -342,26 +340,28 @@ int main(int argc, char *const *argv) {
     env_setup(&sh_env);
     xatexit(hup_to_children);
 
-    struct pollfd events = { .events = POLLIN, .fd = sh_env.tty_fd };
-
     display_prompt(sh_env.prompt_style);
 
     while (true) {
-        int nfds = shell_in_fg() ? 1 : 0;
+        char *line;
 
-        int ready = ppoll(&events, nfds, NULL, &sh_env.og_mask);
-
-        if (ready == -1) {
-            if (errno == EINTR) {
+        if (shell_in_fg()) {
+            line = get_line();
+            if (!line) {
                 process_signals();
                 continue;
-            } else {
-                LOG_ERR("ppoll: %m");
-                err_exit("ppoll");
             }
+
+        } else {
+            sigsuspend(&sh_env.og_mask);
+            if (errno != EINTR)
+                err_exit("sigsuspend");
+
+            process_signals();
+            continue;
         }
 
-        ps_ast *ast = line_to_ast();
+        ps_ast *ast = line_to_ast(line);
         if (!ast) {
             display_prompt(sh_env.prompt_style);
             continue;
