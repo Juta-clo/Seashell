@@ -30,7 +30,6 @@ struct pollfd pollfds[NFDS];
 bool first = true;
 
 pty_test *cur_test;
-dstr reqdata;
 
 // LLOG SET UP
 void pty_test_sink(const llog_info *info) {
@@ -220,8 +219,39 @@ char *flush_stream(int fd, bool break_on_eio) {
     return out;
 }
 
-void term_ensure(const char *msg, int srow, int scol) {
+void get_vt_snap(vt_snap *snap) {
+    vterm_state_get_cursorpos(cur_test->vterm.st, &snap->curs_pos);
+
+    for (int row = 0; row < cur_test->vterm.rows; ++row) {
+        char **line = da_push(&snap->lines);
+        *line = xcalloc(1, cur_test->vterm.cols + 1);
+
+        for (int col = 0; col < cur_test->vterm.cols; ++col) {
+            VTermScreenCell cell;
+            VTermPos pos = { .row = row, .col = col };
+
+            if (!vterm_screen_get_cell(cur_test->vterm.scr, pos, &cell))
+                TEST_FAIL_MESSAGE("vterm_screen_get_cell");
+
+            uint32_t ch = cell.chars[0];
+
+            if (ch == 0)
+                ch = ' ';
+
+            (*line)[col] = ch;
+        }
+    }
+}
+
+void take_vt_snapshot(void) {
+    vt_snap *snap = da_push(&cur_test->snaps);
+    *snap = (vt_snap){0};
+    get_vt_snap(snap);
+}
+
+bool verify_vterm_state(const char *msg, int srow, int scol) {
     size_t len = strlen(msg);
+    size_t n = 0;
 
     if (!msg || len == 0)
         TEST_FAIL_MESSAGE("term_ensure: bad input");
@@ -229,8 +259,6 @@ void term_ensure(const char *msg, int srow, int scol) {
         TEST_FAIL_MESSAGE("term_ensure: out of bounds start row");
     if (scol < 0 || scol >= cur_test->vterm.cols)
         TEST_FAIL_MESSAGE("term_ensure: out of bounds start col");
-
-    size_t n = 0;
 
     for (int row = srow; row < cur_test->vterm.rows; ++row) {
         scol = (row == srow) ? scol : 0;
@@ -246,37 +274,92 @@ void term_ensure(const char *msg, int srow, int scol) {
             if (ch == 0)
                 ch = ' ';
 
-            LOG_INFO("vterm.screen[%d, %d] = '%c'", row, col, ch);
-            TEST_ASSERT_EQUAL_CHAR(ch, msg[n]);
+            LOG_INFO("vterm[%d,%d] = '%c'", row, col, ch);
 
-            if (++n >= len)
-                goto done;
+            if ((char) ch != msg[n++])
+                return false;
+
+            if (n >= len)
+                return true;
         }
     }
 
-done:
-    if (n < len)
-        TEST_FAIL_MESSAGE("could not find string in vterm");
-
-    return;
+    return n >= len;
 }
 
-void pty_ensure(const char *msg) {
-    char *expected = pty_output_process(msg);
-    size_t len = strlen(expected);
+void write_to_term(const char *str) {
+    const char *c = str;
+    size_t left = strlen(str);
+    while (left != 0) {
+        size_t n = vterm_input_write(cur_test->vterm.tty, c, left);
+        c += n;
+        left -= n;
+    }
+}
 
-    if (len >= BUFSIZ) {
-        free(expected);
-        TEST_FAIL_MESSAGE("expected string too large!");
+bool term_ensure(const char *msg, int row, int col) {
+    if (verify_vterm_state(msg, row, col))
+        return true;
+
+    int tfd = start_timerfd(100);
+    pollfds[POLL_TFD] = (struct pollfd){ .fd = tfd, .events = POLLIN };
+
+    while (true) {
+        xpoll(pollfds, NFDS, -1);
+
+        if (pollfds[POLL_TFD].revents & POLLIN) {
+            LOG_INFO("TIMER POPPED");
+            close(tfd);
+            return false;
+        }
+
+        if (pollfds[POLL_SHELL].revents & POLLIN) {
+            char *data = flush_pipe(sh_pipe[0]);
+            add_lines(&cur_test->shell_log_lines, data);
+            free(data);
+        }
+
+        if (pollfds[POLL_VAL].revents & POLLIN) {
+            char *data = flush_pipe(val_pipe[0]);
+            add_lines(&cur_test->val_lines, data);
+            free(data);
+        }
+
+        if (pollfds[POLL_MFD].revents & POLLIN) {
+            char *data = flush_pty(cur_test->mfd);
+
+            dstrcat(&cur_test->ptydata, data);
+            add_lines(&cur_test->raw_lines, data);
+            write_to_term(data);
+
+            free(data);
+
+            if (verify_vterm_state(msg, row, col)) {
+                close(tfd);
+                return true;
+            }
+        }
+    }
+}
+
+bool term_ensure_lines(char **lines) {
+    size_t n = 0;
+    for (char **line = lines; *line != NULL; ++line)
+        ++n;
+
+    if (n == 0) {
+        LOG_WARN("called term_ensure_lines with 0 lines");
+        return true;
     }
 
-    strcpy(pty_expect_buf, expected);
-    free(expected);
+    for (size_t i = 0; i < n; ++i) {
+        if (!term_ensure(lines[i], i, 0)) {
+            LOG_ERR("term_ensure failed on line: \"%s\"", lines[i]);
+            return false;
+        }
+    }
 
-    char *pty_chars = request_chars(len, &cur_test->pred_i, 1000);
-
-    TEST_ASSERT_EQUAL_size_t(len, strlen(pty_chars));
-    TEST_ASSERT_EQUAL_STRING(pty_expect_buf, pty_chars);
+    return true;
 }
 
 void child_pstat_snapshot(void) {
@@ -306,70 +389,23 @@ void child_pstat_snapshot(void) {
     da_free(&pstats);
 }
 
-void write_to_term(const char *str) {
-    const char *c = str;
-    size_t left = strlen(str);
-    while (left != 0) {
-        size_t n = vterm_input_write(cur_test->vterm.tty, c, left);
-        c += n;
-        left -= n;
-    }
+static void vterm_output_cb(const char *bytes, size_t len, void *user) {
+    int mfd = *(int *)user;
+    if ((size_t) write(mfd, bytes, len) != len)
+        TEST_FAIL_MESSAGE("vterm_output_cb: write: failed/partial");
 }
 
-char *request_chars(size_t nchars, size_t *index, int ms) {
-    assert(index);
-    assert(cur_test->ptydata.len >= *index);
+void vterm_send_char(char ch, VTermModifier mod) {
+    take_vt_snapshot();
 
-    if (nchars == 0) {
-        LOG_WARN("requested 0 characters");
-        return "";
-    }
-
-    int tfd = start_timerfd(ms);
-    pollfds[POLL_TFD] = (struct pollfd){.fd = tfd, .events = POLLIN};
-
-    while (true) {
-        if (cur_test->ptydata.len - *index >= nchars) {
-            dstrncpy(&reqdata, &cur_test->ptydata.c_str[*index], nchars);
-            *index += nchars;
-            goto done;
-        }
-
-        xpoll(pollfds, NFDS, -1);
-
-        if (pollfds[POLL_TFD].revents & POLLIN) {
-            TEST_FAIL_MESSAGE("timed out waiting for pty data");
-        }
-
-        if (pollfds[POLL_SHELL].revents & POLLIN) {
-            char *data = flush_pipe(sh_pipe[0]);
-            add_lines(&cur_test->shell_log_lines, data);
-            free(data);
-        }
-
-        if (pollfds[POLL_VAL].revents & POLLIN) {
-            char *data = flush_pipe(val_pipe[0]);
-            add_lines(&cur_test->val_lines, data);
-            free(data);
-        }
-
-        if (pollfds[POLL_MFD].revents & POLLIN) {
-            char *data = flush_pty(cur_test->mfd);
-            write_to_term(data);
-            dstrcat(&cur_test->ptydata, data);
-            add_lines(&cur_test->raw_lines, data);
-            free(data);
-        }
-    }
-
-done:
-    xclose(tfd);
-    return reqdata.c_str;
-}
-
-void vterm_send(const char *msg) {
     VTerm *vtty = cur_test->vterm.tty;
+    vterm_keyboard_unichar(vtty, ch, mod);
+}
 
+void vterm_send_str(const char *msg) {
+    take_vt_snapshot();
+
+    VTerm *vtty = cur_test->vterm.tty;
     for (const char *c = msg; *c != '\0'; ++c) {
         uint32_t key = *c;
 
@@ -380,70 +416,6 @@ void vterm_send(const char *msg) {
 
         vterm_keyboard_unichar(vtty, key, VTERM_MOD_NONE);
     }
-}
-
-void get_vt_snap(vt_snap *snap) {
-    vterm_state_get_cursorpos(cur_test->vterm.st, &snap->curs_pos);
-
-    for (int row = 0; row < cur_test->vterm.rows; ++row) {
-        char **line = da_push(&snap->lines);
-        *line = xcalloc(1, cur_test->vterm.cols + 1);
-
-        for (int col = 0; col < cur_test->vterm.cols; ++col) {
-            VTermScreenCell cell;
-            VTermPos pos = { .row = row, .col = col };
-
-            if (!vterm_screen_get_cell(cur_test->vterm.scr, pos, &cell))
-                TEST_FAIL_MESSAGE("vterm_screen_get_cell");
-
-            if (cell.chars[1] != 0 || cell.chars[0] > 127)
-                TEST_FAIL_MESSAGE("non-ascii character in vterm");
-
-            uint32_t ch = cell.chars[0];
-
-            if (ch == 0)
-                ch = ' ';
-
-            (*line)[col] = ch;
-        }
-    }
-}
-
-void take_vt_snapshot(void) {
-    vt_snap *snap = da_push(&cur_test->snaps);
-    *snap = (vt_snap){0};
-    get_vt_snap(snap);
-}
-
-void pty_send(const char *msg) {
-    take_vt_snapshot();
-
-    int len = (int) strlen(msg);
-
-    if (write(cur_test->mfd, msg, len) != len)
-        TEST_FAIL_MESSAGE("failed/partial write");
-
-    /* so we don't have to call pty_ensure for every command
-     * that the shell echos we'll just do it here. */
-    vterm_send(msg);
-    pty_ensure(msg);
-}
-
-void pty_cc(int cc_code) {
-    if (write(cur_test->mfd, &tio.c_cc[cc_code], 1) != 1)
-        TEST_FAIL_MESSAGE("failed/partial write");
-
-    char *cc_out;
-
-    switch (cc_code) {
-    case VINTR: cc_out = "^C"; break;
-    case VSUSP: cc_out = "^Z"; break;
-    default: return;
-    }
-
-    /* so we don't have to call pty_ensure for every command
-     * that the shell echos we'll just do it here. */
-    pty_ensure(cc_out);
 }
 
 int test_fail_count(void) {
@@ -513,6 +485,7 @@ void new_test(void) {
     if (cur_test->cpid == 0)
         exec_seashell();
 
+    /* do wee need this? */
     if (ioctl(cur_test->mfd, FIONBIO, &(int){1}) == -1)
         TEST_FAIL_MESSAGE("ioctl");
 
@@ -528,24 +501,26 @@ void new_test(void) {
     if (!cur_test->vterm.scr)
         TEST_FAIL_MESSAGE("vterm_obtain_screen");
     vterm_screen_reset(cur_test->vterm.scr, 1);
-
     cur_test->vterm.st = vterm_obtain_state(cur_test->vterm.tty);
     if (!cur_test->vterm.st)
         TEST_FAIL_MESSAGE("vterm_obtain_state");
 
+    vterm_output_set_callback(
+        cur_test->vterm.tty,
+        vterm_output_cb,
+        &cur_test->mfd
+    );
+
     /* init misc data */
     dstr_init(&cur_test->ptydata);
-    cur_test->pred_i = 0;
     cur_test->test_name = strdup(Unity.CurrentTestName);
 }
 
 void new_shell(void) {
     new_test();
-
     pollfds[POLL_MFD].fd = cur_test->mfd;
-    dstr_init(&reqdata);
 
-    pty_ensure(PROMPT);
+    TEST_ASSERT_MESSAGE(term_ensure(PROMPT, 0, 0), "term_ensure: no prompt");
 }
 
 void delete_shell(void) {
@@ -572,7 +547,6 @@ void delete_shell(void) {
     add_lines(&cur_test->val_lines, data);
     free(data);
 
-    dstr_free(&reqdata);
     close(cur_test->mfd);
     vterm_free(cur_test->vterm.tty);
 

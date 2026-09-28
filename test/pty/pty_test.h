@@ -85,7 +85,6 @@ extern int val_test_errs;
 /* CREATED FOR EACH TEST */
 
 extern pty_test *cur_test;
-extern dstr reqdata;
 
 /****** SETUP *******/
 
@@ -99,6 +98,10 @@ void pty_test_sink(const llog_info *info);
 
 /****** UTILITIES *******/
 
+#define LN(...) (char *[]){ __VA_ARGS__, NULL }
+#define assert_term(...) \
+    TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout");
+
 void print_valgrind_overview(void);
 dstr *push_line(da_dstr *lines);
 dstr *last_line(da_dstr *lines);
@@ -107,11 +110,10 @@ char *flush_stream(int fd, bool err_on_eio);
 int start_timerfd(int ms);
 void child_pstat_snapshot(void);
 void write_to_term(const char *str);
-char *request_chars(size_t nchars, size_t *index, int ms);
-void term_ensure(const char *msg, int row, int col);
-void pty_ensure(const char *msg);
-void pty_send(const char *msg);
-void pty_cc(int cc_code);
+bool term_ensure(const char *msg, int row, int col);
+bool term_ensure_lines(char **lines);
+void vterm_send_str(const char *msg);
+void vterm_send_char(char ch, VTermModifier mod);
 int test_fail_count(void);
 int val_test_fail_count(void);
 void new_test(void);

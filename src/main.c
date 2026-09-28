@@ -318,6 +318,7 @@ static void process_signals(void) {
 
     if (sigint_caught) {
         LOG_INFO("SIGINT caught");
+        printf("^C");
 
         if (!sst.prompt_upset) {
             printf("\n");

@@ -1,3 +1,5 @@
+// NOLINTBEGIN(bugprone-suspicious-missing-comma)
+
 #include <assert.h>
 #include <sys/timerfd.h>
 #include <sys/poll.h>
@@ -22,111 +24,166 @@ TEST_TEAR_DOWN(shell) {
 
 /************ Tests ************/
 
+/* Must ensure that the program is in the foreground group
+ * before writing to the pty, else the bytes will be interpreted
+ * by seashells termios settings.
+ *
+ * write_sleep writes 1 byte then sleeps. Verify the byte is
+ * printed is enough to know that the handoff was successful. */
+
 TEST(shell, prompt_after_reclaim_tty) {
-    pty_send("/bin/echo x\n");
-    pty_ensure("x\n" PROMPT);
-    term_ensure("x", 1, 0);
-    term_ensure(PROMPT, 2, 0);
+    vterm_send_str("/bin/echo x\n");
+    assert_term(
+        PROMPT "/bin/echo x",
+        "x",
+        PROMPT
+    );
 }
 
 TEST(shell, prompt_after_launch_bg_cmd) {
-    pty_send("sleep 100 &\n");
-    pty_ensure("[1] Started\n" PROMPT);
-    term_ensure("[1] Started", 1, 0);
+    vterm_send_str("sleep 100 &\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started"
+    );
 }
 
 TEST(shell, prompt_after_bg_job_done) {
-    pty_send("sleep 0.05 &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("\n[1] Done - Exited with status 0\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 0.05 &\n");
+    assert_term(
+        PROMPT "sleep 0.05 &",
+        "[1] Started",
+        PROMPT,
+        "[1] Done - Exited with status 0",
+        PROMPT
+    );
 }
 
 TEST(shell, short_lived_bg_cmd) {
-    pty_send("/bin/echo x &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("x\n\n[1] Done - Exited with status 0\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo x &\n");
+    assert_term(
+        PROMPT "/bin/echo x &",
+        "[1] Started",
+        PROMPT "x",
+        " ",
+        "[1] Done - Exited with status 0",
+        PROMPT
+    );
 }
 
-TEST(shell, int_fg_job) {
-    pty_send("cat\nhi\n");
-    pty_ensure("hi\n");
+TEST(shell, interupt_foreground_job) {
+    vterm_send_str("write_sleep\n");
+    assert_term(
+        PROMPT "write_sleep",
+        "x"
+    );
 
-    pty_cc(VINTR);
-
-    pty_ensure("\n");
-    pty_ensure(PROMPT);
+    vterm_send_char('c', VTERM_MOD_CTRL);
+    assert_term(
+        PROMPT "write_sleep",
+        "x",
+        "^C" PROMPT
+    );
 }
 
 TEST(shell, stop_fg_job) {
-    pty_send("cat\nhi\n");
-    pty_ensure("hi\n");
+    vterm_send_str("write_sleep\n");
+    assert_term(
+        PROMPT "write_sleep",
+        "x"
+    );
 
-    pty_cc(VSUSP);
-
-    pty_ensure("\n");
-    pty_ensure("[1] Stopped\n");
-    pty_ensure(PROMPT);
+    vterm_send_char('z', VTERM_MOD_CTRL);
+    assert_term(
+        PROMPT "write_sleep",
+        "x",
+        "^Z",
+        "[1] Stopped",
+        PROMPT
+    );
 }
 
 TEST(shell, bg_jobs_pid_state) {
-    pty_send("sleep 100 &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 100 &\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT
+    );
 
-    pty_send("sleep 100 &\n");
-    pty_ensure("[2] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 100 &\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "sleep 100 &",
+        "[2] Started",
+        PROMPT
+    );
 }
 
 TEST(shell, unknown_cmd) {
-    pty_send("zoobar\n"); /* hopefully no-one ever makes this... */
-
-    pty_ensure("seashell: command not found: zoobar\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("zoobar\n"); /* hopefully no-one ever makes this... */
+    assert_term(
+        PROMPT "zoobar",
+        "seashell: command not found: zoobar",
+        PROMPT
+    );
 }
 
 TEST(shell, pipeline) {
-    pty_send("/bin/echo hi | grep h | wc -c\n");
-        /* wc outputs 3 because it includes the newline from grep */
-    pty_ensure("3\n");
-    pty_ensure(PROMPT);
+    /* wc outputs 3 because it includes the newline from grep */
+    vterm_send_str("/bin/echo hi | grep h | wc -c\n");
+    assert_term(
+        PROMPT "/bin/echo hi | grep h | wc -c",
+        "3",
+        PROMPT
+    );
 }
 
 TEST(shell, bg_job_done_with_fg_job) {
 
     /* launch 2 bg jobs to determine if the prompt was not printed.
      * If the prompt does not print between job exit messages it was
-     * correctly skipped.
-     *
-     * flush_pty should also have no output. */
+     * correctly skipped. */
 
-    pty_send("sleep 0.05 &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 0.05 &\n");
+    assert_term(
+        PROMPT "sleep 0.05 &",
+        "[1] Started",
+        PROMPT
+    );
 
-    pty_send("sleep 0.1 &\n");
-    pty_ensure("[2] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 0.06 &\n");
+    assert_term(
+        PROMPT "sleep 0.05 &",
+        "[1] Started",
+        PROMPT "sleep 0.06 &",
+        "[2] Started",
+        PROMPT
+    );
 
-    pty_send("sleep 1\n"); /* lose fgroup control */
-
-    pty_ensure("[1] Done - Exited with status 0\n");
-    /* shouldn't see prompt between exit messages */
-    pty_ensure("[2] Done - Exited with status 0\n");
+    vterm_send_str("sleep 1\n"); /* lose fgroup control */
+    assert_term(
+        PROMPT "sleep 0.05 &",
+        "[1] Started",
+        PROMPT "sleep 0.06 &",
+        "[2] Started",
+        PROMPT,
+        "[1] Done - Exited with status 0",
+        "[2] Done - Exited with status 0"
+    );
 }
 
 TEST(shell, builtin_in_bg) {
-    pty_send("jobs &\n");
-
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("jobs: no job control in this shell\n");
-    pty_ensure("\n[1] Done - Exited with status 1\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("jobs &\n");
+    assert_term(
+        PROMPT "jobs &",
+        "[1] Started",
+        PROMPT "jobs: no job control in this shell",
+        " ",
+        "[1] Done - Exited with status 1",
+        PROMPT
+    );
 }
 
 TEST(shell, pipeline_of_builtins_does_not_duplicate_prompt) {
@@ -135,229 +192,379 @@ TEST(shell, pipeline_of_builtins_does_not_duplicate_prompt) {
      * and neglecting to confirm if we are in the fg, and not calling
      * from a subshell, the prompt was duplicated. */
 
-    pty_send("jobs | cd .\n");
-
-    pty_ensure("jobs: no job control in this shell\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("jobs | cd .\n");
+    assert_term(
+        PROMPT "jobs | cd .",
+        "jobs: no job control in this shell",
+        PROMPT
+    );
 }
 
 TEST(shell, simple_andor_chain) {
-    pty_send("true && /bin/echo x\n");
-
-    pty_ensure("x\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("true && /bin/echo x\n");
+    assert_term(
+        PROMPT "true && /bin/echo x",
+        "x",
+        PROMPT
+    )
 }
 
 TEST(shell, simple_bg_andor_chain) {
-    pty_send("true && /bin/echo x &\n");
-
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("x\n");
-    pty_ensure("\n[1] Done - Exited with status 0\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("true && /bin/echo x &\n");
+    assert_term(
+        PROMPT "true && /bin/echo x &",
+        "[1] Started",
+        PROMPT "x",
+        " ",
+        "[1] Done - Exited with status 0",
+        PROMPT
+    );
 }
 
 TEST(shell, and_if_logic) {
-    pty_send("true && /bin/echo x\n");
-    pty_ensure("x\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("true && /bin/echo x\n");
+    assert_term(
+        PROMPT "true && /bin/echo x",
+        "x",
+        PROMPT
+    );
 
-    pty_send("false && /bin/echo x\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("false && /bin/echo x\n");
+    assert_term(
+        PROMPT "true && /bin/echo x",
+        "x",
+        PROMPT "false && /bin/echo x",
+        PROMPT
+    );
 }
 
 TEST(shell, or_if_logic) {
-    pty_send("false || /bin/echo y\n");
-    pty_ensure("y\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("false || /bin/echo y\n");
+    assert_term(
+        PROMPT "false || /bin/echo y",
+        "y",
+        PROMPT
+    );
 
-    pty_send("true || /bin/echo y\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("true || /bin/echo y\n");
+    assert_term(
+        PROMPT "false || /bin/echo y",
+        "y",
+        PROMPT "true || /bin/echo y",
+        PROMPT
+    );
 }
 
 TEST(shell, and_if_logic_bg) {
-    pty_send("true && /bin/echo x &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("x\n");
-    pty_ensure("\n[1] Done - Exited with status 0\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("true && /bin/echo x &\n");
+    assert_term(
+        PROMPT "true && /bin/echo x &",
+        "[1] Started",
+        PROMPT "x",
+        " ",
+        "[1] Done - Exited with status 0",
+        PROMPT
+    );
 
-    pty_send("false && /bin/echo x &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("\n[1] Done - Exited with status 1\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("false && /bin/echo x &\n");
+    assert_term(
+        PROMPT "true && /bin/echo x &",
+        "[1] Started",
+        PROMPT "x",
+        " ",
+        "[1] Done - Exited with status 0",
+        PROMPT "false && /bin/echo x &",
+        "[1] Started",
+        PROMPT,
+        "[1] Done - Exited with status 1",
+        PROMPT
+    );
 }
 
 TEST(shell, or_if_logic_bg) {
-    pty_send("false || /bin/echo y &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("y\n");
-    pty_ensure("\n[1] Done - Exited with status 0\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("false || /bin/echo y &\n");
+    assert_term(
+        PROMPT "false || /bin/echo y &",
+        "[1] Started",
+        PROMPT "y",
+        " ",
+        "[1] Done - Exited with status 0",
+        PROMPT
+    );
 
-    pty_send("true || /bin/echo y &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("\n[1] Done - Exited with status 0\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("true || /bin/echo y &\n");
+    assert_term(
+        PROMPT "false || /bin/echo y &",
+        "[1] Started",
+        PROMPT "y",
+        " ",
+        "[1] Done - Exited with status 0",
+        PROMPT "true || /bin/echo y &",
+        "[1] Started",
+        PROMPT,
+        "[1] Done - Exited with status 0",
+        PROMPT
+    );
 }
 
 TEST(shell, and_or_chain_with_builtins) {
-    pty_send("echo x && echo y\n");
-
-    pty_ensure("x\n");
-    pty_ensure("y\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("echo x && echo y\n");
+    assert_term(
+        PROMPT "echo x && echo y",
+        "x",
+        "y",
+        PROMPT
+    );
 }
 
 TEST(shell, prompt_after_launch_fg_builtin) {
-    pty_send("cd .\n");
-
-    pty_ensure(PROMPT);
+    vterm_send_str("cd .\n");
+    assert_term(
+        PROMPT "cd .",
+        PROMPT
+    );
 }
 
 TEST(shell, jobs_builtin) {
-    pty_send("jobs\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("jobs\n");
+    assert_term(
+        PROMPT "jobs",
+        PROMPT
+    );
 
-    pty_send("sleep 100 &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 100 &\n");
+    assert_term(
+        PROMPT "jobs",
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT
+    );
 
-    pty_send("jobs\n");
-    pty_ensure("[1] Running\n");
-    pty_ensure("   sleep 100 Running\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("jobs\n");
+    assert_term(
+        PROMPT "jobs",
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "jobs",
+        "[1] Running",
+        "   sleep 100 Running",
+        PROMPT
+    );
 }
 
 TEST(shell, builtin_and_or_logic) {
-    pty_send("cd /non-existant || echo ?\n");
-    pty_ensure("cd: chdir: No such file or directory\n");
-    pty_ensure("?\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("cd /non-existant || echo ?\n");
+    assert_term(
+        PROMPT "cd /non-existant || echo ?",
+        "cd: chdir: No such file or directory",
+        "?",
+        PROMPT
+    );
 
-    pty_send("cd /non-existant && echo ?\n");
-    pty_ensure("cd: chdir: No such file or directory\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("cd /non-existant && echo ?\n");
+    assert_term(
+        PROMPT "cd /non-existant || echo ?",
+        "cd: chdir: No such file or directory",
+        "?",
+        PROMPT "cd /non-existant && echo ?",
+        "cd: chdir: No such file or directory",
+        PROMPT
+    );
 }
 
 TEST(shell, fg_stopped_bg_job) {
-    pty_send("cat &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-    pty_ensure("\n[1] Stopped\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("cat &\n");
+    assert_term(
+        PROMPT "cat &",
+        "[1] Started",
+        PROMPT,
+        "[1] Stopped",
+        PROMPT
+    );
 
-    pty_send("fg %1\n");
-    pty_ensure("[1] Continued\n");
+    vterm_send_str("fg %1\n");
+    assert_term(
+        PROMPT "cat &",
+        "[1] Started",
+        PROMPT,
+        "[1] Stopped",
+        PROMPT "fg %1"
+    );
 }
 
 TEST(shell, kill_builtin_works_on_bg_jobs) {
-    pty_send("sleep 100 &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 100 &\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT
+    );
 
-    pty_send("jobs\n");
-    pty_ensure("[1] Running\n");
-    pty_ensure("   sleep 100 Running\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("jobs\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "jobs",
+        "[1] Running",
+        "   sleep 100 Running",
+        PROMPT
+    );
 
-    pty_send("kill %1\n");
-    pty_ensure("[1] Done - Terminated by signal 15\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("kill %1\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "jobs",
+        "[1] Running",
+        "   sleep 100 Running",
+        PROMPT "kill %1",
+        "[1] Done - Terminated by signal 15",
+        PROMPT
+    );
 
-    pty_send("jobs\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("jobs\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "jobs",
+        "[1] Running",
+        "   sleep 100 Running",
+        PROMPT "kill %1",
+        "[1] Done - Terminated by signal 15",
+        PROMPT "jobs",
+        PROMPT
+    );
 }
 
 TEST(shell, bg_on_stopped_job_resumes_it) {
-    pty_send("sleep 100 &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 100 &\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT
+    );
 
-    pty_send("kill -STOP %1\n");
-    pty_ensure("[1] Stopped\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("kill -STOP %1\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "kill -STOP %1",
+        "[1] Stopped",
+        PROMPT
+    );
 
-    pty_send("bg %1\n");
-    pty_ensure("[1] Continued\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("bg %1\n");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "kill -STOP %1",
+        "[1] Stopped",
+        PROMPT "bg %1",
+        "[1] Continued",
+        PROMPT
+    );
 }
 
 TEST(shell, kill_multiple_proc_job) {
-    pty_send("sleep 100 | sleep 100 | write_sleep &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 100 | sleep 100 | write_sleep &\n");
+    assert_term(
+        PROMPT "sleep 100 | sleep 100 | write_sleep &",
+        "[1] Started",
+        PROMPT "x"
+    );
 
-    pty_ensure("x\n");
-
-    pty_send("kill %1\n");
-    pty_ensure("[1] Done - Terminated by signal 15\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("kill %1\n");
+    assert_term(
+        PROMPT "sleep 100 | sleep 100 | write_sleep &",
+        "[1] Started",
+        PROMPT "x",
+        "kill %1",
+        "[1] Done - Terminated by signal 15",
+        PROMPT
+    );
 }
 
 TEST(shell, sigint_on_non_final_proc_prints_newline) {
-    pty_send("self_kill -INT | self_kill -TERM\n");
-
-    pty_ensure("\n");
-    pty_ensure("[1] Done - Terminated by signal 15\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("self_kill -INT | self_kill -TERM\n");
+    assert_term(
+        PROMPT "self_kill -INT | self_kill -TERM",
+        " ",
+        "[1] Done - Terminated by signal 15",
+        PROMPT
+    );
 }
 
 TEST(shell, sigint_on_final_proc) {
-    pty_send("self_kill -INT\n");
-
-    pty_ensure("\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("self_kill -INT\n");
+    assert_term(
+        PROMPT "self_kill -INT",
+        " ",
+        PROMPT
+    );
 }
 
 TEST(shell, process_exits_normally_in_bg) {
-    pty_send("true &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
-
-    pty_ensure("\n[1] Done - Exited with status 0\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("true &\n");
+    assert_term(
+        PROMPT "true &",
+        "[1] Started",
+        PROMPT,
+        "[1] Done - Exited with status 0",
+        PROMPT
+    );
 }
 
 TEST(shell, fg_process_signaled) {
-    pty_send("self_kill -TERM\n");
-    pty_ensure("[1] Done - Terminated by signal 15\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("self_kill -TERM\n");
+    assert_term(
+        PROMPT "self_kill -TERM",
+        "[1] Done - Terminated by signal 15",
+        PROMPT
+    );
 }
 
 TEST(shell, fg_process_stopped) {
-    pty_send("self_kill -STOP\n");
-    pty_ensure("[1] Stopped\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("self_kill -STOP\n");
+    assert_term(
+        PROMPT "self_kill -STOP",
+        "[1] Stopped",
+        PROMPT
+    );
 }
 
 TEST(shell, fg_process_stopped_interactively) {
-    pty_send("self_kill -TSTP\n");
-    pty_ensure("\n");
-    pty_ensure("[1] Stopped\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("self_kill -TSTP\n");
+    assert_term(
+        PROMPT "self_kill -TSTP",
+        " ",
+        "[1] Stopped",
+        PROMPT
+    );
 }
 
 TEST(shell, send_sigint_to_process_that_catches_it) {
-    pty_send("sleep 100 | write_sleep\n");
-    pty_ensure("x\n");
+    vterm_send_str("sleep 100 | write_sleep\n");
+    assert_term(
+        PROMPT "sleep 100 | write_sleep",
+        "x"
+    );
 
-    child_pstat_snapshot();
-
-    pty_cc(VINTR);
-    pty_ensure("\n");
-    pty_ensure(PROMPT);
+    vterm_send_char('c', VTERM_MOD_CTRL);
+    assert_term(
+        PROMPT "sleep 100 | write_sleep",
+        "x",
+        "^C",
+        PROMPT
+    );
 }
 
 TEST(shell, stopped_process_then_kill_builtin) {
-    pty_send("self_kill -STOP | sleep 100 | write_sleep &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("self_kill -STOP | sleep 100 | write_sleep &\n");
+    assert_term(
+        PROMPT "self_kill -STOP | sleep 100 | write_sleep &",
+        "[1] Started",
+        PROMPT "x"
+    );
 
     /* sleep a bit to let self_kill stop itself.
      * If this test fails the sleep wasn't long enough.
@@ -366,45 +573,82 @@ TEST(shell, stopped_process_then_kill_builtin) {
     if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1)
         LOG_ERR("nanosleep: %m");
 
-    /* make sure every process is in the pgroup */
-    pty_ensure("x\n");
-
-    pty_send("kill %1\n");
-    pty_ensure("[1] Stopped\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("kill %1\n");
+    assert_term(
+        PROMPT "self_kill -STOP | sleep 100 | write_sleep &",
+        "[1] Started",
+        PROMPT "x",
+        "kill %1",
+        "[1] Stopped",
+        PROMPT
+    );
 }
 
 TEST(shell, stop_pline_with_plines_left) {
-    pty_send("sleep 1 || true &\n");
-    pty_ensure("[1] Started\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("sleep 1 || true &\n");
+    assert_term(
+        PROMPT "sleep 1 || true &",
+        "[1] Started",
+        PROMPT
+    );
 
-    pty_send("kill -STOP %1\n");
-    pty_ensure("[1] Stopped\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("kill -STOP %1\n");
+    assert_term(
+        PROMPT "sleep 1 || true &",
+        "[1] Started",
+        PROMPT "kill -STOP %1",
+        "[1] Stopped",
+        PROMPT
+    );
 
-    pty_send("kill -CONT %1\n");
-    pty_ensure("[1] Continued\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("kill -CONT %1\n");
+    assert_term(
+        PROMPT "sleep 1 || true &",
+        "[1] Started",
+        PROMPT "kill -STOP %1",
+        "[1] Stopped",
+        PROMPT "kill -CONT %1",
+        "[1] Continued",
+        PROMPT
+    );
 
-    pty_send("kill %1\n");
-    pty_ensure("[1] Done - Terminated by signal 15\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("kill %1\n");
+    assert_term(
+        PROMPT "sleep 1 || true &",
+        "[1] Started",
+        PROMPT "kill -STOP %1",
+        "[1] Stopped",
+        PROMPT "kill -CONT %1",
+        "[1] Continued",
+        PROMPT "kill %1",
+        "[1] Done - Terminated by signal 15",
+        PROMPT
+    );
 }
 
 TEST(shell, cancel_andor_chain_with_interupt) {
-    pty_send("cat && echo x\n");
-    pty_send("x\n");
-    pty_ensure("x\n");
-    pty_cc(VINTR);
-    pty_ensure("\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("write_sleep && echo x\n");
+    assert_term(
+        PROMPT "write_sleep && echo x",
+        "x"
+    );
+
+    vterm_send_char('c', VTERM_MOD_CTRL);
+    assert_term(
+        PROMPT "write_sleep && echo x",
+        "x",
+        "^C",
+        PROMPT
+    );
 }
 
 TEST(shell, cancel_andor_chain_with_signal) {
-    pty_send("self_kill -TERM || echo x\n");
-    pty_ensure("[1] Done - Terminated by signal 15\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("self_kill -TERM || echo x\n");
+    assert_term(
+        PROMPT "self_kill -TERM || echo x",
+        "[1] Done - Terminated by signal 15",
+        PROMPT
+    );
 }
 
 /************ Test runner ************/
@@ -414,7 +658,7 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, prompt_after_launch_bg_cmd);
     RUN_TEST_CASE(shell, prompt_after_bg_job_done);
     RUN_TEST_CASE(shell, short_lived_bg_cmd);
-    RUN_TEST_CASE(shell, int_fg_job);
+    RUN_TEST_CASE(shell, interupt_foreground_job);
     RUN_TEST_CASE(shell, stop_fg_job);
     RUN_TEST_CASE(shell, bg_jobs_pid_state);
     RUN_TEST_CASE(shell, unknown_cmd);
@@ -426,8 +670,8 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, simple_bg_andor_chain);
     RUN_TEST_CASE(shell, and_if_logic);
     RUN_TEST_CASE(shell, or_if_logic);
-    RUN_TEST_CASE(shell, or_if_logic_bg);
     RUN_TEST_CASE(shell, and_if_logic_bg);
+    RUN_TEST_CASE(shell, or_if_logic_bg);
     RUN_TEST_CASE(shell, and_or_chain_with_builtins);
     RUN_TEST_CASE(shell, prompt_after_launch_fg_builtin);
     RUN_TEST_CASE(shell, jobs_builtin);
@@ -449,3 +693,5 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, cancel_andor_chain_with_interupt);
     RUN_TEST_CASE(shell, cancel_andor_chain_with_signal);
 }
+
+// NOLINTEND(bugprone-suspicious-missing-comma)

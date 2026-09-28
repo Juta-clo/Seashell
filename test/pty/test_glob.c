@@ -94,11 +94,20 @@ TEST_TEAR_DOWN(glob) {
 TEST(glob, glob_star_only) {
     add_file(CWD, "a");
 
-    pty_send("/bin/echo *\n");
-    pty_ensure("./a\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./*\n");
-    pty_ensure("./a\n");
+    vterm_send_str("/bin/echo *\n");
+    assert_term(
+        PROMPT "/bin/echo *",
+        "./a",
+        PROMPT
+    );
+
+    vterm_send_str("/bin/echo ./*\n");
+    assert_term(
+        PROMPT "/bin/echo *",
+        "./a",
+        PROMPT "/bin/echo ./*",
+        "./a"
+    );
 }
 
 TEST(glob, prefix_match) {
@@ -107,24 +116,25 @@ TEST(glob, prefix_match) {
     add_file(CWD, "harold");
     add_file(CWD, "peal");
 
-    pty_send("/bin/echo he*\n");
-    pty_ensure("./hello\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./he*\n");
-    pty_ensure("./hello\n");
+    vterm_send_str("/bin/echo he*\n");
+    assert_term(
+        PROMPT "/bin/echo he*",
+        "./hello",
+        PROMPT
+    );
 }
 
 TEST(glob, suffix_match) {
     add_file(CWD, "horn");
-
     add_file(CWD, "boon");
     add_file(CWD, "swear");
 
-    pty_send("/bin/echo *rn\n");
-    pty_ensure("./horn\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./*rn\n");
-    pty_ensure("./horn\n");
+    vterm_send_str("/bin/echo *rn\n");
+    assert_term(
+        PROMPT "/bin/echo *rn",
+        "./horn",
+        PROMPT
+    );
 }
 
 TEST(glob, suffix_and_prefix_match) {
@@ -133,24 +143,25 @@ TEST(glob, suffix_and_prefix_match) {
     add_file(CWD, "aca");
     add_file(CWD, "aaa");
 
-    pty_send("/bin/echo *b*\n");
-    pty_ensure("./aba\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./*b*\n");
-    pty_ensure("./aba\n");
+    vterm_send_str("/bin/echo *b*\n");
+    assert_term(
+        PROMPT "/bin/echo *b*",
+        "./aba",
+        PROMPT
+    );
 }
 
 TEST(glob, single_substring_match) {
     add_file(CWD, "boofooboo");
-
     add_file(CWD, "boofoboo");
     add_file(CWD, "boobooboo");
 
-    pty_send("/bin/echo *foo*\n");
-    pty_ensure("./boofooboo\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./*foo*\n");
-    pty_ensure("./boofooboo\n");
+    vterm_send_str("/bin/echo *foo*\n");
+    assert_term(
+        PROMPT "/bin/echo *foo*",
+        "./boofooboo",
+        PROMPT
+    );
 }
 
 TEST(glob, multiple_substring_match) {
@@ -159,25 +170,26 @@ TEST(glob, multiple_substring_match) {
     add_file(CWD, "XfoXbarX");
     add_file(CWD, "XfooXarX");
 
-    pty_send("/bin/echo *foo*bar*\n");
-    pty_ensure("./XfooXbarX\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./*foo*bar*\n");
-    pty_ensure("./XfooXbarX\n");
+    vterm_send_str("/bin/echo *foo*bar*\n");
+    assert_term(
+        PROMPT "/bin/echo *foo*bar*",
+        "./XfooXbarX",
+        PROMPT
+    );
 }
 
 TEST(glob, substring_and_prefix_match) {
     add_file(CWD, "fooXbarX");
-
     add_file(CWD, "fobar");
     add_file(CWD, "XbarX");
     add_file(CWD, "XfoobarXXX");
 
-    pty_send("/bin/echo foo*bar*\n");
-    pty_ensure("./fooXbarX\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./foo*bar*\n");
-    pty_ensure("./fooXbarX\n");
+    vterm_send_str("/bin/echo foo*bar*\n");
+    assert_term(
+        PROMPT "/bin/echo foo*bar*",
+        "./fooXbarX",
+        PROMPT
+    );
 }
 
 TEST(glob, substring_and_suffix_match) {
@@ -186,45 +198,52 @@ TEST(glob, substring_and_suffix_match) {
     add_file(CWD, "foXbar");
     add_file(CWD, "foobarX");
 
-    pty_send("/bin/echo *foo*bar\n");
-    pty_ensure("./XfooXbar\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./*foo*bar\n");
-    pty_ensure("./XfooXbar\n");
+    vterm_send_str("/bin/echo *foo*bar\n");
+    assert_term(
+        PROMPT "/bin/echo *foo*bar",
+        "./XfooXbar",
+        PROMPT
+    );
 }
 
 TEST(glob, multiple_substring_prefix_suffix_match) {
     add_file(CWD, "fooXbarXbeeXzoo");
-
     add_file(CWD, "Xfoobarbeezoo");
     add_file(CWD, "foobarbeezooX");
     add_file(CWD, "XXXfoobarbeezoo");
     add_file(CWD, "foobarbeezooXXX");
     add_file(CWD, "XfooXbarXbeeXzooX");
 
-    pty_send("/bin/echo foo*bar*bee*zoo\n");
-    pty_ensure("./fooXbarXbeeXzooX\n");
-    pty_ensure(PROMPT);
-    pty_send("/bin/echo ./foo*bar*bee*zoo\n");
-    pty_ensure("./fooXbarXbeeXzooX\n");
+    vterm_send_str("/bin/echo foo*bar*bee*zoo\n");
+    assert_term(
+        PROMPT "/bin/echo *foo*bar*bee*zoo",
+        "./fooXbarXbeeXzooX",
+        PROMPT
+    );
 }
 
 TEST(glob, nested_directory_match) {
     glob_dir *dir = add_dir("dir1");
     add_file(dir, "foo");
 
-    pty_send("/bin/echo ./dir1/*\n");
-    pty_ensure("./dir1/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./dir1/*\n");
+    assert_term(
+        PROMPT "/bin/echo ./dir1/*",
+        "./dir1/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, double_nested_directory_match) {
     add_dir("dir1");
     add_file(add_dir("dir1/dir2"), "foo");
 
-    pty_send("/bin/echo ./dir1/dir2/*\n");
-    pty_ensure("./dir1/dir2/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./dir1/dir2/*\n");
+    assert_term(
+        PROMPT "/bin/echo ./dir1/dir2/*",
+        "./dir1/dir2/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, directory_componenet_with_glob) {
@@ -232,9 +251,12 @@ TEST(glob, directory_componenet_with_glob) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    pty_send("/bin/echo ./dir*/foo\n");
-    pty_ensure("./dir/foo ./dir2/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./dir*/foo\n");
+    assert_term(
+        PROMPT "/bin/echo ./dir*/foo",
+        "./dir/foo ./dir2/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, directory_and_file_componenet_with_glob) {
@@ -242,9 +264,12 @@ TEST(glob, directory_and_file_componenet_with_glob) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    pty_send("/bin/echo ./dir*/*\n");
-    pty_ensure("./dir/foo ./dir2/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./dir*/*\n");
+    assert_term(
+        PROMPT "/bin/echo ./dir*/*",
+        "./dir/foo ./dir2/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, directory_glob_and_file_prefix_match) {
@@ -252,9 +277,12 @@ TEST(glob, directory_glob_and_file_prefix_match) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    pty_send("/bin/echo ./dir*/f*\n");
-    pty_ensure("./dir/foo ./dir2/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./dir*/f*\n");
+    assert_term(
+        PROMPT "/bin/echo ./dir*/f*",
+        "./dir/foo ./dir2/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, directory_glob_and_file_suffix_match) {
@@ -262,9 +290,12 @@ TEST(glob, directory_glob_and_file_suffix_match) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    pty_send("/bin/echo ./dir*/*o\n");
-    pty_ensure("./dir/foo ./dir2/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./dir*/*o\n");
+    assert_term(
+        PROMPT "/bin/echo ./dir*/*o",
+        "./dir/foo ./dir2/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, double_nested_directory_globs) {
@@ -274,35 +305,47 @@ TEST(glob, double_nested_directory_globs) {
     add_file(add_dir("abc/def"), "foo");
     add_file(add_dir("a12/d34"), "foo");
 
-    pty_send("/bin/echo ./a*/d*/*\n");
-    pty_ensure("./a12/d34/foo ./abc/def/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./a*/d*/*\n");
+    assert_term(
+        PROMPT "/bin/echo ./a*/d*/*",
+        "./a12/d34/foo ./abc/def/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, multiple_stars_are_compressed) {
     add_file(add_dir("abc"), "foo");
 
-    pty_send("/bin/echo ./***/*\n");
-    pty_ensure("./abc/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./***/*\n");
+    assert_term(
+        PROMPT "/bin/echo ./***/*",
+        "./abc/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, intermediary_component_with_complex_glob_pattern) {
     add_dir("a");
     add_file(add_dir("a/fooXbarXbeeXzoo"), "foo");
 
-    pty_send("/bin/echo ./a/foo*bar*bee*zoo/*\n");
-    pty_ensure("./a/fooXbarXbeeXzoo/foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo ./a/foo*bar*bee*zoo/*\n");
+    assert_term(
+        PROMPT "/bin/echo ./a/foo*bar*bee*zoo/*",
+        "./a/fooXbarXbeeXzoo/foo",
+        PROMPT
+    );
 }
 
 TEST(glob, relative_dirent_works) {
     add_file(add_dir("a"), "foo");
     add_dir("a/b");
 
-    pty_send("/bin/echo a/b/../*\n");
-    pty_ensure("./a/b/../b ./a/b/../foo\n");
-    pty_ensure(PROMPT);
+    vterm_send_str("/bin/echo a/b/../*\n");
+    assert_term(
+        PROMPT "/bin/echo a/b/../*",
+        "./a/b/../b ./a/b/../foo",
+        PROMPT
+    );
 }
 
 /************ Test runner ************/
