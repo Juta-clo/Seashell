@@ -9,6 +9,7 @@
 #include "linc_tools.h"
 #include "map.h"
 #include "parser.h"
+#include "printty.h"
 
 #define NOFG -1
 
@@ -27,6 +28,7 @@ typedef struct {
     int prompt_style;
     map_t vars;
     struct termios tty_state;
+    Printty *pt;
 } shell_env;
 
 extern shell_env sh_env;

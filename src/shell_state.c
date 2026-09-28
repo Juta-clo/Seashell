@@ -147,15 +147,6 @@ static void var_setup(shell_env *env) {
 }
 
 void env_setup(shell_env *env) {
-    /* so fgets (and other stdio funcs) don't steal bytes */
-    xsetvbuf(stdin, NULL, _IONBF, 0);
-    xsetvbuf(stdout, NULL, _IONBF, 0);
-    xsetvbuf(stderr, NULL, _IONBF, 0);
-
-    log_setup(&env->log_fd);
-    sig_setup(&env->og_mask);
-    var_setup(env);
-
     env->subshell = false;
     env->fg_jid = NOFG;
     env->tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
@@ -168,6 +159,15 @@ void env_setup(shell_env *env) {
     } else {
         env->prompt_style = PROMPT_CWD;
     }
+
+    xsetvbuf(stdin, NULL, _IONBF, 0);
+    xsetvbuf(stdout, NULL, _IONBF, 0);
+    xsetvbuf(stderr, NULL, _IONBF, 0);
+
+    log_setup(&env->log_fd);
+    sig_setup(&env->og_mask);
+    var_setup(env);
+    input_init(env);
 
     LOG_INFO("seashell PID(%d)", getpid());
 }

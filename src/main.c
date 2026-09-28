@@ -24,7 +24,9 @@
 #define SIG_READY 1
 #define STDIN_READY 2
 
-static void hup_to_children(void) {
+static void seashell_shutdown(void) {
+    input_deinit(&sh_env);
+
     for (size_t i = 0; i < get_jctl()->jobs.size; ++i) {
         jc_job *job = &get_jctl()->jobs.data[i];
 
@@ -181,6 +183,7 @@ void reclaim_terminal(void) {
     if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");
 
+    input_init(&sh_env);
     sh_env.fg_jid = NOFG;
 }
 
@@ -337,8 +340,8 @@ int main(int argc, char *const *argv) {
     if (args_parse(argc, argv, opts, ARGS_NO_NON_OPTS) == -1)
         exit(EXIT_FAILURE);
 
+    xatexit(seashell_shutdown);
     env_setup(&sh_env);
-    xatexit(hup_to_children);
 
     display_prompt(sh_env.prompt_style);
 
@@ -378,6 +381,8 @@ int main(int argc, char *const *argv) {
             printf("[%d] Started\n", jid);
             display_prompt(sh_env.prompt_style);
         } else {
+            input_deinit(&sh_env);
+            printty_destroy(sh_env.pt); /* restore termios */
             sh_env.fg_jid = jid;
         }
 
