@@ -58,12 +58,13 @@ static ps_ast *line_to_ast(char *line) {
         return NULL;
 
     da_tok toks;
-    if (lx_tokenize(line, &toks) != LX_OK) {
+    int rv = lx_tokenize(line, &toks);
+    hda_free(line);
+
+    if (rv != LX_OK) {
         err_msg("lex error");
-        hds_free(line);
         return NULL;
     }
-    hds_free(line);
 
     ps_ast *ast = xmalloc(sizeof(ps_ast));
 

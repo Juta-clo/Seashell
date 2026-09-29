@@ -1,5 +1,3 @@
-// NOLINTBEGIN(bugprone-suspicious-missing-comma)
-
 #include <assert.h>
 #include <sys/timerfd.h>
 #include <sys/poll.h>
@@ -30,6 +28,8 @@ TEST_TEAR_DOWN(shell) {
  *
  * write_sleep writes 1 byte then sleeps. Verify the byte is
  * printed is enough to know that the handoff was successful. */
+
+// NOLINTBEGIN(bugprone-suspicious-missing-comma)
 
 TEST(shell, prompt_after_reclaim_tty) {
     vterm_send_str("/bin/echo x\n");
@@ -652,6 +652,8 @@ TEST(shell, cancel_andor_chain_with_signal) {
     );
 }
 
+// NOLINTEND(bugprone-suspicious-missing-comma)
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(shell) {
@@ -694,5 +696,3 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, cancel_andor_chain_with_interupt);
     RUN_TEST_CASE(shell, cancel_andor_chain_with_signal);
 }
-
-// NOLINTEND(bugprone-suspicious-missing-comma)

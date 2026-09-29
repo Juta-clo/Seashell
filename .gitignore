@@ -9,6 +9,7 @@ test_*
 !test_*.c
 !test_*.old
 !test_utils.h
+!test_bins/
 shell-debug
 log*
 !log.h

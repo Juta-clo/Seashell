@@ -16,11 +16,10 @@ TEST_SETUP(variable) {
 
     vterm_send_str("set FOO bar\n");
 
-    /* need to make sure that set builtin returns and we restore foreground
-     * process group (restore shell termios) */
-
-    int ns_sleep = (run_valgrind) ? 100000000 : 10000000;
-    nanosleep(&(struct timespec){ .tv_nsec = ns_sleep, .tv_sec = 0 }, NULL);
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT
+    );
 }
 
 TEST_TEAR_DOWN(variable) {

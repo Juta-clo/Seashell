@@ -14,7 +14,7 @@
 void input_init(shell_env *env) {
     assert(env);
 
-    if (!(env->pt = printty_create()))
+    if (!(env->pt = printty_create(NULL)))
         xfatal("printty_create");
     if (printty_cbreak(env->pt) == PRINTTY_ERR)
         xfatal("printty_cbreak");;
@@ -65,14 +65,19 @@ char *get_line(void) {
             xfatal("failed parsing line");
 
         } else if (rv == PRINTTY_SIG) {
-            hds_free(line);
+            hda_free(line);
             return NULL;
         }
 
         if (pev.type == PRINTTY_UNICODE) {
             if (pev.codepoint >= 32 && pev.codepoint <= 126) {
                 printf("%c", pev.codepoint);
-                hds_append_n(line, &pev.utf8[0], 1);
+                hda_push(line, pev.utf8[0]);
+
+            } else if (pev.codepoint == '\x15'/*<C-u>*/) {
+                for (size_t i = 0; i < hda_size(line); ++i)
+                    printf("\b \b");
+                hda_delete(line, 0, hda_size(line));
             }
 
         } else if (pev.type == PRINTTY_KEY) {
@@ -81,10 +86,16 @@ char *get_line(void) {
                 if (line == NULL)
                     return "";
                 break;
+            } else if (pev.key == PRINTTY_BACKSPACE) {
+                if (hda_size(line) > 0) {
+                    printf("\b \b");
+                    hda_delete(line, hda_size(line) - 1, 1);
+                }
             }
         }
     }
 
+    hda_push(line, '\0');
     LOG_INFO("parsed line: %s", line);
     return line;
 }
