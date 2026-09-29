@@ -44,7 +44,8 @@ TEST(shell, prompt_after_launch_bg_cmd) {
     vterm_send_str("sleep 100 &\n");
     assert_term(
         PROMPT "sleep 100 &",
-        "[1] Started"
+        "[1] Started",
+        PROMPT
     );
 }
 
@@ -388,7 +389,8 @@ TEST(shell, fg_stopped_bg_job) {
         "[1] Started",
         PROMPT,
         "[1] Stopped",
-        PROMPT "fg %1"
+        PROMPT "fg %1",
+        "[1] Continued"
     );
 }
 
@@ -567,10 +569,9 @@ TEST(shell, stopped_process_then_kill_builtin) {
     );
 
     /* sleep a bit to let self_kill stop itself.
-     * If this test fails the sleep wasn't long enough.
-     *
-     * Running under valgrind this will probably timeout */
-    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1)
+     * If this test fails the sleep wasn't long enough. */
+    int ns_sleep = (run_valgrind) ? 100000000 : 10000000;
+    if (nanosleep(&(struct timespec){ .tv_nsec = ns_sleep }, NULL) == -1)
         LOG_ERR("nanosleep: %m");
 
     vterm_send_str("kill %1\n");
@@ -654,8 +655,8 @@ TEST(shell, cancel_andor_chain_with_signal) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(shell) {
-    RUN_TEST_CASE(shell, prompt_after_reclaim_tty);
     RUN_TEST_CASE(shell, prompt_after_launch_bg_cmd);
+    RUN_TEST_CASE(shell, prompt_after_reclaim_tty);
     RUN_TEST_CASE(shell, prompt_after_bg_job_done);
     RUN_TEST_CASE(shell, short_lived_bg_cmd);
     RUN_TEST_CASE(shell, interupt_foreground_job);

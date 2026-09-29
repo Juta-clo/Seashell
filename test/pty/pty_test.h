@@ -108,6 +108,7 @@ dstr *last_line(da_dstr *lines);
 void add_lines(da_dstr *lines, const char *str);
 char *flush_stream(int fd, bool err_on_eio);
 int start_timerfd(int ms);
+void write_ps_output(void);
 void child_pstat_snapshot(void);
 void write_to_term(const char *str);
 bool term_ensure(const char *msg, int row, int col);
@@ -116,7 +117,6 @@ void vterm_send_str(const char *msg);
 void vterm_send_char(char ch, VTermModifier mod);
 int test_fail_count(void);
 int val_test_fail_count(void);
-void new_test(void);
 void new_shell(void);
 void delete_shell(void);
 

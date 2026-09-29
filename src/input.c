@@ -78,10 +78,13 @@ char *get_line(void) {
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
                 printf("\n");
+                if (line == NULL)
+                    return "";
                 break;
             }
         }
     }
 
+    LOG_INFO("parsed line: %s", line);
     return line;
 }

@@ -5,6 +5,10 @@
 - [ ] Detect the exit status of seashell. Useful if seshell segfaults
 - [ ] Shell variables like $?
 
+### Bugs
+
+- [ ] run cat, then suspend it with C-Z then exit. Why is exit printed twice?
+
 ### Resolved
 
 1. What happens if an interactive termianal program (that modifies termios) is

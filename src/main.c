@@ -54,6 +54,9 @@ static void seashell_shutdown(void) {
 }
 
 static ps_ast *line_to_ast(char *line) {
+    if (strcmp("", line) == 0)
+        return NULL;
+
     da_tok toks;
     if (lx_tokenize(line, &toks) != LX_OK) {
         err_msg("lex error");
@@ -230,12 +233,21 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
         }
 
     } else if (jev->type == JSTOPPED) {
-        reclaim_terminal();
+        /* restore foreground process group status so that
+         * tcsetattr doesn't not return TTOU */
+        if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
+            err_exit("tcsetpgrp");
+        sh_env.fg_jid = NOFG;
 
+        /* save stopped programs termios */
         job_plan *plan = lookup_plan(jev->jid, NULL);
         xtcgetattr(sh_env.tty_fd, &plan->tty_state);
-        xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tty_state);
         plan->tty_state_saved = true;
+
+        /* restore old original shell termios, then initialize
+         * printty, so that it uses the old original shell termios */
+        xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tty_state);
+        input_init(&sh_env);
 
         sst->need_print = true;
         sst->need_prompt = true;
@@ -382,8 +394,7 @@ int main(int argc, char *const *argv) {
             printf("[%d] Started\n", jid);
             display_prompt(sh_env.prompt_style);
         } else {
-            input_deinit(&sh_env);
-            printty_destroy(sh_env.pt); /* restore termios */
+            input_deinit(&sh_env); /* restore termios */
             sh_env.fg_jid = jid;
         }
 

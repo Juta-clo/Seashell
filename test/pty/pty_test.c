@@ -274,10 +274,10 @@ bool verify_vterm_state(const char *msg, int srow, int scol) {
             if (ch == 0)
                 ch = ' ';
 
-            LOG_INFO("vterm[%d,%d] = '%c'", row, col, ch);
-
-            if ((char) ch != msg[n++])
+            if ((char) ch != msg[n++]) {
+                LOG_INFO("At [%d,%d] Need '%c', Is '%c'", row, col, ch, msg[n - 1]);
                 return false;
+            }
 
             if (n >= len)
                 return true;
@@ -301,14 +301,15 @@ bool term_ensure(const char *msg, int row, int col) {
     if (verify_vterm_state(msg, row, col))
         return true;
 
-    int tfd = start_timerfd(100);
+    int ms_sleep = (run_valgrind) ? 1000 : 100;
+    int tfd = start_timerfd(ms_sleep);
     pollfds[POLL_TFD] = (struct pollfd){ .fd = tfd, .events = POLLIN };
 
     while (true) {
         xpoll(pollfds, NFDS, -1);
 
         if (pollfds[POLL_TFD].revents & POLLIN) {
-            LOG_INFO("TIMER POPPED");
+            LOG_ERR("TIMER POPPED");
             close(tfd);
             return false;
         }
@@ -354,7 +355,7 @@ bool term_ensure_lines(char **lines) {
 
     for (size_t i = 0; i < n; ++i) {
         if (!term_ensure(lines[i], i, 0)) {
-            LOG_ERR("term_ensure failed on line: \"%s\"", lines[i]);
+            LOG_ERR("Failed on line: \"%s\"", lines[i]);
             return false;
         }
     }
@@ -445,10 +446,13 @@ void exec_seashell(void) {
         argv = (char *[]){
             "valgrind",
                 "--vgdb=no",
-                "--quiet",
                 "--leak-check=full",
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
+                "--error-exitcode=99", /*seashell shouldn't return that*/
+
+                /* this is bugged with sigsuspend. See bugzilla#526386 */
+                "--enable-debuginfod=no",
                 val_lfd_arg,
 
             "/home/juta/Projects/Seashell/seashell",
@@ -469,7 +473,7 @@ void exec_seashell(void) {
     _exit(EXIT_FAILURE);
 }
 
-void new_test(void) {
+void new_shell(void) {
     cur_test = da_push(&all_tests);
     *cur_test = (pty_test){0};
 
@@ -484,8 +488,8 @@ void new_test(void) {
     cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, &ws);
     if (cur_test->cpid == 0)
         exec_seashell();
+    pollfds[POLL_MFD].fd = cur_test->mfd;
 
-    /* do wee need this? */
     if (ioctl(cur_test->mfd, FIONBIO, &(int){1}) == -1)
         TEST_FAIL_MESSAGE("ioctl");
 
@@ -514,12 +518,11 @@ void new_test(void) {
     /* init misc data */
     dstr_init(&cur_test->ptydata);
     cur_test->test_name = strdup(Unity.CurrentTestName);
-}
 
-void new_shell(void) {
-    new_test();
-    pollfds[POLL_MFD].fd = cur_test->mfd;
-
+    /* seashell initializes printty (termios) then displays
+     * the prompt so this works to avoid writing to the mfd
+     * before canonical mode is disabled thus having the write
+     * echoed by the tty driver. */
     TEST_ASSERT_MESSAGE(term_ensure(PROMPT, 0, 0), "term_ensure: no prompt");
 }
 
@@ -531,8 +534,10 @@ void delete_shell(void) {
 
     take_vt_snapshot();
 
+    int stat;
+
     xkill(cur_test->cpid, SIGHUP);
-    if (waitpid(cur_test->cpid, NULL, 0) == -1)
+    if (waitpid(cur_test->cpid, &stat, 0) == -1)
         TEST_FAIL_MESSAGE("waitpid failed");
 
     char *data = flush_pty(cur_test->mfd);
@@ -551,5 +556,6 @@ void delete_shell(void) {
     vterm_free(cur_test->vterm.tty);
 
     cur_test->success = (Unity.CurrentTestFailed == 0);
-    cur_test->val_err = (cur_test->val_lines.size > 0);
+    if (WIFEXITED(stat) && WEXITSTATUS(stat) == 99)
+        cur_test->val_err = true;
 }
