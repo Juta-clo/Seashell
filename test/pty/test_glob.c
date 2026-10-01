@@ -348,6 +348,34 @@ TEST(glob, relative_dirent_works) {
     );
 }
 
+TEST(glob, redirect_target_glob_non_ambiguous) {
+    add_file(CWD, "foo");
+
+    vterm_send_str("echo hi > f*\n");
+    assert_term(
+        PROMPT "echo hi > f*",
+        PROMPT
+    );
+
+    char buf[3];
+    int fd = xopen("foo", O_RDONLY);
+
+    TEST_ASSERT_EQUAL_INT(2, read(fd, buf, 2));
+    TEST_ASSERT_EQUAL_STRING_LEN("hi", buf, 2);
+}
+
+TEST(glob, redirect_target_glob_ambiguous) {
+    add_file(CWD, "foo1");
+    add_file(CWD, "foo2");
+
+    vterm_send_str("echo hi > f*\n");
+    assert_term(
+        PROMPT "echo hi > f*",
+        "seashell: ambiguous redirect",
+        PROMPT
+    );
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(glob) {
@@ -374,4 +402,6 @@ TEST_GROUP_RUNNER(glob) {
     RUN_TEST_CASE(glob, intermediary_component_with_complex_glob_pattern);
     RUN_TEST_CASE(glob, multiple_stars_are_compressed);
     RUN_TEST_CASE(glob, relative_dirent_works);
+    RUN_TEST_CASE(glob, redirect_target_glob_non_ambiguous);
+    RUN_TEST_CASE(glob, redirect_target_glob_ambiguous);
 }

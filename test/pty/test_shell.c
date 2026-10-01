@@ -83,7 +83,8 @@ TEST(shell, interupt_foreground_job) {
     assert_term(
         PROMPT "write_sleep",
         "x",
-        "^C" PROMPT
+        "^C%",
+        PROMPT
     );
 }
 

@@ -120,7 +120,8 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
         "[1] Stopped",
         PROMPT "write_sleep",
         "x",
-        "^C" PROMPT
+        "^C%",
+        PROMPT
     );
     assert_termios(printty_cbreak_tio(tio));
 
@@ -132,7 +133,8 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
         "[1] Stopped",
         PROMPT "write_sleep",
         "x",
-        "^C" PROMPT "fg %1",
+        "^C%",
+        PROMPT "fg %1",
         "[1] Continued"
     );
     assert_termios(changed_tio);
@@ -145,7 +147,8 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
         "[1] Stopped",
         PROMPT "write_sleep",
         "x",
-        "^C" PROMPT "fg %1",
+        "^C%",
+        PROMPT "fg %1",
         "[1] Continued",
         " ",
         PROMPT
@@ -160,7 +163,8 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
         "[1] Stopped",
         PROMPT "write_sleep",
         "x",
-        "^C" PROMPT "fg %1",
+        "^C%",
+        PROMPT "fg %1",
         "[1] Continued",
         " ",
         PROMPT "write_sleep",

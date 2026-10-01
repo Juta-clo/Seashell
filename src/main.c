@@ -92,7 +92,7 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
 
     bool handled = false;
 
-    if (pline->cmds.size == 1 && !bg) {
+    if (pline->cmds.size == 1 && pline->cmds.data[0].redirs.size == 0 && !bg) {
         sh_builtin *builtin = get_builtin(pline->cmds.data[0].argv[0]);
 
         if (builtin) {

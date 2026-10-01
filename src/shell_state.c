@@ -35,10 +35,11 @@ void shell_llog_sink(const llog_info *info) {
 
     dstr_printf(&output_msg, "%s %s:%d: %s\n",
             lvl_str, info->site->file, info->site->line, info->msg);
-
     write(sh_env.log_fd, output_msg.c_str, output_msg.len);
-
     dstr_free(&output_msg);
+
+    if (info->log_level != LLOG_INFO)
+        backtrace_symbols_fd(info->bt, info->bt_n, sh_env.log_fd);
 }
 static llog shell_log = { .sink = shell_llog_sink };
 LLOG_DEFAULT(&shell_log);

@@ -50,7 +50,8 @@ int main(void) {
 
     execlp("valgrind",
             "valgrind",
-                "--vgdb=no", "--quiet", "--leak-check=full",
+                "--vgdb=no", "--enable-debuginfod=no", "--quiet",
+                "--leak-check=full",
                 "--errors-for-leak-kinds=definite,indirect,possible",
                 "--show-leak-kinds=definite,indirect,possible",
             SEASHELL_PATH "seashell", (char *)NULL);

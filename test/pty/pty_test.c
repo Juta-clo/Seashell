@@ -482,8 +482,8 @@ void new_shell(void) {
     if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
         TEST_FAIL_MESSAGE("ioctl");
 
-    ws.ws_row = MAX(60, ws.ws_row / 2);
-    ws.ws_col = MAX(30, ws.ws_col / 2);
+    ws.ws_row = MAX(30, ws.ws_row / 2);
+    ws.ws_col = MAX(60, ws.ws_col / 2);
 
     cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, &ws);
     if (cur_test->cpid == 0)

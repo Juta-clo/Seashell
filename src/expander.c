@@ -370,6 +370,8 @@ cleanup:
 }
 
 static int expand_word(ps_word *word, da_charp *argv, bool redir) {
+    assert(redir || argv);
+
     int rv = -1;
 
     dstr arg;
@@ -399,20 +401,34 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
         free(exp_seg);
     }
 
-    word->arg = xstrdup(arg.c_str);
-
     /* globbing */
 
     if (has_glob) {
-        if (expand_globs(&arg, argv) == -1)
+        da_charp glob_result = (argv) ? *argv : (da_charp){0};
+
+        if (expand_globs(&arg, &glob_result) == -1)
             goto cleanup;
 
-        if (redir && argv->size > 1) {
-            err_msg("ambiguous redirect");
-            goto cleanup;
+        if (redir) {
+            if (glob_result.size > 1) {
+                err_msg("ambiguous redirect");
+                free_charp_array(&glob_result);
+                goto cleanup;
+
+            } else {
+                word->arg = xstrdup(glob_result.data[0]);
+                free_charp_array(&glob_result);
+            }
+
+        } else if (!redir) {
+            word->arg = xstrdup(arg.c_str);
+            *argv = glob_result;
         }
+
     } else {
-        *da_push(argv) = xstrdup(arg.c_str);
+        word->arg = xstrdup(arg.c_str);
+        if (!redir)
+            *da_push(argv) = xstrdup(arg.c_str);
     }
 
     rv = 0;
@@ -452,7 +468,7 @@ int ex_expand(const ps_ast *ast) {
 
             for (size_t k = 0; k < cmd->redirs.size; ++k) {
                 ps_redir *redir = &cmd->redirs.data[k];
-                if (expand_word(&redir->target, &(da_charp){0}, true) == -1)
+                if (expand_word(&redir->target, NULL, true) == -1)
                     return -1;
             }
         }

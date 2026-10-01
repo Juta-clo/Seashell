@@ -16,7 +16,7 @@ CPPFLAGS += -D_GNU_SOURCE
 DEPFLAGS := -MMD -MP
 CC_FLAGS := $(CFLAGS) $(CPPFLAGS) $(DEPFLAGS)
 
-LDLIBS := -lunibilium
+LDLIBS := -lunibilium -rdynamic
 LD_FLAGS := $(LDLIBS)
 
 SRCS := $(wildcard $(SRC_DIR)/*.c)
