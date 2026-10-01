@@ -31,7 +31,9 @@ void ms_sleep(int ms) {
 void assert_termios(struct termios exp) {
     struct termios tio;
 
-    for (int i = 0; i < 100; ++i) {
+    int sleep_time = (run_valgrind) ? 1000 : 100;
+
+    for (int i = 0; i < sleep_time; ++i) {
         xtcgetattr(cur_test->mfd, &tio);
         if (memcmp(exp.c_cc, tio.c_cc, sizeof(tio.c_cc))            == 0 &&
             memcmp(&exp.c_iflag, &tio.c_iflag, sizeof(tio.c_iflag)) == 0 &&

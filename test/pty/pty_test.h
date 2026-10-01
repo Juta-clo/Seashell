@@ -45,6 +45,7 @@ struct pty_test {
     virt_term vterm;
 
     /* for display purposes */
+    double dur;
     char *test_name;
     bool success;
     bool val_err;

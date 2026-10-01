@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <signal.h>
+#include <time.h>
 #include <errno.h>
 #include <ncurses.h>
 #include <stddef.h>
@@ -29,6 +31,7 @@ struct pollfd pollfds[NFDS];
 
 bool first = true;
 
+struct timespec start, end;
 pty_test *cur_test;
 
 // LLOG SET UP
@@ -275,7 +278,6 @@ bool verify_vterm_state(const char *msg, int srow, int scol) {
                 ch = ' ';
 
             if ((char) ch != msg[n++]) {
-                LOG_INFO("At [%d,%d] Need '%c', Is '%c'", row, col, ch, msg[n - 1]);
                 return false;
             }
 
@@ -474,6 +476,9 @@ void exec_seashell(void) {
 }
 
 void new_shell(void) {
+    if (clock_gettime(CLOCK_MONOTONIC, &start) == -1)
+        TEST_FAIL_MESSAGE("clock_gettime");
+
     cur_test = da_push(&all_tests);
     *cur_test = (pty_test){0};
 
@@ -558,4 +563,12 @@ void delete_shell(void) {
     cur_test->success = (Unity.CurrentTestFailed == 0);
     if (WIFEXITED(stat) && WEXITSTATUS(stat) == 99)
         cur_test->val_err = true;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &end) == -1)
+        TEST_FAIL_MESSAGE("clock_gettime");
+
+    cur_test->dur = (end.tv_sec - start.tv_sec) +
+        (end.tv_nsec - start.tv_nsec) / 1e9;
+
+    LOG_INFO("test took %lf seconds", cur_test->dur);
 }

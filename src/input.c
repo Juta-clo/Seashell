@@ -11,6 +11,14 @@
 #include "utils.h"
 #include "printty.h"
 
+typedef struct {
+    char *line;
+    int init_col;
+    int crow;
+    int ccol;
+    int rows, cols;
+} input_editor;
+
 void input_init(shell_env *env) {
     assert(env);
     if (!(env->pt = printty_create(NULL)))
@@ -18,14 +26,13 @@ void input_init(shell_env *env) {
     if (printty_cbreak(env->pt) == PRINTTY_ERR)
         xfatal("printty_cbreak");;
     printty_set_suspend_mask(env->pt, env->og_mask);
-    // printty_cursor_invis(env->pt, true);
 }
 
 void input_deinit(shell_env *env) {
     assert(env);
     /* null when called from the exit builtin */
     if (env->pt) {
-        printty_exit_attribute_mode(env->pt);
+        printty_write(env->pt, unibi_exit_attribute_mode);
         printty_destroy(env->pt);
     }
     env->pt = NULL;
@@ -40,10 +47,10 @@ void display_prompt(int mode) {
         xfatal("printty_get_cursor_pos");
 
     if (col != 0) {
-        printty_reverse_mode(sh_env.pt);
-        printty_bold_mode(sh_env.pt);
+        printty_write(sh_env.pt, unibi_enter_reverse_mode);
+        printty_write(sh_env.pt, unibi_enter_bold_mode);
         printf("%%\n");
-        printty_exit_attribute_mode(sh_env.pt);
+        printty_write(sh_env.pt, unibi_exit_attribute_mode);
     }
 
     if (mode == PROMPT_SIMPLE) {
@@ -57,35 +64,66 @@ void display_prompt(int mode) {
 
         dstrcat(&prompt, cwd_base);
         dstrcat(&prompt, "> ");
+
     } else
         xfatal("unknown prompt mode");
 
     printf("%s", prompt.c_str);
-
     dstr_free(&prompt);
 }
 
-// static void draw_cursor(char ch, int row, int col) {
-//     if (printty_reverse_mode(sh_env.pt, true) == PRINTTY_ERR)
-//         xfatal("printty_reverse_mode");
-//     if (printty_cursor_move(sh_env.pt, row, col) == PRINTTY_ERR)
-//         xfatal("printty_cursor_move");
-//
-//     if (write(sh_env.tty_fd, &ch, 1) != 1)
-//         xfatal("write: failed/partial write");
-//
-//     if (printty_reverse_mode(sh_env.pt, false) == PRINTTY_ERR)
-//         xfatal("printty_reverse_mode");
-// }
+static int llen(input_editor *edit) {
+    return (int)(hds_len(edit->line));
+}
+
+static void input_update_cursor(input_editor *edit) {
+    printty_cursor_move(sh_env.pt, edit->crow, edit->ccol + edit->init_col);
+}
+
+static void input_insert(input_editor *edit, char c) {
+    if (llen(edit) + edit->init_col == edit->cols - 1)
+        return;
+
+    hda_insert_buf(edit->line, edit->ccol, 1, &c);
+    printf("%s", &edit->line[edit->ccol++]);
+    input_update_cursor(edit);
+}
+
+static void input_delete(input_editor *edit) {
+    if (llen(edit) == 0 || edit->ccol == 0)
+        return;
+
+    hda_delete(edit->line, --edit->ccol, 1);
+    printty_write(sh_env.pt, unibi_cursor_left);
+    printf("%s ", &edit->line[edit->ccol]);
+    input_update_cursor(edit);
+}
+
+static void input_left(input_editor *edit) {
+    if (edit->ccol == 0)
+        return;
+
+    --edit->ccol;
+    if (printty_write(sh_env.pt, unibi_cursor_left) == PRINTTY_ERR)
+        xfatal("printty_write_cap");
+}
+
+static void input_right(input_editor *edit) {
+    if (edit->ccol == edit->cols - 1 || edit->ccol == llen(edit))
+        return;
+
+    ++edit->ccol;
+    if (printty_write(sh_env.pt, unibi_cursor_right) == PRINTTY_ERR)
+        xfatal("printty_write_cap");
+}
 
 char *get_line(void) {
     PrinttyEvent pev;
-    char *line = NULL;
+    input_editor edit = {0};
+    hda_push(edit.line, '\0');
 
-    // int crow = 0, ccol = 0;
-    // int rows, cols;
-    // printty_get_cursor_pos(sh_env.pt, &crow, &ccol);
-    // printty_get_term_size(sh_env.pt, &rows, &cols);
+    printty_get_cursor_pos(sh_env.pt, &edit.crow, &edit.init_col);
+    printty_get_term_size(sh_env.pt, &edit.rows, &edit.cols);
 
     while (true) {
         int rv = printty_get_event(sh_env.pt, &pev);
@@ -97,37 +135,32 @@ char *get_line(void) {
             xfatal("failed parsing line");
 
         } else if (rv == PRINTTY_SIG) {
-            hda_free(line);
+            hda_free(edit.line);
             return NULL;
         }
 
         if (pev.type == PRINTTY_UNICODE) {
-            if (pev.codepoint >= 32 && pev.codepoint <= 126) {
-                printf("%c", pev.codepoint);
-                hda_push(line, pev.utf8[0]);
-
-            } else if (pev.codepoint == '\x15'/*<C-u>*/) {
-                for (size_t i = 0; i < hda_size(line); ++i)
-                    printf("\b \b");
-                hda_delete(line, 0, hda_size(line));
-            }
+            if (pev.codepoint >= 32 && pev.codepoint <= 126)
+                input_insert(&edit, pev.utf8[0]);
 
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
-                printf("\n");
-                if (line == NULL)
-                    return "";
                 break;
+
             } else if (pev.key == PRINTTY_BACKSPACE) {
-                if (hda_size(line) > 0) {
-                    printf("\b \b");
-                    hda_delete(line, hda_size(line) - 1, 1);
-                }
+                input_delete(&edit);
+
+            } else if (pev.key == PRINTTY_LEFT) {
+                input_left(&edit);
+
+            } else if (pev.key == PRINTTY_RIGHT) {
+                input_right(&edit);
             }
         }
     }
 
-    hda_push(line, '\0');
-    LOG_INFO("parsed line: %s", line);
-    return line;
+    LOG_INFO("parsed line: %s", edit.line);
+
+    printf("\n");
+    return edit.line;
 }

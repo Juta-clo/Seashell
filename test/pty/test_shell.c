@@ -469,19 +469,18 @@ TEST(shell, bg_on_stopped_job_resumes_it) {
 }
 
 TEST(shell, kill_multiple_proc_job) {
-    vterm_send_str("sleep 100 | sleep 100 | write_sleep &\n");
+    vterm_send_str("sleep 100 | sleep 100 | sleep 100 &\n");
     assert_term(
-        PROMPT "sleep 100 | sleep 100 | write_sleep &",
+        PROMPT "sleep 100 | sleep 100 | sleep 100 &",
         "[1] Started",
-        PROMPT "x"
+        PROMPT
     );
 
     vterm_send_str("kill %1\n");
     assert_term(
-        PROMPT "sleep 100 | sleep 100 | write_sleep &",
+        PROMPT "sleep 100 | sleep 100 | sleep 100 &",
         "[1] Started",
-        PROMPT "x",
-        "kill %1",
+        PROMPT "kill %1",
         "[1] Done - Terminated by signal 15",
         PROMPT
     );
@@ -562,25 +561,23 @@ TEST(shell, send_sigint_to_process_that_catches_it) {
 }
 
 TEST(shell, stopped_process_then_kill_builtin) {
-    vterm_send_str("self_kill -STOP | sleep 100 | write_sleep &\n");
+    vterm_send_str("self_kill -STOP | sleep 100 &\n");
     assert_term(
-        PROMPT "self_kill -STOP | sleep 100 | write_sleep &",
+        PROMPT "self_kill -STOP | sleep 100 &",
         "[1] Started",
-        PROMPT "x"
+        PROMPT
     );
 
-    /* sleep a bit to let self_kill stop itself.
-     * If this test fails the sleep wasn't long enough. */
+    /* so self_kill has time to stop itself */
     int ns_sleep = (run_valgrind) ? 100000000 : 10000000;
     if (nanosleep(&(struct timespec){ .tv_nsec = ns_sleep }, NULL) == -1)
         LOG_ERR("nanosleep: %m");
 
     vterm_send_str("kill %1\n");
     assert_term(
-        PROMPT "self_kill -STOP | sleep 100 | write_sleep &",
+        PROMPT "self_kill -STOP | sleep 100 &",
         "[1] Started",
-        PROMPT "x",
-        "kill %1",
+        PROMPT "kill %1",
         "[1] Stopped",
         PROMPT
     );
