@@ -28,6 +28,8 @@ TEST_TEAR_DOWN(variable) {
 
 /************ Tests ************/
 
+// NOLINTBEGIN(bugprone-suspicious-missing-comma)
+
 TEST(variable, variable) {
     vterm_send_str("echo $FOO\n");
     assert_term(
@@ -194,6 +196,74 @@ TEST(variable, variable_expands_inside_double_quotes) {
     );
 }
 
+TEST(variable, exit_status_variable) {
+    vterm_send_str("echo $?\n");
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT "echo $?",
+        "0",
+        PROMPT
+    );
+
+    vterm_send_str("false\n");
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT "echo $?",
+        "0",
+        PROMPT "false",
+        PROMPT
+    );
+
+    vterm_send_str("echo $?\n");
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT "echo $?",
+        "0",
+        PROMPT "false",
+        PROMPT "echo $?",
+        "1",
+        PROMPT
+    );
+}
+
+TEST(variable, unset_builtin_with_exit_status_variable) {
+    vterm_send_str("unset ?\n");
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT "unset ?",
+        PROMPT
+    );
+
+    vterm_send_str("echo $?\n");
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT "unset ?",
+        PROMPT "echo $?",
+        "0",
+        PROMPT
+    );
+}
+
+TEST(variable, set_builtin_with_exit_status_variable) {
+    vterm_send_str("set ? FOO\n");
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT "set ? FOO",
+        PROMPT
+    );
+
+    vterm_send_str("echo $?\n");
+    assert_term(
+        PROMPT "set FOO bar",
+        PROMPT "set ? FOO",
+        PROMPT "echo $?",
+        "0",
+        PROMPT
+    );
+}
+
+// NOLINTEND(bugprone-suspicious-missing-comma)
+//
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(variable) {
@@ -212,4 +282,7 @@ TEST_GROUP_RUNNER(variable) {
     RUN_TEST_CASE(variable, escaped_tilde);
     RUN_TEST_CASE(variable, regular_text_around_escaped_tilde);
     RUN_TEST_CASE(variable, variable_expands_inside_double_quotes);
+    RUN_TEST_CASE(variable, exit_status_variable);
+    RUN_TEST_CASE(variable, unset_builtin_with_exit_status_variable);
+    RUN_TEST_CASE(variable, set_builtin_with_exit_status_variable);
 }

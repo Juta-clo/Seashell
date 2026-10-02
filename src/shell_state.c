@@ -145,6 +145,8 @@ static void var_setup(shell_env *env) {
         free(lhs);
         free(rhs);
     }
+
+    add_var(&sh_env.vars, "?", "0", false);
 }
 
 void env_setup(shell_env *env) {

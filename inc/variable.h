@@ -4,6 +4,7 @@
 #define VAR_KEY_SIZE 4096
 
 #include "map.h"
+#include "job_state.h"
 
 typedef struct {
     char *value;
@@ -11,6 +12,7 @@ typedef struct {
 } sh_var;
 
 int add_var(map_t *vars, char *key, char *value, bool export);
+void update_status_variable(map_t *vars, const job_event *jev);
 sh_var *lookup_var(map_t *vars, const char *key);
 sh_var *lookup_var_n(map_t *vars, const char *key, size_t key_len);
 int delete_var(map_t *vars, char *key);

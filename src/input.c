@@ -128,7 +128,6 @@ char *get_line(void) {
     if (input.prompt_drawn) {
         input.prompt_drawn = false;
         printty_get_cursor_pos(sh_env.pt, &input.init_row, &input.init_col);
-        LOG_INFO("cached curs[%d,%d]", input.init_row, input.init_col);
 
         /* warning for tests: if a background process prints between
          * the cursor position request and the subsequent cursor update

@@ -20,6 +20,7 @@
 #include "job_state.h"
 #include "sig_funcs.h"
 #include "plan.h"
+#include "variable.h"
 
 #define SIG_READY 1
 #define STDIN_READY 2
@@ -214,6 +215,8 @@ bool fg_event(job_event *jev) {
 
 static void handle_fg_event(shell_state *sst, const job_event *jev) {
     if (jev->type == JEXITED) {
+        update_status_variable(&sh_env.vars, jev);
+
         if (jev->signaled || jev->intr_int) {
             plan_done(jev->jid);
             reclaim_terminal();

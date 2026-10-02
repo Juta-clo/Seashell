@@ -1,6 +1,7 @@
 #include <string.h>
 #include <assert.h>
 
+#include "job_state.h"
 #include "linc_tools.h"
 #include "variable.h"
 #include "map.h"
@@ -17,7 +18,8 @@ static bool verify_key(const void *key) {
                 ((*c >= 'a' && *c <= 'z') ||
                 (*c >= 'A' && *c <= 'Z') ||
                 (*c >= '0' && *c <= '9') ||
-                *c == '-' || *c == '_');
+                *c == '-' || *c == '_' ||
+                *c == '?');
 
         if (!valid_key)
             return false;
@@ -43,6 +45,33 @@ int add_var(map_t *vars, char *key, char *value, bool export) {
         xfatal("mp_str_add");
 
     return 0;
+}
+
+void update_status_variable(map_t *vars, const job_event *jev) {
+    assert(jev->type == JEXITED);
+
+    /* Conveniently if the 'set' builtin assigns a value to
+     * the '?' variable the exit status returned by 'set' will
+     * overwrite it back to 0 (or 1) before the prompt is
+     * redisplayed. Likewise if the 'unset ?' is called its
+     * exit status will reinitialize the variable. */
+
+    char exit_stat[64];
+
+    if (jev->builtin) {
+        if (jev->success) {
+            snprintf(exit_stat, 64, "%d", 0);
+        } else
+            snprintf(exit_stat, 64, "%d", 1);
+
+    } else {
+        if (jev->last->stat == PROC_EXIT) {
+            snprintf(exit_stat, 64, "%d", jev->last->exit_stat);
+        } else if (jev->last->stat == PROC_SIG)
+            snprintf(exit_stat, 64, "%d", jev->last->term_sig + 128);
+    }
+
+    add_var(vars, "?", exit_stat, false);
 }
 
 sh_var *lookup_var(map_t *vars, const char *key) {
