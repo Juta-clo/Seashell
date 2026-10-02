@@ -78,6 +78,17 @@ static void input_update_cursor(void) {
             input.ccol + input.init_col);
 }
 
+static void input_move(int n) {
+    if (n < 0)
+        return;
+
+    if (n + input.init_col >= input.cols - 1 || n > llen())
+        return;
+
+    input.ccol = n;
+    input_update_cursor();
+}
+
 static void input_insert(input_editor *edit, char c) {
     if (llen() + edit->init_col == edit->cols - 1)
         return;
@@ -98,21 +109,33 @@ static void input_delete(void) {
 }
 
 static void input_left(void) {
-    if (input.ccol == 0)
-        return;
-
-    --input.ccol;
-    if (printty_write(sh_env.pt, unibi_cursor_left) == PRINTTY_ERR)
-        xfatal("printty_write_cap");
+    input_move(input.ccol - 1);
 }
 
 static void input_right(void) {
-    if (input.ccol == input.cols - 1 || input.ccol == llen())
-        return;
+    input_move(input.ccol + 1);
+}
 
-    ++input.ccol;
-    if (printty_write(sh_env.pt, unibi_cursor_right) == PRINTTY_ERR)
-        xfatal("printty_write_cap");
+static void input_end(void) {
+    input_move(llen());
+}
+
+static void input_start(void) {
+    input_move(0);
+}
+
+static void input_clear_start(void) {
+    int n = input.ccol;
+    for (int i = 0; i < n; ++i)
+        input_delete();
+}
+
+static void input_clear_end(void) {
+    int n = llen() - input.ccol;
+    input_end();
+
+    for (int i = 0; i < n; ++i)
+        input_delete();
 }
 
 char *get_line(void) {
@@ -162,6 +185,23 @@ char *get_line(void) {
         if (pev.type == PRINTTY_UNICODE) {
             if (pev.codepoint >= 32 && pev.codepoint <= 126)
                 input_insert(&input, pev.utf8[0]);
+
+            switch (pev.codepoint) {
+            case 5 /*C-e*/: input_end();         break;
+            case 1 /*C-a*/: input_start();       break;
+            case 11/*C-k*/: input_clear_end();   break;
+            case 21/*C-u*/: input_clear_start(); break;
+            case 12/*C-l*/:
+                printty_write(sh_env.pt, unibi_clear_screen);
+                display_prompt(sh_env.prompt_style);
+                printty_get_cursor_pos(sh_env.pt, &input.init_row, &input.init_col);
+                printf("%s", input.line);
+                input_update_cursor();
+                input.prompt_drawn = false;
+                break;
+            default:
+                break;
+            }
 
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {

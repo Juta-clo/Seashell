@@ -55,8 +55,10 @@ static void seashell_shutdown(void) {
 }
 
 static ps_ast *line_to_ast(char *line) {
-    if (strcmp("", line) == 0)
+    if (strcmp("", line) == 0) {
+        hda_free(line);
         return NULL;
+    }
 
     da_tok toks;
     int rv = lx_tokenize(line, &toks);

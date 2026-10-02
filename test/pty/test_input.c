@@ -20,11 +20,11 @@ TEST_TEAR_DOWN(input) {
 
 TEST(input, sigint_discards_line) {
     vterm_send_str("abc");
+    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     assert_term(
         PROMPT "abc"
     );
 
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     vterm_send_char('c', VTERM_MOD_CTRL);
     assert_cursor(1, PROMPT_LEN);
     assert_term(
