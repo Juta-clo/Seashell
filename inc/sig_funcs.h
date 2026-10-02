@@ -7,6 +7,7 @@ extern volatile sig_atomic_t sigchld_caught;
 extern volatile sig_atomic_t sighup_caught;
 extern volatile sig_atomic_t sigint_caught;
 
+bool sig_is_pending(int sig);
 void reset_sig_flags(void);
 void sig_restore(sigset_t *og_mask);
 void sig_setup(sigset_t *og_mask);

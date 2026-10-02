@@ -177,13 +177,12 @@ TEST(shell, bg_job_done_with_fg_job) {
 }
 
 TEST(shell, builtin_in_bg) {
-    vterm_send_str("jobs &\n");
+    vterm_send_str("cd . &\n");
     assert_term(
-        PROMPT "jobs &",
+        PROMPT "cd . &",
         "[1] Started",
-        PROMPT "jobs: no job control in this shell",
-        " ",
-        "[1] Done - Exited with status 1",
+        PROMPT,
+        "[1] Done - Exited with status 0",
         PROMPT
     );
 }

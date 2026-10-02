@@ -8,16 +8,11 @@
 #include "linc_tools.h"
 #include "input.h"
 #include "shell_state.h"
+#include "sig_funcs.h"
 #include "utils.h"
 #include "printty.h"
 
-typedef struct {
-    char *line;
-    int init_col;
-    int crow;
-    int ccol;
-    int rows, cols;
-} input_editor;
+input_editor input = { .ccol = 0, .need_line = true };
 
 void input_init(shell_env *env) {
     assert(env);
@@ -70,62 +65,81 @@ void display_prompt(int mode) {
 
     printf("%s", prompt.c_str);
     dstr_free(&prompt);
+
+    input.prompt_drawn = true;
 }
 
-static int llen(input_editor *edit) {
-    return (int)(hds_len(edit->line));
+static int llen(void) {
+    return (int)(hda_size(input.line) - 1);
 }
 
-static void input_update_cursor(input_editor *edit) {
-    printty_cursor_move(sh_env.pt, edit->crow, edit->ccol + edit->init_col);
+static void input_update_cursor(void) {
+    printty_cursor_move(sh_env.pt, input.init_row,
+            input.ccol + input.init_col);
 }
 
 static void input_insert(input_editor *edit, char c) {
-    if (llen(edit) + edit->init_col == edit->cols - 1)
+    if (llen() + edit->init_col == edit->cols - 1)
         return;
 
     hda_insert_buf(edit->line, edit->ccol, 1, &c);
     printf("%s", &edit->line[edit->ccol++]);
-    input_update_cursor(edit);
+    input_update_cursor();
 }
 
-static void input_delete(input_editor *edit) {
-    if (llen(edit) == 0 || edit->ccol == 0)
+static void input_delete(void) {
+    if (llen() == 0 || input.ccol == 0)
         return;
 
-    hda_delete(edit->line, --edit->ccol, 1);
+    hda_delete(input.line, --input.ccol, 1);
     printty_write(sh_env.pt, unibi_cursor_left);
-    printf("%s ", &edit->line[edit->ccol]);
-    input_update_cursor(edit);
+    printf("%s ", &input.line[input.ccol]);
+    input_update_cursor();
 }
 
-static void input_left(input_editor *edit) {
-    if (edit->ccol == 0)
+static void input_left(void) {
+    if (input.ccol == 0)
         return;
 
-    --edit->ccol;
+    --input.ccol;
     if (printty_write(sh_env.pt, unibi_cursor_left) == PRINTTY_ERR)
         xfatal("printty_write_cap");
 }
 
-static void input_right(input_editor *edit) {
-    if (edit->ccol == edit->cols - 1 || edit->ccol == llen(edit))
+static void input_right(void) {
+    if (input.ccol == input.cols - 1 || input.ccol == llen())
         return;
 
-    ++edit->ccol;
+    ++input.ccol;
     if (printty_write(sh_env.pt, unibi_cursor_right) == PRINTTY_ERR)
         xfatal("printty_write_cap");
 }
 
 char *get_line(void) {
-    PrinttyEvent pev;
-    input_editor edit = {0};
-    hda_push(edit.line, '\0');
+    /* MAYBE CHECK IF INIT_COL CHANGED: CCOL COULD BE OFF */
+    printty_get_term_size(sh_env.pt, &input.rows, &input.cols);
 
-    printty_get_cursor_pos(sh_env.pt, &edit.crow, &edit.init_col);
-    printty_get_term_size(sh_env.pt, &edit.rows, &edit.cols);
+    if (input.need_line) {
+        input.need_line = false;
+        input.line = NULL;
+        hda_push(input.line, '\0');
+    }
+
+    if (input.prompt_drawn) {
+        input.prompt_drawn = false;
+        printty_get_cursor_pos(sh_env.pt, &input.init_row, &input.init_col);
+        LOG_INFO("cached curs[%d,%d]", input.init_row, input.init_col);
+
+        /* warning for tests: if a background process prints between
+         * the cursor position request and the subsequent cursor update
+         * request (here), output can get wonky. */
+
+        printf("%s", input.line);
+        input_update_cursor();
+    }
 
     while (true) {
+        PrinttyEvent pev;
         int rv = printty_get_event(sh_env.pt, &pev);
         if (rv == PRINTTY_EOF) {
             LOG_INFO("eof, exiting");
@@ -135,32 +149,41 @@ char *get_line(void) {
             xfatal("failed parsing line");
 
         } else if (rv == PRINTTY_SIG) {
-            hda_free(edit.line);
+            if (sigint_caught) {
+                hda_free(input.line);
+                input.need_line = true;
+                input.ccol = 0;
+            }
+
+            if (sigchld_caught)
+                LOG_INFO("woke up for sigchld");
             return NULL;
         }
 
         if (pev.type == PRINTTY_UNICODE) {
             if (pev.codepoint >= 32 && pev.codepoint <= 126)
-                input_insert(&edit, pev.utf8[0]);
+                input_insert(&input, pev.utf8[0]);
 
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
+                LOG_INFO("parsed line: %s", input.line);
+                printf("\n");
                 break;
 
             } else if (pev.key == PRINTTY_BACKSPACE) {
-                input_delete(&edit);
+                input_delete();
 
             } else if (pev.key == PRINTTY_LEFT) {
-                input_left(&edit);
+                input_left();
 
             } else if (pev.key == PRINTTY_RIGHT) {
-                input_right(&edit);
+                input_right();
             }
         }
     }
 
-    LOG_INFO("parsed line: %s", edit.line);
+    input.need_line = true;
+    input.ccol = 0;
 
-    printf("\n");
-    return edit.line;
+    return input.line;
 }

@@ -1,6 +1,7 @@
 #include <signal.h>
 
 #include "linc_tools.h"
+#include "utils.h"
 #include "sig_funcs.h"
 
 volatile sig_atomic_t sigchld_caught = false;
@@ -17,6 +18,17 @@ void sighup_handler(int _) {
 
 void sigint_handler(int _) {
     sigint_caught = true;
+}
+
+bool sig_is_pending(int sig) {
+    sigset_t set;
+    sigpending(&set);
+
+    int is_member = sigismember(&set, sig);
+    if (is_member == -1)
+        err_exit("sigismember");
+
+    return (bool)is_member;
 }
 
 static void set_sig_action(int sig, sighandler_t handler, int flags,

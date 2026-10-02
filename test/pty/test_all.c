@@ -11,6 +11,7 @@ void run_all(void) {
     RUN_TEST_GROUP(variable);
     RUN_TEST_GROUP(glob);
     RUN_TEST_GROUP(termios);
+    RUN_TEST_GROUP(input);
 }
 
 int main(int argc, const char **argv) {

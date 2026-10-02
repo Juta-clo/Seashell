@@ -15,6 +15,9 @@
 #include "proc_view.h"
 #include "unity.h"
 
+#define ASSERT_CURSOR 1
+#define ASSERT_LINE  2
+
 da_pty_test all_tests;
 bool verbose_mode = false;
 bool run_valgrind = false;
@@ -252,7 +255,20 @@ void take_vt_snapshot(void) {
     get_vt_snap(snap);
 }
 
-bool verify_vterm_state(const char *msg, int srow, int scol) {
+bool verify_cursor(int crow, int ccol) {
+    if (crow < 0 || crow >= cur_test->vterm.rows)
+        TEST_FAIL_MESSAGE("verify_cursor: out of bounds start row");
+    if (ccol < 0 || ccol >= cur_test->vterm.cols)
+        TEST_FAIL_MESSAGE("verify_cursor: out of bounds start col");
+
+    VTermPos curs_pos;
+    vterm_state_get_cursorpos(cur_test->vterm.st, &curs_pos);
+
+    bool rv = (crow == curs_pos.row && ccol == curs_pos.col);
+    return rv;
+}
+
+bool verify_vterm_state(const char *msg, int srow, int scol, char **line) {
     size_t len = strlen(msg);
     size_t n = 0;
 
@@ -277,6 +293,12 @@ bool verify_vterm_state(const char *msg, int srow, int scol) {
             if (ch == 0)
                 ch = ' ';
 
+            if (ch > 127)
+                TEST_FAIL_MESSAGE("non ascii in vterm");
+
+            if (line)
+                hds_append_n(*line, &ch, 1);
+
             if ((char) ch != msg[n++]) {
                 return false;
             }
@@ -299,10 +321,15 @@ void write_to_term(const char *str) {
     }
 }
 
-bool term_ensure(const char *msg, int row, int col) {
-    if (verify_vterm_state(msg, row, col))
-        return true;
+bool term_ensure(const char *msg, int row, int col, int type) {
+    if (type == ASSERT_LINE) {
+        if (verify_vterm_state(msg, row, col, NULL))
+            return true;
+    } else if (type == ASSERT_CURSOR)
+        if (verify_cursor(row, col))
+            return true;
 
+    char *line = NULL;
     int ms_sleep = (run_valgrind) ? 1000 : 100;
     int tfd = start_timerfd(ms_sleep);
     pollfds[POLL_TFD] = (struct pollfd){ .fd = tfd, .events = POLLIN };
@@ -311,7 +338,19 @@ bool term_ensure(const char *msg, int row, int col) {
         xpoll(pollfds, NFDS, -1);
 
         if (pollfds[POLL_TFD].revents & POLLIN) {
-            LOG_ERR("TIMER POPPED");
+            VTermPos curs_pos;
+            vterm_state_get_cursorpos(cur_test->vterm.st, &curs_pos);
+
+            if (type == ASSERT_CURSOR) {
+                LOG_ERR("bad cursor: exp[%d,%d] got[%d,%d]",
+                    row, col, curs_pos.row, curs_pos.col);
+            } else if (type == ASSERT_LINE) {
+                if (line) {
+                    LOG_ERR("bad line: exp[%s] got[%s]", msg, line);
+                    hds_free(line);
+                }
+            }
+
             close(tfd);
             return false;
         }
@@ -337,12 +376,28 @@ bool term_ensure(const char *msg, int row, int col) {
 
             free(data);
 
-            if (verify_vterm_state(msg, row, col)) {
-                close(tfd);
-                return true;
+            if (type == ASSERT_LINE) {
+                hds_free(line);
+                line = NULL;
+
+                if (verify_vterm_state(msg, row, col, &line)) {
+                    close(tfd);
+                    hds_free(line);
+                    return true;
+                }
+
+            } else if (type == ASSERT_CURSOR) {
+                if (verify_cursor(row, col)) {
+                    close(tfd);
+                    return true;
+                }
             }
         }
     }
+}
+
+bool term_ensure_cursor(int row, int col) {
+    return term_ensure(NULL, row, col, ASSERT_CURSOR);
 }
 
 bool term_ensure_lines(char **lines) {
@@ -356,10 +411,8 @@ bool term_ensure_lines(char **lines) {
     }
 
     for (size_t i = 0; i < n; ++i) {
-        if (!term_ensure(lines[i], i, 0)) {
-            LOG_ERR("Failed on line: \"%s\"", lines[i]);
+        if (!term_ensure(lines[i], i, 0, ASSERT_LINE))
             return false;
-        }
     }
 
     return true;
@@ -419,6 +472,10 @@ void vterm_send_str(const char *msg) {
 
         vterm_keyboard_unichar(vtty, key, VTERM_MOD_NONE);
     }
+}
+
+void vterm_send_key(VTermKey key, VTermModifier mod) {
+    vterm_keyboard_key(cur_test->vterm.tty, key, mod);
 }
 
 int test_fail_count(void) {
@@ -528,7 +585,8 @@ void new_shell(void) {
      * the prompt so this works to avoid writing to the mfd
      * before canonical mode is disabled thus having the write
      * echoed by the tty driver. */
-    TEST_ASSERT_MESSAGE(term_ensure(PROMPT, 0, 0), "term_ensure: no prompt");
+    TEST_ASSERT_MESSAGE(term_ensure(PROMPT, 0, 0, ASSERT_LINE),
+        "term_ensure: no prompt");
 }
 
 void delete_shell(void) {

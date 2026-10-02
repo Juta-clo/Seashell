@@ -7,6 +7,7 @@
 #include "linc_tools.h"
 
 #define PROMPT "> "
+#define PROMPT_LEN 2
 #define PTY_RBUF 100000
 
 #define MAX(a, b) \
@@ -102,6 +103,8 @@ void pty_test_sink(const llog_info *info);
 #define LN(...) (char *[]){ __VA_ARGS__, NULL }
 #define assert_term(...) \
     TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout");
+#define assert_cursor(row, col) \
+    TEST_ASSERT_MESSAGE(term_ensure_cursor(row, col), "bad cursor");
 
 void print_valgrind_overview(void);
 dstr *push_line(da_dstr *lines);
@@ -112,9 +115,11 @@ int start_timerfd(int ms);
 void write_ps_output(void);
 void child_pstat_snapshot(void);
 void write_to_term(const char *str);
-bool term_ensure(const char *msg, int row, int col);
+bool term_ensure(const char *msg, int row, int col, int type);
 bool term_ensure_lines(char **lines);
+bool term_ensure_cursor(int row, int col);
 void vterm_send_str(const char *msg);
+void vterm_send_key(VTermKey key, VTermModifier mod);
 void vterm_send_char(char ch, VTermModifier mod);
 int test_fail_count(void);
 int val_test_fail_count(void);
