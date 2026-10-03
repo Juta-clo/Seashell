@@ -10,11 +10,12 @@
 
 typedef struct {
     char *line;
-    int init_col;
-    int init_row, ccol;
+    int scol;
+    int srow, ccol;
     int rows, cols;
     bool need_line;
     bool prompt_drawn;
+    int insert_mode;
 } input_editor;
 
 extern input_editor input;

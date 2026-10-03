@@ -74,15 +74,15 @@ static int llen(void) {
 }
 
 static void input_update_cursor(void) {
-    printty_cursor_move(sh_env.pt, input.init_row,
-            input.ccol + input.init_col);
+    printty_cursor_move(sh_env.pt, input.srow,
+            input.ccol + input.scol);
 }
 
 static void input_move(int n) {
     if (n < 0)
         return;
 
-    if (n + input.init_col >= input.cols - 1 || n > llen())
+    if (n + input.scol >= input.cols - 1 || n > llen())
         return;
 
     input.ccol = n;
@@ -90,7 +90,7 @@ static void input_move(int n) {
 }
 
 static void input_insert(input_editor *edit, char c) {
-    if (llen() + edit->init_col == edit->cols - 1)
+    if (llen() + edit->scol == edit->cols - 1)
         return;
 
     hda_insert_buf(edit->line, edit->ccol, 1, &c);
@@ -258,7 +258,7 @@ static int cur_word(int start, input_word *word) {
     return 0;
 }
 
-static void input_next_word_end(void) {
+static void insert_next_word(void) {
     input_word word;
     if (cur_word(input.ccol, &word) == 0) {
         input_move(word.end + 1);
@@ -273,7 +273,7 @@ static void input_next_word_end(void) {
     input_move(word.end + 1);
 }
 
-static void input_prev_word_end(void) {
+static void insert_prev_word(void) {
     input_word word;
     if (prev_word(input.ccol, &word) == -1) {
         input_move(0);
@@ -290,8 +290,33 @@ static void input_prev_word_end(void) {
     input_move(word.end + 1);
 }
 
+static void normal_next_word(void) {
+    input_word word;
+    if (next_word(input.ccol, &word) == -1) {
+        input_move(llen());
+        return;
+    }
+
+    input_move(word.start);
+}
+
+static void normal_prev_word(void) {
+    input_word word;
+
+    int rv = cur_word(input.ccol, &word);
+
+    if (rv == -1 || word.start == input.ccol) {
+        if (prev_word(input.ccol, &word) == -1) {
+            input_move(0);
+        } else
+            input_move(word.start);
+    } else
+        input_move(word.start);
+}
+
 char *get_line(void) {
-    /* MAYBE CHECK IF INIT_COL CHANGED: CCOL COULD BE OFF */
+    input.insert_mode = true;
+
     printty_get_term_size(sh_env.pt, &input.rows, &input.cols);
 
     if (input.need_line) {
@@ -302,7 +327,7 @@ char *get_line(void) {
 
     if (input.prompt_drawn) {
         input.prompt_drawn = false;
-        printty_get_cursor_pos(sh_env.pt, &input.init_row, &input.init_col);
+        printty_get_cursor_pos(sh_env.pt, &input.srow, &input.scol);
 
         /* warning for tests: if a background process prints between
          * the cursor position request and the subsequent cursor update
@@ -333,24 +358,41 @@ char *get_line(void) {
         }
 
         if (pev.type == PRINTTY_UNICODE) {
-            if (pev.codepoint >= 32 && pev.codepoint <= 126)
-                input_insert(&input, pev.utf8[0]);
 
-            switch (pev.codepoint) {
-            case 5 /*C-e*/: input_end();             break;
-            case 1 /*C-a*/: input_start();           break;
-            case 11/*C-k*/: input_clear_end();       break;
-            case 21/*C-u*/: input_clear_start();     break;
-            case 12/*C-l*/:
-                printty_write(sh_env.pt, unibi_clear_screen);
-                display_prompt(sh_env.prompt_style);
-                printty_get_cursor_pos(sh_env.pt, &input.init_row, &input.init_col);
-                printf("%s", input.line);
-                input_update_cursor();
-                input.prompt_drawn = false;
-                break;
-            default:
-                break;
+            if (input.insert_mode) {
+                if (pev.codepoint >= 32 && pev.codepoint <= 126) {
+                    input_insert(&input, pev.utf8[0]);
+                    continue;
+                }
+
+                switch (pev.codepoint) {
+                case 5 /*C-e*/: input_end();               break;
+                case 1 /*C-a*/: input_start();             break;
+                case 11/*C-k*/: input_clear_end();         break;
+                case 21/*C-u*/: input_clear_start();       break;
+                case 27/*ESC*/: input.insert_mode = false; break;
+                case 12/*C-l*/:
+                    printty_write(sh_env.pt, unibi_clear_screen);
+                    display_prompt(sh_env.prompt_style);
+                    printty_get_cursor_pos(sh_env.pt, &input.srow, &input.scol);
+                    printf("%s", input.line);
+                    input_update_cursor();
+                    input.prompt_drawn = false;
+                    break;
+                default:
+                    break;
+                }
+            } else /* if (NORMAL MODE) */ {
+                if (pev.codepoint == 'i')
+                    input.insert_mode = true;
+                else if (pev.codepoint == 'h')
+                    input_left();
+                else if (pev.codepoint == 'l')
+                    input_right();
+                else if (pev.codepoint == 'w')
+                    normal_next_word();
+                else if (pev.codepoint == 'b')
+                    normal_prev_word();
             }
 
         } else if (pev.type == PRINTTY_KEY) {
@@ -369,10 +411,10 @@ char *get_line(void) {
                 input_right();
 
             } else if (pev.key == PRINTTY_SLEFT) {
-                input_prev_word_end();
+                insert_prev_word();
 
             } else if (pev.key == PRINTTY_SRIGHT) {
-                input_next_word_end();
+                insert_next_word();
             }
         }
     }
