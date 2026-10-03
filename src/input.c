@@ -19,7 +19,7 @@ void input_init(shell_env *env) {
     if (!(env->pt = printty_create(NULL)))
         xfatal("printty_create");
     if (printty_cbreak(env->pt) == PRINTTY_ERR)
-        xfatal("printty_cbreak");;
+        xfatal("printty_cbreak");
     printty_set_suspend_mask(env->pt, env->og_mask);
 }
 
@@ -138,6 +138,158 @@ static void input_clear_end(void) {
         input_delete();
 }
 
+typedef struct {
+    int start, end;
+} input_word;
+
+static int next_non_ws(int i) {
+    assert(i + 1 >= 0);
+
+    ++i;
+
+    for (; i < llen(); ++i)
+        if (input.line[i] != ' ')
+            return i;
+
+    return -1;
+}
+
+static int next_ws(int i) {
+    assert(i + 1 >= 0);
+
+    ++i;
+
+    for (; i < llen(); ++i)
+        if (input.line[i] == ' ')
+            return i;
+
+    return -1;
+}
+
+static int prev_non_ws(int i) {
+    assert(i - 1 < llen());
+
+    --i;
+
+    for (; i >= 0; --i)
+        if (input.line[i] != ' ')
+            return i;
+
+    return -1;
+}
+
+static int prev_ws(int i) {
+    assert(i - 1 < llen());
+
+    --i;
+
+    for (; i >= 0; --i)
+        if (input.line[i] == ' ')
+            return i;
+
+    return -1;
+}
+
+static int next_word(int start, input_word *word) {
+    assert(start >= 0);
+
+    if (start == llen())
+        return -1;
+
+    int ws = start;
+
+    if (input.line[ws] != ' ') {
+        ws = next_ws(ws);
+        if (ws == -1)
+            return -1;
+    }
+
+    word->start = next_non_ws(ws);
+    if (word->start == -1)
+        return -1;
+
+    word->end = next_ws(word->start);
+    if (word->end == -1) {
+        word->end = llen() - 1;
+    } else
+        --word->end;
+
+    return 0;
+}
+
+static int prev_word(int start, input_word *word) {
+    int ws = start;
+
+    if (input.line[ws] != ' ') {
+        ws = prev_ws(ws);
+        if (ws == -1)
+            return -1;
+    }
+
+    word->end = prev_non_ws(ws);
+    if (word->end == -1)
+        return -1;
+
+    word->start = prev_ws(word->end);
+    if (word->start == -1) {
+        word->start = 0;
+    } else
+        ++word->start;
+
+    return 0;
+}
+
+static int cur_word(int start, input_word *word) {
+    if (input.line[start] == ' ')
+        return -1;
+
+    word->start = prev_ws(start);
+    if (word->start == -1) {
+        word->start = 0;
+    } else
+        ++word->start;
+
+    word->end = next_ws(start);
+    if (word->end == -1) {
+        word->end = llen() - 1;
+    } else
+        --word->end;
+
+    return 0;
+}
+
+static void input_next_word_end(void) {
+    input_word word;
+    if (cur_word(input.ccol, &word) == 0) {
+        input_move(word.end + 1);
+        return;
+    }
+
+    if (next_word(input.ccol, &word) == -1) {
+        input_move(llen());
+        return;
+    }
+
+    input_move(word.end + 1);
+}
+
+static void input_prev_word_end(void) {
+    input_word word;
+    if (prev_word(input.ccol, &word) == -1) {
+        input_move(0);
+        return;
+    }
+
+    if (word.end + 1 == input.ccol) {
+        if (prev_word(word.start, &word) == -1) {
+            input_move(0);
+            return;
+        }
+    }
+
+    input_move(word.end + 1);
+}
+
 char *get_line(void) {
     /* MAYBE CHECK IF INIT_COL CHANGED: CCOL COULD BE OFF */
     printty_get_term_size(sh_env.pt, &input.rows, &input.cols);
@@ -177,8 +329,6 @@ char *get_line(void) {
                 input.ccol = 0;
             }
 
-            if (sigchld_caught)
-                LOG_INFO("woke up for sigchld");
             return NULL;
         }
 
@@ -187,10 +337,10 @@ char *get_line(void) {
                 input_insert(&input, pev.utf8[0]);
 
             switch (pev.codepoint) {
-            case 5 /*C-e*/: input_end();         break;
-            case 1 /*C-a*/: input_start();       break;
-            case 11/*C-k*/: input_clear_end();   break;
-            case 21/*C-u*/: input_clear_start(); break;
+            case 5 /*C-e*/: input_end();             break;
+            case 1 /*C-a*/: input_start();           break;
+            case 11/*C-k*/: input_clear_end();       break;
+            case 21/*C-u*/: input_clear_start();     break;
             case 12/*C-l*/:
                 printty_write(sh_env.pt, unibi_clear_screen);
                 display_prompt(sh_env.prompt_style);
@@ -217,6 +367,12 @@ char *get_line(void) {
 
             } else if (pev.key == PRINTTY_RIGHT) {
                 input_right();
+
+            } else if (pev.key == PRINTTY_SLEFT) {
+                input_prev_word_end();
+
+            } else if (pev.key == PRINTTY_SRIGHT) {
+                input_next_word_end();
             }
         }
     }
