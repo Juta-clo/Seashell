@@ -10,6 +10,11 @@
 #define PROMPT_LEN 2
 #define PTY_RBUF 100000
 
+#define PSTATE_ZOMBIE   "Z"
+#define PSTATE_RUNNING  "R"
+#define PSTATE_SLEEPING "S"
+#define PSTATE_STOPPED  "T"
+
 #define MAX(a, b) \
     ((a) > (b)) ? a : b
 
@@ -105,7 +110,13 @@ void pty_test_sink(const llog_info *info);
     TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout");
 #define assert_cursor(row, col) \
     TEST_ASSERT_MESSAGE(term_ensure_cursor(row, col), "bad cursor");
+#define assert_termios(exp) \
+    TEST_ASSERT_MESSAGE(verify_termios(exp), "bad termios");
 
+bool verify_termios(struct termios exp);
+bool verify_pstate(const char *name, const char *state);
+bool kill_child(const char *name);
+void sleep_ms(int ms);
 void print_valgrind_overview(void);
 dstr *push_line(da_dstr *lines);
 dstr *last_line(da_dstr *lines);

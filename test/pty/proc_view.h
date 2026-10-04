@@ -9,6 +9,7 @@
 struct ps_pstat {
     pid_t pid;
     char name[PATH_MAX];
+    char state[PATH_MAX];
 };
 
 typedef struct ps_pstat ps_pstat;

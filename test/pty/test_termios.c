@@ -19,37 +19,6 @@ struct termios printty_cbreak_tio(struct termios orig) {
     return ts;
 }
 
-void ms_sleep(int ms) {
-    int sec = ms / 1000;
-    ms %= 1000;
-    int ns = ms * 1000000;
-    struct timespec ts = { .tv_nsec = ns, .tv_sec = sec };
-    if (nanosleep(&ts, NULL) == -1)
-         TEST_FAIL_MESSAGE("nanosleep failed");
-}
-
-void assert_termios(struct termios exp) {
-    struct termios tio;
-
-    int sleep_time = (run_valgrind) ? 1000 : 100;
-
-    for (int i = 0; i < sleep_time; ++i) {
-        xtcgetattr(cur_test->mfd, &tio);
-        if (memcmp(exp.c_cc, tio.c_cc, sizeof(tio.c_cc))            == 0 &&
-            memcmp(&exp.c_iflag, &tio.c_iflag, sizeof(tio.c_iflag)) == 0 &&
-            memcmp(&exp.c_oflag, &tio.c_oflag, sizeof(tio.c_oflag)) == 0 &&
-            memcmp(&exp.c_cflag, &tio.c_cflag, sizeof(tio.c_cflag)) == 0 &&
-            memcmp(&exp.c_lflag, &tio.c_lflag, sizeof(tio.c_lflag)) == 0)
-        {
-            return;
-        }
-
-        ms_sleep(1);
-    }
-
-    TEST_FAIL_MESSAGE("assert_termios timeout");
-}
-
 TEST_SETUP(termios) {
     new_shell();
 }

@@ -50,13 +50,28 @@ TEST(shell, prompt_after_launch_bg_cmd) {
 }
 
 TEST(shell, prompt_after_bg_job_done) {
-    vterm_send_str("sleep 0.05 &\n");
+    vterm_send_str("sleep 100 &\n");
     assert_term(
-        PROMPT "sleep 0.05 &",
+        PROMPT "sleep 100 &",
         "[1] Started",
-        PROMPT,
-        "[1] Done - Exited with status 0",
         PROMPT
+    );
+
+    vterm_send_str("x");
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "x"
+    );
+
+    TEST_ASSERT_MESSAGE(kill_child("sleep"), "kill_child(\"sleep\")");
+
+    assert_term(
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT "x",
+        "[1] Done - Terminated by signal 15",
+        PROMPT "x"
     );
 }
 
@@ -148,31 +163,29 @@ TEST(shell, bg_job_done_with_fg_job) {
      * If the prompt does not print between job exit messages it was
      * correctly skipped. */
 
-    vterm_send_str("sleep 0.05 &\n");
+    vterm_send_str("sleep 100 &\n");
     assert_term(
-        PROMPT "sleep 0.05 &",
+        PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
-    vterm_send_str("sleep 0.06 &\n");
+    vterm_send_str("write_sleep\n"); /* lose fgroup control */
     assert_term(
-        PROMPT "sleep 0.05 &",
+        PROMPT "sleep 100 &",
         "[1] Started",
-        PROMPT "sleep 0.06 &",
-        "[2] Started",
-        PROMPT
+        PROMPT "write_sleep",
+        "x"
     );
 
-    vterm_send_str("sleep 1\n"); /* lose fgroup control */
+    TEST_ASSERT_MESSAGE(kill_child("sleep"), "kill_child(\"sleep\")");
+
     assert_term(
-        PROMPT "sleep 0.05 &",
+        PROMPT "sleep 100 &",
         "[1] Started",
-        PROMPT "sleep 0.06 &",
-        "[2] Started",
-        PROMPT,
-        "[1] Done - Exited with status 0",
-        "[2] Done - Exited with status 0"
+        PROMPT "write_sleep",
+        "x",
+        "[1] Done - Terminated by signal 15"
     );
 }
 
@@ -567,10 +580,17 @@ TEST(shell, stopped_process_then_kill_builtin) {
         PROMPT
     );
 
-    /* so self_kill has time to stop itself */
-    int ns_sleep = (run_valgrind) ? 100000000 : 10000000;
-    if (nanosleep(&(struct timespec){ .tv_nsec = ns_sleep }, NULL) == -1)
-        LOG_ERR("nanosleep: %m");
+    vterm_send_str("x");
+    assert_term(
+        PROMPT "self_kill -STOP | sleep 100 &",
+        "[1] Started",
+        PROMPT "x"
+    );
+
+    vterm_send_str("\b");
+
+    if (!verify_pstate("self_kill", PSTATE_STOPPED))
+        TEST_FAIL_MESSAGE("verify_pstate(\"self_kill\", PSTATE_STOPPED");
 
     vterm_send_str("kill %1\n");
     assert_term(

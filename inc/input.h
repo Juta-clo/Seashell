@@ -10,8 +10,8 @@
 
 typedef struct {
     char *line;
-    int scol;
-    int srow, ccol;
+    int scol, srow;
+    int offset;
     int rows, cols;
     bool need_line;
     bool prompt_drawn;

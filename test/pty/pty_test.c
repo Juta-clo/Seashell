@@ -16,7 +16,12 @@
 #include "unity.h"
 
 #define ASSERT_CURSOR 1
-#define ASSERT_LINE  2
+#define ASSERT_LINE   2
+
+#define PTY_POLL_TFD   1
+#define PTY_POLL_SHELL 2
+#define PTY_POLL_VAL   3
+#define PTY_POLL_MFD   4
 
 da_pty_test all_tests;
 bool verbose_mode = false;
@@ -158,7 +163,23 @@ void add_lines(da_dstr *lines, const char *str) {
     }
 }
 
-int start_timerfd(int ms) {
+void sleep_ms(int ms) {
+    int sec = ms / 1000;
+    ms %= 1000;
+
+    int ns = ms * 1000000;
+
+    struct timespec ts = {
+        .tv_sec = sec, .tv_nsec = ns,
+    };
+
+    if (nanosleep(&ts, NULL) == -1) {
+        LOG_ERR("nanosleep: %m");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static struct itimerspec ms_to_its(int ms) {
     int sec = ms / 1000;
     ms %= 1000;
 
@@ -168,6 +189,18 @@ int start_timerfd(int ms) {
         .it_value = {.tv_sec = sec, .tv_nsec = ns},
         .it_interval = {0}
     };
+
+    return its;
+}
+
+void set_timerfd(int tfd, int ms) {
+    struct itimerspec its = ms_to_its(ms);
+    xtimerfd_settime(tfd, 0, &its, NULL);
+}
+
+int start_timerfd(int ms) {
+    struct itimerspec its;
+    its = ms_to_its(ms);
 
     int tfd = xtimerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
     xtimerfd_settime(tfd, 0, &its, NULL);
@@ -321,79 +354,207 @@ void write_to_term(const char *str) {
     }
 }
 
-bool term_ensure(const char *msg, int row, int col, int type) {
-    if (type == ASSERT_LINE) {
-        if (verify_vterm_state(msg, row, col, NULL))
-            return true;
-    } else if (type == ASSERT_CURSOR)
-        if (verify_cursor(row, col))
-            return true;
-
-    char *line = NULL;
-    int ms_sleep = (run_valgrind) ? 1000 : 100;
-    int tfd = start_timerfd(ms_sleep);
+int pty_test_poll(int tfd) {
     pollfds[POLL_TFD] = (struct pollfd){ .fd = tfd, .events = POLLIN };
+
+    int rv = -1;
+    char *data = NULL;
 
     while (true) {
         xpoll(pollfds, NFDS, -1);
 
         if (pollfds[POLL_TFD].revents & POLLIN) {
-            VTermPos curs_pos;
-            vterm_state_get_cursorpos(cur_test->vterm.st, &curs_pos);
-
-            if (type == ASSERT_CURSOR) {
-                LOG_ERR("bad cursor: exp[%d,%d] got[%d,%d]",
-                    row, col, curs_pos.row, curs_pos.col);
-            } else if (type == ASSERT_LINE) {
-                if (line) {
-                    LOG_ERR("bad line: exp[%s] got[%s]", msg, line);
-                    hds_free(line);
-                }
-            }
-
-            close(tfd);
-            return false;
+            rv = PTY_POLL_TFD;
+            goto cleanup;
         }
 
         if (pollfds[POLL_SHELL].revents & POLLIN) {
-            char *data = flush_pipe(sh_pipe[0]);
+            data = flush_pipe(sh_pipe[0]);
             add_lines(&cur_test->shell_log_lines, data);
-            free(data);
+            rv = PTY_POLL_SHELL;
+            goto cleanup;
         }
 
         if (pollfds[POLL_VAL].revents & POLLIN) {
-            char *data = flush_pipe(val_pipe[0]);
+            data = flush_pipe(val_pipe[0]);
             add_lines(&cur_test->val_lines, data);
-            free(data);
+            rv = PTY_POLL_VAL;
+            goto cleanup;
         }
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
-            char *data = flush_pty(cur_test->mfd);
-
+            data = flush_pty(cur_test->mfd);
             dstrcat(&cur_test->ptydata, data);
             add_lines(&cur_test->raw_lines, data);
             write_to_term(data);
+            rv = PTY_POLL_MFD;
+            goto cleanup;
+        }
+    }
 
-            free(data);
+cleanup:
+    free(data);
+    return rv;
+}
 
+bool kill_child(const char *name) {
+    da_pstat pstats;
+    size_t loops = 100;
+    int tfd = start_timerfd(1);
+
+    for (size_t i = 0; i < loops; ++i) {
+        if (child_pstat(cur_test->cpid, &pstats) == -1)
+            TEST_FAIL_MESSAGE("child_pstat");
+
+        for (size_t y = 0; y < pstats.size; ++y) {
+            if (strcmp(pstats.data[y].name, name) == 0) {
+                if (cur_test->cpid == pstats.data[y].pid) {
+                    LOG_ERR("trying to kill seashell");
+                    da_free(&pstats);
+                    xclose(tfd);
+                    return false;
+                }
+
+                xkill(pstats.data[y].pid, SIGTERM);
+                da_free(&pstats);
+                xclose(tfd);
+                return true;
+            }
+        }
+
+        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+            continue;
+
+        set_timerfd(tfd, 1);
+    }
+
+    xclose(tfd);
+    da_free(&pstats);
+    return false;
+}
+
+bool verify_pstate(const char *name, const char *state) {
+    size_t loops = 100;
+    da_pstat pstats;
+    bool state_good = false;
+    char pstate[4096];
+    int tfd = start_timerfd(1);
+
+    for (size_t i = 0; i < loops; ++i) {
+        if (child_pstat(cur_test->cpid, &pstats) == -1)
+            break;
+
+        for (size_t y = 0; y < pstats.size; ++y) {
+            if (strcmp(name, pstats.data[y].name) == 0) {
+                strncpy(pstate, pstats.data[y].state, sizeof(pstate));
+
+                if (strncmp(state, pstate, 1) == 0) {
+                    state_good = true;
+                    break;
+                }
+            }
+        }
+
+        da_free(&pstats);
+
+        if (state_good)
+            break;
+
+        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+            continue;
+
+        set_timerfd(tfd, 1);
+    }
+
+    if (!state_good)
+        LOG_ERR("Bad state: %s", state);
+
+    xclose(tfd);
+    return state_good;
+}
+
+bool verify_termios(struct termios exp) {
+    struct termios tio;
+
+    int sleep_time = (run_valgrind) ? 1000 : 100;
+    int tfd = start_timerfd(1);
+
+    for (int i = 0; i < sleep_time; ++i) {
+        xtcgetattr(cur_test->mfd, &tio);
+        if (memcmp(exp.c_cc, tio.c_cc, sizeof(tio.c_cc))            == 0 &&
+            memcmp(&exp.c_iflag, &tio.c_iflag, sizeof(tio.c_iflag)) == 0 &&
+            memcmp(&exp.c_oflag, &tio.c_oflag, sizeof(tio.c_oflag)) == 0 &&
+            memcmp(&exp.c_cflag, &tio.c_cflag, sizeof(tio.c_cflag)) == 0 &&
+            memcmp(&exp.c_lflag, &tio.c_lflag, sizeof(tio.c_lflag)) == 0)
+        {
+            xclose(tfd);
+            return true;
+        }
+
+        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+            continue;
+
+        set_timerfd(tfd, 1);
+    }
+
+    xclose(tfd);
+    return false;
+}
+
+bool term_ensure(const char *msg, int row, int col, int type) {
+    if (type == ASSERT_LINE) {
+        if (verify_vterm_state(msg, row, col, NULL))
+            return true;
+
+    } else if (type == ASSERT_CURSOR)
+        if (verify_cursor(row, col))
+            return true;
+
+    int rv = false;
+    char *line = NULL;
+    VTermPos curs_pos;
+    int tfd = start_timerfd((run_valgrind) ? 1000 : 100);
+
+    while (true) {
+        int poll_rv = pty_test_poll(tfd);
+
+        if (poll_rv == PTY_POLL_TFD) {
             if (type == ASSERT_LINE) {
-                hds_free(line);
-                line = NULL;
+                LOG_ERR("bad line: exp[%s] got[%s]", msg, (line) ? line : "");
+
+            } else if (type == ASSERT_CURSOR) {
+                vterm_state_get_cursorpos(cur_test->vterm.st, &curs_pos);
+                LOG_ERR("bad cursor: exp[%d,%d] got[%d,%d]",
+                    row, col, curs_pos.row, curs_pos.col);
+            }
+
+            goto cleanup;
+
+        } else if (poll_rv == PTY_POLL_MFD) {
+            if (type == ASSERT_LINE) {
+                if (line) {
+                    hds_free(line);
+                    line = NULL;
+                }
 
                 if (verify_vterm_state(msg, row, col, &line)) {
-                    close(tfd);
-                    hds_free(line);
-                    return true;
+                    rv = true;
+                    goto cleanup;
                 }
 
             } else if (type == ASSERT_CURSOR) {
                 if (verify_cursor(row, col)) {
-                    close(tfd);
-                    return true;
+                    rv = true;
+                    goto cleanup;
                 }
             }
         }
     }
+
+cleanup:
+    close(tfd);
+    hds_free(line);
+    return rv;
 }
 
 bool term_ensure_cursor(int row, int col) {
@@ -468,6 +629,9 @@ void vterm_send_str(const char *msg) {
         if (*c == '\n') {
             vterm_keyboard_key(vtty, VTERM_KEY_ENTER, VTERM_MOD_NONE);
             continue;
+        } else if (*c == '\b') {
+            vterm_keyboard_key(vtty, VTERM_KEY_BACKSPACE, VTERM_MOD_NONE);
+            continue;
         }
 
         vterm_keyboard_unichar(vtty, key, VTERM_MOD_NONE);
@@ -509,7 +673,8 @@ void exec_seashell(void) {
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
                 "--error-exitcode=99", /*seashell shouldn't return that*/
-
+                "--track-fds=bad", /*this is awesome*/
+                "--modify-fds=high",
                 /* this is bugged with sigsuspend. See bugzilla#526386 */
                 "--enable-debuginfod=no",
                 val_lfd_arg,
@@ -590,40 +755,75 @@ void new_shell(void) {
 }
 
 void delete_shell(void) {
-    if (Unity.CurrentTestFailed != 0)
-        /* so the shell can write any final data to the mfd before
-         * exiting. If we don't sleep the transcript might be cut off */
-        nanosleep(&(struct timespec){.tv_nsec = 25000000, .tv_sec = 0}, NULL);
-
-    take_vt_snapshot();
-
-    int stat;
+    /* so the shell can write any final data to the mfd before
+    *  exiting. If we don't sleep the transcript might be cut off.
+    *  Also if the shell sends a dsr request allow the request to
+    *  be passed to vterm so seashell doesn't fail becuase it did
+    *  not receive the request. */
 
     xkill(cur_test->cpid, SIGHUP);
-    if (waitpid(cur_test->cpid, &stat, 0) == -1)
-        TEST_FAIL_MESSAGE("waitpid failed");
 
-    char *data = flush_pty(cur_test->mfd);
-    add_lines(&cur_test->raw_lines, data);
-    free(data);
+    int checks = (run_valgrind) ? 1000 : 100;
+    int tfd = start_timerfd(1);
+    int rv, stat, i;
 
-    data = flush_pipe(sh_pipe[0]);
-    add_lines(&cur_test->shell_log_lines, data);
-    free(data);
+    for (i = 0; i < checks; ++i) {
+        if ((rv = waitpid(cur_test->cpid, &stat, WNOHANG)) == -1) {
+            LOG_ERR("waitpid: %m");
+            exit(EXIT_FAILURE);
+        }
 
-    data = flush_pipe(val_pipe[0]);
-    add_lines(&cur_test->val_lines, data);
-    free(data);
+        if (rv != 0)
+            break;
 
-    close(cur_test->mfd);
+        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+            continue;
+
+        set_timerfd(tfd, 1);
+    }
+
+    xclose(tfd);
+
+    if (i == 100) {
+        LOG_ERR("waitpid timed out");
+        xkill(cur_test->cpid, SIGKILL);
+
+        if (waitpid(cur_test->cpid, &stat, 0) == -1) {
+            LOG_ERR("waitpid: %m");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if (WIFEXITED(stat)) {
+        int exit_status = WEXITSTATUS(stat);
+
+        if (exit_status == 99)
+            cur_test->val_err = true;
+
+        LOG_INFO("seashell exited with status %d", exit_status);
+
+        cur_test->success = !Unity.CurrentTestFailed;
+    } else {
+        if (WIFSIGNALED(stat)) {
+            LOG_INFO("seashell was terminated by signal %d (%s)",
+                    WTERMSIG(stat), strsignal(WTERMSIG(stat)));
+        }
+
+        /* seashell should not be terminated by a signal. If
+         * this is true then we probably sent SIGKILL to it
+         * becuase it hung. Or segfaulted. */
+        Unity.CurrentTestFailed = true;
+        cur_test->success = false;
+    }
+
+    take_vt_snapshot();
     vterm_free(cur_test->vterm.tty);
+    close(cur_test->mfd);
 
-    cur_test->success = (Unity.CurrentTestFailed == 0);
-    if (WIFEXITED(stat) && WEXITSTATUS(stat) == 99)
-        cur_test->val_err = true;
-
-    if (clock_gettime(CLOCK_MONOTONIC, &end) == -1)
-        TEST_FAIL_MESSAGE("clock_gettime");
+    if (clock_gettime(CLOCK_MONOTONIC, &end) == -1) {
+        LOG_ERR("clock_gettime");
+        exit(EXIT_FAILURE);
+    }
 
     cur_test->dur = (end.tv_sec - start.tv_sec) +
         (end.tv_nsec - start.tv_nsec) / 1e9;

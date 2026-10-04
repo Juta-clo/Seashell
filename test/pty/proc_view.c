@@ -12,6 +12,7 @@
 
 #define PPID "PPid"
 #define NAME "Name"
+#define STATE "State"
 
 #define BUF_SIZE 4096
 
@@ -125,8 +126,12 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
         char *child_name = stat_val_str(child_pid, NAME);
         if (!child_name)
             goto fail;
-
         strcpy(pstat->name, child_name);
+
+        char *child_state = stat_val_str(child_pid, STATE);
+        if (!child_state)
+            goto fail;
+        strcpy(pstat->state, child_state);
     }
 
     return 0;
