@@ -141,11 +141,6 @@ static bool try_run_next_job(const job_event *jev, bool bg) {
         if (!jev->success && andor->op == PS_AND_IF)
             continue;
 
-        /* We can reuse the same job_id. When control
-         * flow reaches arrives here we are directly
-         * responding to that jobs exit and no other
-         * job can be started during this window. */
-
         launch_job(&andor->pline, bg, plan->jid);
         execed_pline = true;
         break;
@@ -226,19 +221,6 @@ void print_job_event(const job_event *jev) {
     free(msg);
 }
 
-/* If a job is signaled, the andor chain is cancelled so
- * its plan is freed.
- *
- * on intr_int or intr_stop we print a newline so that the
- * next print will be after the echoed control character.
- *
- * If  foreground job exits normally we try to run the next
- * job in its plan (andor list). If it has one, then we do
- * nothing. The existing job keeps the foreground and we
- * simply go back to waiting. If there is no more jobs in
- * the plan we remove the plan, take back the termianl and
- * draw the prompt. */
-
 static void handle_fg_event(const job_event *jev) {
     if (jev->type == JEXITED) {
         update_status_variable(&sh_env.vars, jev);
@@ -263,19 +245,14 @@ static void handle_fg_event(const job_event *jev) {
         }
 
     } else if (jev->type == JSTOPPED) {
-        /* restore foreground process group status so that
-         * tcsetattr doesn't not return TTOU */
         if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
             err_exit("tcsetpgrp");
         sh_env.fg_jid = NOFG;
 
-        /* save stopped programs termios */
         job_plan *plan = lookup_plan(jev->jid, NULL);
         xtcgetattr(sh_env.tty_fd, &plan->tty_state);
         plan->tty_state_saved = true;
 
-        /* restore old original shell termios, then initialize
-         * printty, so that it uses the old original shell termios */
         xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tty_state);
         printty_start(sh_env.pt);
 
@@ -285,17 +262,7 @@ static void handle_fg_event(const job_event *jev) {
         print_job_event(jev);
 
     } else if (jev->type == JCONTINUED) {
-      /* Don't print here? If a interactive terminal program was resumed
-       * then printing will not be desired. We shouldn't print when we
-       * arenot in the foreground (This case only triggers by fg).
-       *
-       * zsh handles this by lying. It prints the job continued msg
-       * before even sending SIGCONT. Thats probably a decent
-       * compromise. In any case I would never print here. Going to
-       * do that for now. See builtins.c
-       *
-       * fg builtin applies the saved termios for the stopped fg
-       * job because it needs to do it before resuming it. */
+        /* Only triggered by the 'fg' builtin */
     }
 }
 

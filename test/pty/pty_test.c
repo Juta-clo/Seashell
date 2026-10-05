@@ -286,6 +286,21 @@ void take_vt_snapshot(void) {
     vt_snap *snap = da_push(&cur_test->snaps);
     *snap = (vt_snap){0};
     get_vt_snap(snap);
+    snap->rows = cur_test->vterm.rows;
+    snap->cols = cur_test->vterm.cols;
+}
+
+void test_resize_term(int row, int col) {
+    if (row < 0 || col < 0)
+        TEST_FAIL_MESSAGE("test_resize_term: bad row/col");
+
+    vterm_set_size(cur_test->vterm.tty, row, col);
+    cur_test->vterm.rows = row;
+    cur_test->vterm.cols = col;
+
+    struct winsize ws = { .ws_row = row, .ws_col = col };
+    if (ioctl(cur_test->mfd, TIOCSWINSZ, &ws) == -1)
+        TEST_FAIL_MESSAGE("ioctl");
 }
 
 bool verify_cursor(int crow, int ccol) {
@@ -613,15 +628,11 @@ static void vterm_output_cb(const char *bytes, size_t len, void *user) {
 }
 
 void vterm_send_char(char ch, VTermModifier mod) {
-    take_vt_snapshot();
-
     VTerm *vtty = cur_test->vterm.tty;
     vterm_keyboard_unichar(vtty, ch, mod);
 }
 
 void vterm_send_str(const char *msg) {
-    take_vt_snapshot();
-
     VTerm *vtty = cur_test->vterm.tty;
     for (const char *c = msg; *c != '\0'; ++c) {
         uint32_t key = *c;
@@ -680,14 +691,14 @@ void exec_seashell(void) {
                 val_lfd_arg,
 
             "/home/juta/Projects/Seashell/seashell",
-                "--prompt=simple",
+                "--prompt=ps",
                 shell_lfd_arg,
             NULL
         };
     } else {
         argv = (char *[]){
             "/home/juta/Projects/Seashell/seashell",
-                "--prompt=simple",
+                "--prompt=ps",
                 shell_lfd_arg,
             NULL
         };
@@ -735,6 +746,7 @@ void new_shell(void) {
     cur_test->vterm.st = vterm_obtain_state(cur_test->vterm.tty);
     if (!cur_test->vterm.st)
         TEST_FAIL_MESSAGE("vterm_obtain_state");
+    vterm_screen_enable_reflow(cur_test->vterm.scr, true);
 
     vterm_output_set_callback(
         cur_test->vterm.tty,
@@ -750,8 +762,15 @@ void new_shell(void) {
      * the prompt so this works to avoid writing to the mfd
      * before canonical mode is disabled thus having the write
      * echoed by the tty driver. */
-    TEST_ASSERT_MESSAGE(term_ensure(PROMPT, 0, 0, ASSERT_LINE),
-        "term_ensure: no prompt");
+    if (!term_ensure_lines(LN("> ")))
+        TEST_FAIL_MESSAGE("failed to verify initial prompt");
+
+    vterm_send_str("set PS \"test> \"\n");
+
+    if (!term_ensure_lines(LN("> set PS \"test> \"", PROMPT)))
+        TEST_FAIL_MESSAGE("failed to set prompt style variable");
+
+    vterm_send_char('l', VTERM_MOD_CTRL);
 }
 
 void delete_shell(void) {
@@ -816,7 +835,8 @@ void delete_shell(void) {
         cur_test->success = false;
     }
 
-    take_vt_snapshot();
+    if (!cur_test->success)
+        take_vt_snapshot();
     vterm_free(cur_test->vterm.tty);
     close(cur_test->mfd);
 

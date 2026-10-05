@@ -93,12 +93,85 @@ TEST(input, sigchld_with_no_prompt_redraw) {
 
     vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     vterm_send_str("def\n");
-    assert_cursor(2, 2);
+    assert_cursor(2, PROMPT_LEN);
     assert_term(
         PROMPT "abdefc",
         "seashell: command not found: abdefc",
         PROMPT
     );
+}
+
+TEST(input, resize_after_initial_prompt) {
+    test_resize_term(10, 20);
+
+    assert_cursor(0, PROMPT_LEN);
+    assert_term(
+        PROMPT
+    );
+}
+
+TEST(input, resize_with_cursor_on_last_col) {
+    test_resize_term(10, 7);
+    assert_cursor(0, PROMPT_LEN);
+    assert_term(PROMPT);
+
+    test_resize_term(5, 6);
+    assert_cursor(1, 0);
+    assert_term(PROMPT);
+}
+
+TEST(input, resize_that_causes_cursor_wrap) {
+    test_resize_term(5, 5);
+    assert_cursor(1, 1);
+    assert_term(PROMPT);
+}
+
+TEST(input, resize_that_causes_cursor_wrap_then_unwrap) {
+    test_resize_term(10, 10);
+    vterm_send_str("x");
+    assert_cursor(0, PROMPT_LEN + 1);
+    assert_term(PROMPT "x");
+
+    test_resize_term(10, 5);
+    assert_cursor(1, 2);
+    assert_term(PROMPT  "x");
+
+    test_resize_term(10, 10);
+    assert_cursor(0, PROMPT_LEN + 1);
+    assert_term(PROMPT "x");
+}
+
+TEST(input, resize_with_cursor_on_row_less_then_end_of_line) {
+    vterm_send_str("\n\n\n\nbcdefghijklmnopqrstuvwxyz");
+    vterm_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
+    vterm_send_str("Ia");
+    assert_cursor(4, PROMPT_LEN + 1);
+    assert_term(
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT "abcdefghijklmnopqrstuvwxyz"
+    );
+
+    test_resize_term(10, 10);
+    assert_cursor(4, PROMPT_LEN + 1);
+    assert_term(
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT "abcdefghijklmnopqrstuvwxyz"
+    );
+}
+
+TEST(input, normal_mode_deletion_on_last_character) {
+    vterm_send_str("abc");
+    vterm_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
+    vterm_send_str("x");
+
+    assert_cursor(0, PROMPT_LEN + 1);
+    assert_term(PROMPT "ab ");
 }
 
 // NOLINTEND(bugprone-suspicious-missing-comma)
@@ -109,4 +182,10 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, sigint_discards_line);
     RUN_TEST_CASE(input, line_is_preserved_on_async_job_messages);
     RUN_TEST_CASE(input, sigchld_with_no_prompt_redraw);
+    RUN_TEST_CASE(input, resize_after_initial_prompt);
+    RUN_TEST_CASE(input, resize_with_cursor_on_last_col);
+    RUN_TEST_CASE(input, resize_that_causes_cursor_wrap);
+    RUN_TEST_CASE(input, resize_that_causes_cursor_wrap_then_unwrap);
+    RUN_TEST_CASE(input, resize_with_cursor_on_row_less_then_end_of_line);
+    RUN_TEST_CASE(input, normal_mode_deletion_on_last_character);
 }

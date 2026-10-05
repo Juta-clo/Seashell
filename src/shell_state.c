@@ -157,6 +157,8 @@ void env_setup(shell_env *env) {
             env->prompt_style = PROMPT_CWD;
         else if (strcmp("simple", opts[PROMPT].val_str) == 0)
             env->prompt_style = PROMPT_SIMPLE;
+        else if (strcmp("ps", opts[PROMPT].val_str) == 0)
+            env->prompt_style = PROMPT_PS;
     } else {
         env->prompt_style = PROMPT_CWD;
     }

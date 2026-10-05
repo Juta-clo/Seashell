@@ -7,6 +7,7 @@
 
 #define PROMPT_SIMPLE 1
 #define PROMPT_CWD 2
+#define PROMPT_PS 3
 
 typedef struct {
     char *line;

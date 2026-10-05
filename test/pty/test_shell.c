@@ -51,7 +51,7 @@ TEST(shell, prompt_after_launch_bg_cmd) {
 
 TEST(shell, prompt_after_bg_job_done) {
     vterm_send_str("sleep 100 &\n");
-    assert_term(
+    assert_term_clear(
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
@@ -59,16 +59,12 @@ TEST(shell, prompt_after_bg_job_done) {
 
     vterm_send_str("x");
     assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
         PROMPT "x"
     );
 
     TEST_ASSERT_MESSAGE(kill_child("sleep"), "kill_child(\"sleep\")");
 
     assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
         PROMPT "x",
         "[1] 'sleep' Terminated (15)",
         PROMPT "x"
@@ -219,7 +215,7 @@ TEST(shell, simple_andor_chain) {
         PROMPT "true && /bin/echo x",
         "x",
         PROMPT
-    )
+    );
 }
 
 TEST(shell, simple_bg_andor_chain) {

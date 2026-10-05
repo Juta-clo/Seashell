@@ -6,8 +6,8 @@
 
 #include "linc_tools.h"
 
-#define PROMPT "> "
-#define PROMPT_LEN 2
+#define PROMPT "test> "
+#define PROMPT_LEN 6
 #define PTY_RBUF 100000
 
 #define PSTATE_ZOMBIE   "Z"
@@ -26,6 +26,7 @@ DA_TYPE(da_charp, char *);
 struct vt_snap {
     VTermPos curs_pos;
     da_charp lines;
+    int rows, cols;
 };
 
 typedef struct vt_snap vt_snap;
@@ -106,15 +107,30 @@ void pty_test_sink(const llog_info *info);
 /****** UTILITIES *******/
 
 #define LN(...) (char *[]){ __VA_ARGS__, NULL }
+
 #define assert_term(...) \
-    TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout");
+    do { \
+        TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout"); \
+        take_vt_snapshot(); \
+    } while (false)
+
+#define assert_term_clear(...) \
+    do { \
+        TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout"); \
+        take_vt_snapshot(); \
+        vterm_send_char('l', VTERM_MOD_CTRL); \
+    } while (false)
+
 #define assert_cursor(row, col) \
     TEST_ASSERT_MESSAGE(term_ensure_cursor(row, col), "bad cursor");
 #define assert_termios(exp) \
     TEST_ASSERT_MESSAGE(verify_termios(exp), "bad termios");
 
+void clear_vterm(void);
+void take_vt_snapshot(void);
 bool verify_termios(struct termios exp);
 bool verify_pstate(const char *name, const char *state);
+void test_resize_term(int row, int col);
 bool kill_child(const char *name);
 void sleep_ms(int ms);
 void print_valgrind_overview(void);

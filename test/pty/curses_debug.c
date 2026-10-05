@@ -295,7 +295,7 @@ void render_test_bar(curs_win *test_bar, size_t test_i) {
     xwrefresh(test_bar->winp);
 }
 
-void render_vterm_snap(curs_win *win, int trows, int tcols, vt_snap *snap) {
+void render_vterm_snap(curs_win *win, vt_snap *snap) {
     if (!win->realized)
         return;
 
@@ -303,13 +303,30 @@ void render_vterm_snap(curs_win *win, int trows, int tcols, vt_snap *snap) {
         curs_err("werase");
 
     sp_rect rect = *win->rect;
-    int avail_rows = MIN(rect.rows, trows);
-    int avail_cols = MIN(rect.cols, tcols);
+    int avail_rows = MIN(rect.rows, snap->rows);
+    int avail_cols = MIN(rect.cols, snap->cols);
 
     for (int row = 0; row < avail_rows; ++row) {
         char *line = snap->lines.data[row];
         rnprintf(win->winp, row, 0, avail_cols, 0, "%s", line);
     }
+
+    if (rect.rows > snap->rows) {
+        int n = MIN(snap->cols + 1, rect.cols);
+
+        for (int i = 0; i < n; ++i)
+            rnprintf(win->winp, snap->rows, i, 1, 0, "-");
+    }
+
+    if (rect.cols > snap->cols) {
+        int n = MIN(snap->rows + 1, rect.rows);
+
+        for (int i = 0; i < n; ++i)
+            rnprintf(win->winp, i, snap->cols, 1, 0, "|");
+    }
+
+    if (rect.rows > snap->rows && rect.cols > snap->cols)
+        rnprintf(win->winp, snap->rows, snap->cols, 1, 0, "*");
 
     int curs_row = snap->curs_pos.row;
     int curs_col = snap->curs_pos.col;
@@ -445,8 +462,9 @@ void new_curses_ui() {
         render_debug_win(wins[WIN_TEST], &test->test_lines, offsets[WIN_TEST]);
         render_debug_win(wins[WIN_LOG], &test->shell_log_lines, offsets[WIN_LOG]);
         render_debug_win(wins[WIN_VAL], &test->val_lines, offsets[WIN_VAL]);
-        render_vterm_snap(wins[WIN_RAW], test->vterm.rows, test->vterm.cols,
-                &test->snaps.data[snap_i]);
+
+        if (test->snaps.size != 0)
+            render_vterm_snap(wins[WIN_RAW], &test->snaps.data[snap_i]);
 
         int ch = getch();
 
