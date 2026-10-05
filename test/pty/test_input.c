@@ -66,7 +66,7 @@ TEST(input, line_is_preserved_on_async_job_messages) {
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT "abc",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'sleep' Terminated (15)",
         PROMPT "abc"
     );
 
@@ -76,7 +76,7 @@ TEST(input, line_is_preserved_on_async_job_messages) {
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT "abc",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'sleep' Terminated (15)",
         PROMPT "abdefc ",
         "seashell: command not found: abdefc",
         PROMPT

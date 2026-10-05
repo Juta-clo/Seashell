@@ -118,6 +118,15 @@ static bool job_interrupted(jc_job *job) {
     return false;
 }
 
+static bool job_signaled(jc_job *job) {
+    for (size_t i = 0; i < job->pgrp.procs.size; ++i)
+        if (job->pgrp.procs.data[i].stat == PROC_SIG)
+            if (job->pgrp.procs.data[i].term_sig != SIGINT)
+                return true;
+
+    return false;
+}
+
 pid_t request_job_id(pid_t jid) {
     for (size_t i = 0; i < jctl.jobs.size; ++i)
         if (jid == jctl.jobs.data[i].jid)
@@ -264,15 +273,19 @@ void push_exit_event(jc_job *job) {
     *jev = (job_event){0};
 
     jev->type = JEXITED;
-    jev->intr_int = job_interrupted(job);
+    jev->signaled = job_signaled(job);
 
-    if (job->last->stat == PROC_EXIT) {
-        jev->success = (job->last->exit_stat == EXIT_SUCCESS);
-        jev->signaled = false;
-
-    } else if (job->last->stat == PROC_SIG) {
+    if (job_interrupted(job)) {
+        jev->exit_type = JEXIT_INTR;
         jev->success = false;
-        jev->signaled = job->last->term_sig != SIGINT;
+
+    } else {
+        jev->exit_type = JEXIT_NORMAL;
+
+        if (job->last->stat == PROC_EXIT) {
+            jev->success = (job->last->exit_stat == EXIT_SUCCESS);
+        } else
+            jev->success = false;
     }
 
     capture_pviews(job, jev);
@@ -310,7 +323,7 @@ void queue_builtin_exit_event(pid_t jid, int status) {
         .jid = jid,
         .type = JEXITED,
         .success = (status == EXIT_SUCCESS),
-        .signaled = false,
+        .exit_type = JEXIT_NORMAL,
         .builtin = true
     });
 

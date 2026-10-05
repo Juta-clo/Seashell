@@ -25,6 +25,11 @@ typedef enum {
     JINFO,
 } job_event_type;
 
+typedef enum {
+    JEXIT_NORMAL,
+    JEXIT_INTR,
+} job_exit_type;
+
 typedef struct jc_proc jc_proc;
 typedef struct jc_pgrp jc_pgrp;
 typedef struct jc_job jc_job;
@@ -78,16 +83,13 @@ struct proc_view {
     };
 };
 
-/* signaled: last process was terminated by a signal
-*  intr_int/stop: at least one process was interactively signaled */
-
 struct job_event {
     pid_t jid;
     job_event_type type;
+    job_exit_type exit_type;
 
     bool success;
     bool signaled;
-    bool intr_int;
     bool intr_stop;
 
     /* for display only */

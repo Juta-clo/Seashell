@@ -70,19 +70,18 @@ TEST(shell, prompt_after_bg_job_done) {
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT "x",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'sleep' Terminated (15)",
         PROMPT "x"
     );
 }
 
 TEST(shell, short_lived_bg_cmd) {
-    vterm_send_str("/bin/echo x &\n");
+    vterm_send_str("true &\n");
     assert_term(
-        PROMPT "/bin/echo x &",
+        PROMPT "true &",
         "[1] Started",
-        PROMPT "x",
-        " ",
-        "[1] Done - Exited with status 0",
+        PROMPT,
+        "[1] 'true' Exited (0)",
         PROMPT
     );
 }
@@ -185,7 +184,7 @@ TEST(shell, bg_job_done_with_fg_job) {
         "[1] Started",
         PROMPT "write_sleep",
         "x",
-        "[1] Done - Terminated by signal 15"
+        "[1] 'sleep' Terminated (15)"
     );
 }
 
@@ -195,7 +194,7 @@ TEST(shell, builtin_in_bg) {
         PROMPT "cd . &",
         "[1] Started",
         PROMPT,
-        "[1] Done - Exited with status 0",
+        "[1] 'cd' Exited (0)",
         PROMPT
     );
 }
@@ -229,8 +228,7 @@ TEST(shell, simple_bg_andor_chain) {
         PROMPT "true && /bin/echo x &",
         "[1] Started",
         PROMPT "x",
-        " ",
-        "[1] Done - Exited with status 0",
+        "[1] '/bin/echo' Exited (0)",
         PROMPT
     );
 }
@@ -275,8 +273,7 @@ TEST(shell, and_if_logic_bg) {
         PROMPT "true && /bin/echo x &",
         "[1] Started",
         PROMPT "x",
-        " ",
-        "[1] Done - Exited with status 0",
+        "[1] '/bin/echo' Exited (0)",
         PROMPT
     );
 
@@ -285,12 +282,11 @@ TEST(shell, and_if_logic_bg) {
         PROMPT "true && /bin/echo x &",
         "[1] Started",
         PROMPT "x",
-        " ",
-        "[1] Done - Exited with status 0",
+        "[1] '/bin/echo' Exited (0)",
         PROMPT "false && /bin/echo x &",
         "[1] Started",
         PROMPT,
-        "[1] Done - Exited with status 1",
+        "[1] 'false' Exited (1)",
         PROMPT
     );
 }
@@ -301,8 +297,7 @@ TEST(shell, or_if_logic_bg) {
         PROMPT "false || /bin/echo y &",
         "[1] Started",
         PROMPT "y",
-        " ",
-        "[1] Done - Exited with status 0",
+        "[1] '/bin/echo' Exited (0)",
         PROMPT
     );
 
@@ -311,12 +306,11 @@ TEST(shell, or_if_logic_bg) {
         PROMPT "false || /bin/echo y &",
         "[1] Started",
         PROMPT "y",
-        " ",
-        "[1] Done - Exited with status 0",
+        "[1] '/bin/echo' Exited (0)",
         PROMPT "true || /bin/echo y &",
         "[1] Started",
         PROMPT,
-        "[1] Done - Exited with status 0",
+        "[1] 'true' Exited (0)",
         PROMPT
     );
 }
@@ -433,7 +427,7 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
         "[1] Running",
         "   sleep 100 Running",
         PROMPT "kill %1",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'sleep' Terminated (15)",
         PROMPT
     );
 
@@ -445,7 +439,7 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
         "[1] Running",
         "   sleep 100 Running",
         PROMPT "kill %1",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'sleep' Terminated (15)",
         PROMPT "jobs",
         PROMPT
     );
@@ -493,7 +487,9 @@ TEST(shell, kill_multiple_proc_job) {
         PROMPT "sleep 100 | sleep 100 | sleep 100 &",
         "[1] Started",
         PROMPT "kill %1",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'sleep' Terminated (15)",
+        "    'sleep' Terminated (15)",
+        "    'sleep' Terminated (15)",
         PROMPT
     );
 }
@@ -503,7 +499,8 @@ TEST(shell, sigint_on_non_final_proc_prints_newline) {
     assert_term(
         PROMPT "self_kill -INT | self_kill -TERM",
         " ",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'self_kill' Interrupt (2)",
+        "    'self_kill' Terminated (15)",
         PROMPT
     );
 }
@@ -523,7 +520,7 @@ TEST(shell, process_exits_normally_in_bg) {
         PROMPT "true &",
         "[1] Started",
         PROMPT,
-        "[1] Done - Exited with status 0",
+        "[1] 'true' Exited (0)",
         PROMPT
     );
 }
@@ -532,7 +529,7 @@ TEST(shell, fg_process_signaled) {
     vterm_send_str("self_kill -TERM\n");
     assert_term(
         PROMPT "self_kill -TERM",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'self_kill' Terminated (15)",
         PROMPT
     );
 }
@@ -639,7 +636,7 @@ TEST(shell, stop_pline_with_plines_left) {
         PROMPT "kill -CONT %1",
         "[1] Continued",
         PROMPT "kill %1",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'sleep' Terminated (15)",
         PROMPT
     );
 }
@@ -664,7 +661,8 @@ TEST(shell, cancel_andor_chain_with_signal) {
     vterm_send_str("self_kill -TERM || echo x\n");
     assert_term(
         PROMPT "self_kill -TERM || echo x",
-        "[1] Done - Terminated by signal 15",
+        "[1] 'self_kill' Terminated (15)",
+        "x",
         PROMPT
     );
 }

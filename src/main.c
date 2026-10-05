@@ -24,6 +24,8 @@
 
 #define SIG_READY 1
 #define STDIN_READY 2
+#define IN_BG 1
+#define IN_FG 2
 
 static void seashell_shutdown(void) {
     input_deinit(&sh_env);
@@ -56,13 +58,13 @@ static void seashell_shutdown(void) {
 
 static ps_ast *line_to_ast(char *line) {
     if (strcmp("", line) == 0) {
-        hda_free(line);
+        drop_line();
         return NULL;
     }
 
     da_tok toks;
     int rv = lx_tokenize(line, &toks);
-    hda_free(line);
+    drop_line();
 
     if (rv != LX_OK) {
         err_msg("lex error");
@@ -124,7 +126,7 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
     }
 }
 
-static bool run_next_job_in_plan(const job_event *jev, bool bg) {
+static bool try_run_next_job(const job_event *jev, bool bg) {
     bool execed_pline = false;
 
     job_plan *plan = lookup_plan(jev->jid, NULL);
@@ -152,14 +154,6 @@ static bool run_next_job_in_plan(const job_event *jev, bool bg) {
     return execed_pline;
 }
 
-static bool run_next_job_fg(const job_event *jev) {
-    return run_next_job_in_plan(jev, false);
-}
-
-static bool run_next_job_bg(job_event *jev) {
-    return run_next_job_in_plan(jev, true);
-}
-
 static char *get_jev_str(const job_event *jev) {
     dstr msg;
     dstr_init(&msg);
@@ -168,12 +162,27 @@ static char *get_jev_str(const job_event *jev) {
         dstr_printf(&msg, "[%d] Done (builtin)", jev->jid);
 
     } else if (jev->type == JEXITED) {
-        if (jev->signaled) {
-            dstr_printf(&msg, "[%d] Done - %s by signal %d", jev->jid,
-                    strsignal(jev->last->term_sig), jev->last->term_sig);
-        } else {
-            dstr_printf(&msg, "[%d] Done - Exited with status %d", jev->jid,
-                    jev->last->exit_stat);
+        dstr_printf(&msg, "[%d] ", jev->jid);
+        int offset = msg.len;
+
+        for (size_t i = 0; i < jev->pviews.size; ++i) {
+            proc_view *pview = &jev->pviews.data[i];
+
+            if (i != 0)
+                dstr_printf(&msg, "%*s", offset, "");
+
+            if (pview->stat == PROC_EXIT) {
+                dstr_printf(&msg, "'%s' Exited (%d)",
+                        pview->argv[0], pview->exit_stat);
+
+            } else if (pview->stat == PROC_SIG) {
+                dstr_printf(&msg, "'%s' %s (%d)", pview->argv[0],
+                        strsignal(pview->term_sig), pview->term_sig);
+            } else
+                xfatal("unexpected process status");
+
+            if (i != jev->pviews.size - 1)
+                dstr_printf(&msg, "\n");
         }
 
     } else if (jev->type == JSTOPPED) {
@@ -190,8 +199,9 @@ void reclaim_terminal(void) {
     if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");
 
-    input_init(&sh_env);
+    printty_start(sh_env.pt);
     sh_env.fg_jid = NOFG;
+    sh_env.need_prompt = true;
 }
 
 bool shell_in_fg(void) {
@@ -200,6 +210,20 @@ bool shell_in_fg(void) {
 
 bool fg_event(job_event *jev) {
     return sh_env.fg_jid  == jev->jid;
+}
+
+void print_job_event(const job_event *jev) {
+    sh_env.need_prompt = true;
+
+    char *msg = get_jev_str(jev);
+    LOG_INFO("%s", msg);
+
+    if (shell_in_fg()) {
+        display_job_msg(msg);
+    } else
+        printf("%s\n", msg);
+
+    free(msg);
 }
 
 /* If a job is signaled, the andor chain is cancelled so
@@ -215,27 +239,27 @@ bool fg_event(job_event *jev) {
  * the plan we remove the plan, take back the termianl and
  * draw the prompt. */
 
-static void handle_fg_event(shell_state *sst, const job_event *jev) {
+static void handle_fg_event(const job_event *jev) {
     if (jev->type == JEXITED) {
         update_status_variable(&sh_env.vars, jev);
 
-        if (jev->signaled || jev->intr_int) {
+        if (jev->exit_type == JEXIT_INTR) {
             plan_done(jev->jid);
             reclaim_terminal();
-            sst->need_prompt = true;
+            printf("\n");
 
             if (jev->signaled)
-                sst->need_print = true;
-
-            if (jev->intr_int)
-                printf("\n");
+                print_job_event(jev);
 
         } else {
-            if (!run_next_job_fg(jev)) {
-                plan_done(jev->jid);
-                reclaim_terminal();
-                sst->need_prompt = true;
-            }
+            if (jev->signaled)
+                print_job_event(jev);
+
+            if (try_run_next_job(jev, IN_FG))
+                return;
+
+            plan_done(jev->jid);
+            reclaim_terminal();
         }
 
     } else if (jev->type == JSTOPPED) {
@@ -253,13 +277,12 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
         /* restore old original shell termios, then initialize
          * printty, so that it uses the old original shell termios */
         xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tty_state);
-        input_init(&sh_env);
-
-        sst->need_print = true;
-        sst->need_prompt = true;
+        printty_start(sh_env.pt);
 
         if (jev->intr_stop)
             printf("\n");
+
+        print_job_event(jev);
 
     } else if (jev->type == JCONTINUED) {
       /* Don't print here? If a interactive terminal program was resumed
@@ -276,30 +299,25 @@ static void handle_fg_event(shell_state *sst, const job_event *jev) {
     }
 }
 
-static void handle_bg_event(shell_state *sst, job_event *jev) {
-    if (jev->type == JEXITED) {
-        if (jev->signaled) {
-            plan_done(jev->jid);
-            sst->need_print = true;
+static void handle_bg_event(job_event *jev) {
+    if (jev->type != JEXITED) {
+        print_job_event(jev);
+        return;
+    }
 
-        } else {
-            if (!run_next_job_bg(jev)) {
-                plan_done(jev->jid);
-                sst->need_print = true;
-            }
-        }
+    if (jev->exit_type == JEXIT_NORMAL && try_run_next_job(jev, IN_BG)) {
+        if (jev->signaled)
+            print_job_event(jev);
 
-    } else
-        sst->need_print = true;
+        return;
+    }
+
+    plan_done(jev->jid);
+    print_job_event(jev);
+    return;
 }
 
 static void process_signals(void) {
-    shell_state sst = {
-        .need_prompt = false,
-        .need_print = false,
-        .prompt_upset = !shell_in_fg()
-    };
-
     if (sigchld_caught) {
         LOG_INFO("SIGCHLD caught");
 
@@ -310,47 +328,26 @@ static void process_signals(void) {
 
         job_event *jev;
         while ((jev = pop_job_event())) {
-            sst.need_print = false;
-
             if (fg_event(jev)) {
-                handle_fg_event(&sst, jev);
+                handle_fg_event(jev);
             } else
-                handle_bg_event(&sst, jev);
+                handle_bg_event(jev);
 
-            char *msg = get_jev_str(jev);
-            LOG_INFO("%s", msg);
-
-            if (sst.need_print) {
-                if (!sst.prompt_upset) {
-                    printf("\n");
-                    sst.prompt_upset = true;
-                }
-
-                printf("%s\n", msg);
-            }
-
-            free(msg);
             free_job_event(jev);
         }
     }
 
     if (sigint_caught) {
+        sh_env.need_prompt = true;
+        printf("^C\n");
+        drop_line();
         LOG_INFO("SIGINT caught");
-        printf("^C");
-
-        if (!sst.prompt_upset) {
-            printf("\n");
-            sst.prompt_upset = true;
-        }
     }
 
     if (sighup_caught) {
         LOG_INFO("SIGHUP caught");
         exit(EXIT_FAILURE);
     }
-
-    if (sst.need_prompt || (shell_in_fg() && sst.prompt_upset))
-        display_prompt(sh_env.prompt_style);
 
     reset_sig_flags();
 }
@@ -361,8 +358,6 @@ int main(int argc, char *const *argv) {
 
     xatexit(seashell_shutdown);
     env_setup(&sh_env);
-
-    display_prompt(sh_env.prompt_style);
 
     while (true) {
         char *line;
@@ -385,7 +380,7 @@ int main(int argc, char *const *argv) {
 
         ps_ast *ast = line_to_ast(line);
         if (!ast) {
-            display_prompt(sh_env.prompt_style);
+            sh_env.need_prompt = true;
             continue;
         }
 
@@ -396,12 +391,12 @@ int main(int argc, char *const *argv) {
 
         int jid = create_job_id();
 
-        if (ast->bg) {
-            printf("[%d] Started\n", jid);
-            display_prompt(sh_env.prompt_style);
-        } else {
-            input_deinit(&sh_env); /* restore termios */
+        if (!ast->bg) {
             sh_env.fg_jid = jid;
+            printty_stop(sh_env.pt);
+        } else {
+            printf("[%d] Started\n", jid);
+            sh_env.need_prompt = true;
         }
 
         launch_job(first_pline, ast->bg, jid);

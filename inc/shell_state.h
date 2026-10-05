@@ -14,12 +14,6 @@
 #define NOFG -1
 
 typedef struct {
-    bool need_prompt;
-    bool need_print;
-    bool prompt_upset;
-} shell_state;
-
-typedef struct {
     bool subshell;
     pid_t fg_jid;
     int tty_fd;
@@ -29,6 +23,7 @@ typedef struct {
     map_t vars;
     struct termios tty_state;
     Printty *pt;
+    bool need_prompt;
 } shell_env;
 
 extern shell_env sh_env;

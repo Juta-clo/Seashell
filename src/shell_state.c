@@ -148,6 +148,7 @@ static void var_setup(shell_env *env) {
 
 void env_setup(shell_env *env) {
     env->subshell = false;
+    env->need_prompt = true;
     env->fg_jid = NOFG;
     env->tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
 

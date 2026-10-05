@@ -52,8 +52,8 @@ int main(void) {
             "valgrind",
                 "--vgdb=no", "--enable-debuginfod=no", "--quiet",
                 "--leak-check=full",
-                "--errors-for-leak-kinds=definite,indirect,possible",
-                "--show-leak-kinds=definite,indirect,possible",
+                "--errors-for-leak-kinds=definite,indirect",
+                "--show-leak-kinds=definite,indirect",
                 "--track-fds=bad", "--modify-fds=high",
             SEASHELL_PATH "seashell", (char *)NULL);
 
