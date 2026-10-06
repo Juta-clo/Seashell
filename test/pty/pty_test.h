@@ -6,8 +6,8 @@
 
 #include "linc_tools.h"
 
-#define PROMPT "test> "
-#define PROMPT_LEN 6
+#define PROMPT "> "
+#define PROMPT_LEN 2
 #define PTY_RBUF 100000
 
 #define PSTATE_ZOMBIE   "Z"

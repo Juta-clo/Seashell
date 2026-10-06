@@ -12,6 +12,8 @@
 #include "printty.h"
 #include "variable.h"
 
+#define PROMPT1 "> "
+
 #define DELETE_CURSOR 1
 #define DELETE_WORD   2
 #define DELETE_END    3
@@ -25,7 +27,7 @@ input_editor input = { .offset = 0 };
 
 static void update_prompt(int style) {
     if (style == PROMPT_SIMPLE) {
-        hds_append(input.line, "> ");
+        hds_append(input.line, PROMPT1);
 
     } else if (style == PROMPT_CWD) {
         static char cwd_str[PATH_MAX];
@@ -34,12 +36,12 @@ static void update_prompt(int style) {
         char *cwd_base = basename(cwd);
 
         hds_append(input.line, cwd_base);
-        hds_append(input.line, "> ");
+        hds_append(input.line, PROMPT1);
 
     } else if (style == PROMPT_PS) {
         sh_var *var = lookup_var(&sh_env.vars, "PS");
         if (!var) {
-            hds_append(input.line, "> ");
+            hds_append(input.line, PROMPT1);
 
         } else {
             hds_append(input.line, var->value);
@@ -101,16 +103,16 @@ static void update_start_pos(void) {
             == PRINTTY_ERR)
         xfatal("printty_get_cursor_pos");
 
-    LOG_INFO("llen() = %d, input.cols = %d", llen(), input.cols);
-    LOG_INFO("input.offset = %d, input.start = %d",
-            input.offset, input.start);
-
     int rows_from_start = (input.offset + input.start) / input.cols;
     input.start_row = crow - rows_from_start;
-    if (input.start_row < 0)
-        input.start_row = 0;
 
-    assert(input.start_row < input.rows);
+    LOG_INFO("new term size = [%d,%d]", input.rows, input.cols);
+    LOG_INFO("new cursor position = [%d,%d]", crow, ccol);
+    LOG_INFO("llen() = %d, offset = %d, start = %d", llen(),
+            input.offset, input.start);
+
+    ASSERT_GE_INT(input.start_row, 0);
+    ASSERT_G_INT(input.rows, input.start_row);
 
     LOG_INFO("updated start position: %d", input.start_row);
 }
@@ -124,6 +126,8 @@ static void input_update_cursor(int offset) {
     int crow, ccol;
     get_line_cell(&crow, &ccol, offset);
     printty_cursor_move(sh_env.pt, crow, ccol);
+
+    LOG_INFO("moved cursor to [%d,%d]", crow, ccol);
 }
 
 static void input_redraw(void) {
@@ -142,7 +146,6 @@ static void input_redraw(void) {
             printf("%c", input.line[i]);
     }
 
-    printf(" "); /* needs bottom left check */
     printty_write(sh_env.pt, unibi_clr_eos);
     input_update_cursor(input.offset);
 }

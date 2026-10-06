@@ -44,7 +44,7 @@ TEST(termios, initial_shell_termios) {
 TEST(termios, cbreak_mode_restored_after_fg_job) {
     vterm_send_str("echo x\n");
     assert_term(
-        PROMPT "echo",
+        PROMPT "echo x",
         "x"
     );
 

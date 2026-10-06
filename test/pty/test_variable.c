@@ -132,14 +132,14 @@ TEST(variable, variable_with_quoted_and_unquoted_segments) {
     vterm_send_str("set FOO hello\" beautiful\"' world!'\n");
     assert_term(
         PROMPT "set FOO bar",
-        PROMPT "set FOO hello\" beautiful\"' world!",
+        PROMPT "set FOO hello\" beautiful\"' world!'",
         PROMPT
     );
 
     vterm_send_str("echo $FOO\n");
     assert_term(
         PROMPT "set FOO bar",
-        PROMPT "set FOO hello\" beautiful\"' world!",
+        PROMPT "set FOO hello\" beautiful\"' world!'",
         PROMPT "echo $FOO",
         "hello beautiful world!",
         PROMPT

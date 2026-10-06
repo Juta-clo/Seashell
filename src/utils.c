@@ -38,6 +38,64 @@ void fatal(const char *fmt, ...) {
         exit(EXIT_FAILURE);
 }
 
+void err_assert_eq_int(int a, int b, const char *p1, const char *p2,
+        const char *file, int line)
+{
+    if (a != b) {
+        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+                "%s:%d [%s == %s] failed: %s = %d, %s = %d",
+                file, line, p1, p2, p1, a, p2, b);
+
+        if (sh_env.subshell) {
+            _exit(EXIT_FAILURE);
+        } else
+            exit(EXIT_FAILURE);
+    }
+}
+
+void err_assert_g_int(int a, int b, const char *p1, const char *p2,
+        const char *file, int line)
+{
+    if (a <= b) {
+        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+                "%s:%d [%s > %s] failed: %s = %d, %s = %d",
+                file, line, p1, p2, p1, a, p2, b);
+
+        if (sh_env.subshell) {
+            _exit(EXIT_FAILURE);
+        } else
+            exit(EXIT_FAILURE);
+    }
+}
+
+void err_assert_ge_int(int a, int b, const char *p1, const char *p2,
+        const char *file, int line)
+{
+    if (a < b) {
+        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+                "%s:%d [%s >= %s] failed: %s = %d, %s = %d",
+                file, line, p1, p2, p1, a, p2, b);
+
+        if (sh_env.subshell) {
+            _exit(EXIT_FAILURE);
+        } else
+            exit(EXIT_FAILURE);
+    }
+}
+
+void err_assert(bool b, const char *text, const char *file, int line) {
+    if (!b) {
+        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+                "%s:%d [%s] failed",
+                file, line, text);
+
+        if (sh_env.subshell) {
+            _exit(EXIT_FAILURE);
+        } else
+            exit(EXIT_FAILURE);
+    }
+}
+
 void err_exit(const char *fmt, ...) {
     va_list va;
     va_start(va, fmt);

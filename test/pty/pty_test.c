@@ -53,8 +53,7 @@ void pty_test_sink(const llog_info *info) {
 
     char log_buf[BUFSIZ];
 
-    int n = snprintf(log_buf, BUFSIZ, "%s llog: %s:%d: %s\n",
-            lvl_str, info->site->file, info->site->line, info->msg);
+    int n = snprintf(log_buf, BUFSIZ, "%s: %s\n", lvl_str, info->msg);
 
     if (n < 0)
         return;
@@ -319,6 +318,8 @@ bool verify_cursor(int crow, int ccol) {
 bool verify_vterm_state(const char *msg, int srow, int scol, char **line) {
     size_t len = strlen(msg);
     size_t n = 0;
+    bool msg_verified = false;
+    bool line_ok = true;
 
     if (!msg || len == 0)
         TEST_FAIL_MESSAGE("term_ensure: bad input");
@@ -326,6 +327,7 @@ bool verify_vterm_state(const char *msg, int srow, int scol, char **line) {
         TEST_FAIL_MESSAGE("term_ensure: out of bounds start row");
     if (scol < 0 || scol >= cur_test->vterm.cols)
         TEST_FAIL_MESSAGE("term_ensure: out of bounds start col");
+
 
     for (int row = srow; row < cur_test->vterm.rows; ++row) {
         scol = (row == srow) ? scol : 0;
@@ -337,26 +339,36 @@ bool verify_vterm_state(const char *msg, int srow, int scol, char **line) {
             if (!vterm_screen_get_cell(cur_test->vterm.scr, pos, &cell))
                 TEST_FAIL_MESSAGE("vterm_screen_get_cell");
 
-            uint32_t ch = cell.chars[0];
-            if (ch == 0)
-                ch = ' ';
+            uint32_t cp = cell.chars[0];
+            if (cp == 0)
+                cp = ' ';
 
-            if (ch > 127)
+            if (cp > 127)
                 TEST_FAIL_MESSAGE("non ascii in vterm");
+
+            char ch = cp;
+
+            if (!msg_verified) {
+                if (ch != msg[n])
+                    line_ok = false;
+
+                if (++n >= len)
+                    msg_verified = true;
+
+            } else {
+                if (ch != ' ')
+                    line_ok = false;
+            }
 
             if (line)
                 hds_append_n(*line, &ch, 1);
-
-            if ((char) ch != msg[n++]) {
-                return false;
-            }
-
-            if (n >= len)
-                return true;
         }
+
+        if (msg_verified)
+            break;
     }
 
-    return n >= len;
+    return line_ok;
 }
 
 void write_to_term(const char *str) {
@@ -535,7 +547,11 @@ bool term_ensure(const char *msg, int row, int col, int type) {
 
         if (poll_rv == PTY_POLL_TFD) {
             if (type == ASSERT_LINE) {
-                LOG_ERR("bad line: exp[%s] got[%s]", msg, (line) ? line : "");
+                if (line) {
+                    LOG_ERR("bad line:");
+                    LOG_ERR("  exp[%s]", msg);
+                    LOG_ERR("  got[%s]", line);
+                }
 
             } else if (type == ASSERT_CURSOR) {
                 vterm_state_get_cursorpos(cur_test->vterm.st, &curs_pos);
@@ -639,13 +655,11 @@ void vterm_send_str(const char *msg) {
 
         if (*c == '\n') {
             vterm_keyboard_key(vtty, VTERM_KEY_ENTER, VTERM_MOD_NONE);
-            continue;
         } else if (*c == '\b') {
             vterm_keyboard_key(vtty, VTERM_KEY_BACKSPACE, VTERM_MOD_NONE);
-            continue;
+        } else {
+            vterm_keyboard_unichar(vtty, key, VTERM_MOD_NONE);
         }
-
-        vterm_keyboard_unichar(vtty, key, VTERM_MOD_NONE);
     }
 }
 
@@ -716,12 +730,7 @@ void new_shell(void) {
     *cur_test = (pty_test){0};
 
     /* init pty */
-    struct winsize ws;
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
-        TEST_FAIL_MESSAGE("ioctl");
-
-    ws.ws_row = MAX(30, ws.ws_row / 2);
-    ws.ws_col = MAX(60, ws.ws_col / 2);
+    struct winsize ws = { .ws_row = 15, .ws_col = 45 };
 
     cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, &ws);
     if (cur_test->cpid == 0)
@@ -739,13 +748,16 @@ void new_shell(void) {
     cur_test->vterm.cols = ws.ws_col;
 
     vterm_set_utf8(cur_test->vterm.tty, 1);
+
     cur_test->vterm.scr = vterm_obtain_screen(cur_test->vterm.tty);
     if (!cur_test->vterm.scr)
         TEST_FAIL_MESSAGE("vterm_obtain_screen");
-    vterm_screen_reset(cur_test->vterm.scr, 1);
+
     cur_test->vterm.st = vterm_obtain_state(cur_test->vterm.tty);
     if (!cur_test->vterm.st)
         TEST_FAIL_MESSAGE("vterm_obtain_state");
+
+    vterm_screen_reset(cur_test->vterm.scr, 1);
     vterm_screen_enable_reflow(cur_test->vterm.scr, true);
 
     vterm_output_set_callback(
@@ -762,15 +774,11 @@ void new_shell(void) {
      * the prompt so this works to avoid writing to the mfd
      * before canonical mode is disabled thus having the write
      * echoed by the tty driver. */
-    if (!term_ensure_lines(LN("> ")))
-        TEST_FAIL_MESSAGE("failed to verify initial prompt");
 
-    vterm_send_str("set PS \"test> \"\n");
+    /* assert the cursor *before* the screen contents. */
 
-    if (!term_ensure_lines(LN("> set PS \"test> \"", PROMPT)))
-        TEST_FAIL_MESSAGE("failed to set prompt style variable");
-
-    vterm_send_char('l', VTERM_MOD_CTRL);
+    assert_cursor(0, 2);
+    assert_term("> ", " ");
 }
 
 void delete_shell(void) {

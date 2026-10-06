@@ -20,7 +20,18 @@
 
 shell_env sh_env = {0};
 
-// LLOG SET UP
+void assert_llog_sink(const llog_info *info) {
+    dstr output_msg;
+    dstr_init(&output_msg);
+
+    dstrcat(&output_msg, "ASSERT ");
+    dstrcat(&output_msg, info->msg);
+    dstrcat(&output_msg, "\n");
+
+    write(sh_env.log_fd, output_msg.c_str, output_msg.len);
+    dstr_free(&output_msg);
+}
+
 void shell_llog_sink(const llog_info *info) {
     dstr output_msg;
     dstr_init(&output_msg);
@@ -123,6 +134,8 @@ static void log_setup(int *log_fd) {
 
     } else
         *log_fd = open_log_file(DEFAULT_LOG_DIR);
+
+    sh_env.assert_llog.sink = assert_llog_sink;
 }
 
 static void var_setup(shell_env *env) {

@@ -24,6 +24,7 @@ typedef struct {
     struct termios tty_state;
     Printty *pt;
     bool need_prompt;
+    llog assert_llog;
 } shell_env;
 
 extern shell_env sh_env;
