@@ -21,14 +21,12 @@ TEST_TEAR_DOWN(input) {
 TEST(input, sigint_discards_line) {
     vterm_send_str("abc");
     vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    assert_cursor(0, PROMPT_LEN + 2);
-    assert_term(
+    assert_term(0, PROMPT_LEN + 2,
         PROMPT "abc"
     );
 
     vterm_send_char('c', VTERM_MOD_CTRL);
-    assert_cursor(1, PROMPT_LEN);
-    assert_term(
+    assert_term(1, PROMPT_LEN,
         PROMPT "ab^C",
         PROMPT
     );
@@ -36,8 +34,7 @@ TEST(input, sigint_discards_line) {
 
 TEST(input, line_is_preserved_on_async_job_messages) {
     vterm_send_str("sleep 100 &\n");
-    assert_cursor(2, PROMPT_LEN);
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
@@ -45,10 +42,7 @@ TEST(input, line_is_preserved_on_async_job_messages) {
 
     vterm_send_str("abc");
     vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    assert_cursor(2, PROMPT_LEN + 2);
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term(0, PROMPT_LEN + 2,
         PROMPT "abc"
     );
 
@@ -56,26 +50,16 @@ TEST(input, line_is_preserved_on_async_job_messages) {
      * doesn't matter if it execs or not as we just want the job
      * event which will still be generated if the subshell is killed
      * before it execs */
-    da_pstat pstats;
-    TEST_ASSERT_NOT_EQUAL_INT(-1, child_pstat(cur_test->cpid, &pstats));
-    TEST_ASSERT_EQUAL_size_t(1, pstats.size);
-    xkill(pstats.data[0].pid, SIGTERM);
-    da_free(&pstats);
+    kill_child("sleep");
 
-    assert_cursor(4, PROMPT_LEN + 2);
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term(2, PROMPT_LEN + 2,
         PROMPT "abc",
         "[1] 'sleep' Terminated (15)",
         PROMPT "abc"
     );
 
     vterm_send_str("def\n");
-    assert_cursor(6, PROMPT_LEN);
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term(4, PROMPT_LEN,
         PROMPT "abc",
         "[1] 'sleep' Terminated (15)",
         PROMPT "abdefc ",
@@ -86,16 +70,15 @@ TEST(input, line_is_preserved_on_async_job_messages) {
 
 TEST(input, sigchld_with_no_prompt_redraw) {
     vterm_send_str("abc");
-    assert_term(
+    assert_term(0, PROMPT_LEN + 3,
         PROMPT "abc"
     );
 
-    xkill(cur_test->cpid, SIGCHLD);
+    xkill(test->cpid, SIGCHLD);
 
     vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     vterm_send_str("def\n");
-    assert_cursor(2, PROMPT_LEN);
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "abdefc",
         "seashell: command not found: abdefc",
         PROMPT
@@ -107,8 +90,9 @@ TEST(input, normal_mode_deletion_on_last_character) {
     vterm_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
     vterm_send_str("x");
 
-    assert_cursor(0, PROMPT_LEN + 1);
-    assert_term(PROMPT "ab ");
+    assert_term(0, PROMPT_LEN + 1,
+        PROMPT "ab "
+    );
 }
 
 // NOLINTEND(bugprone-suspicious-missing-comma)

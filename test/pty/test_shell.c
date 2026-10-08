@@ -33,7 +33,7 @@ TEST_TEAR_DOWN(shell) {
 
 TEST(shell, prompt_after_reclaim_tty) {
     vterm_send_str("/bin/echo x\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo x",
         "x",
         PROMPT
@@ -42,7 +42,7 @@ TEST(shell, prompt_after_reclaim_tty) {
 
 TEST(shell, prompt_after_launch_bg_cmd) {
     vterm_send_str("sleep 100 &\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
@@ -51,20 +51,20 @@ TEST(shell, prompt_after_launch_bg_cmd) {
 
 TEST(shell, prompt_after_bg_job_done) {
     vterm_send_str("sleep 100 &\n");
-    assert_term_clear(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("x");
-    assert_term(
+    assert_term(0, PROMPT_LEN + 1,
         PROMPT "x"
     );
 
     TEST_ASSERT_MESSAGE(kill_child("sleep"), "kill_child(\"sleep\")");
 
-    assert_term(
+    assert_term(2, PROMPT_LEN + 1,
         PROMPT "x",
         "[1] 'sleep' Terminated (15)",
         PROMPT "x"
@@ -73,7 +73,7 @@ TEST(shell, prompt_after_bg_job_done) {
 
 TEST(shell, short_lived_bg_cmd) {
     vterm_send_str("true &\n");
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "true &",
         "[1] Started",
         PROMPT,
@@ -84,13 +84,13 @@ TEST(shell, short_lived_bg_cmd) {
 
 TEST(shell, interupt_foreground_job) {
     vterm_send_str("write_sleep\n");
-    assert_term(
+    assert_term(2, 0,
         PROMPT "write_sleep",
         "x"
     );
 
     vterm_send_char('c', VTERM_MOD_CTRL);
-    assert_term(
+    assert_term(3, PROMPT_LEN,
         PROMPT "write_sleep",
         "x",
         "^C%",
@@ -100,13 +100,13 @@ TEST(shell, interupt_foreground_job) {
 
 TEST(shell, stop_fg_job) {
     vterm_send_str("write_sleep\n");
-    assert_term(
+    assert_term(2, 0,
         PROMPT "write_sleep",
         "x"
     );
 
     vterm_send_char('z', VTERM_MOD_CTRL);
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "write_sleep",
         "x",
         "^Z",
@@ -117,14 +117,14 @@ TEST(shell, stop_fg_job) {
 
 TEST(shell, bg_jobs_pid_state) {
     vterm_send_str("sleep 100 &\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("sleep 100 &\n");
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT "sleep 100 &",
@@ -135,7 +135,7 @@ TEST(shell, bg_jobs_pid_state) {
 
 TEST(shell, unknown_cmd) {
     vterm_send_str("zoobar\n"); /* hopefully no-one ever makes this... */
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "zoobar",
         "seashell: command not found: zoobar",
         PROMPT
@@ -145,7 +145,7 @@ TEST(shell, unknown_cmd) {
 TEST(shell, pipeline) {
     /* wc outputs 3 because it includes the newline from grep */
     vterm_send_str("/bin/echo hi | grep h | wc -c\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo hi | grep h | wc -c",
         "3",
         PROMPT
@@ -159,25 +159,21 @@ TEST(shell, bg_job_done_with_fg_job) {
      * correctly skipped. */
 
     vterm_send_str("sleep 100 &\n");
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("write_sleep\n"); /* lose fgroup control */
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term(2, 0,
         PROMPT "write_sleep",
         "x"
     );
 
     TEST_ASSERT_MESSAGE(kill_child("sleep"), "kill_child(\"sleep\")");
 
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term(3, 0,
         PROMPT "write_sleep",
         "x",
         "[1] 'sleep' Terminated (15)"
@@ -186,7 +182,7 @@ TEST(shell, bg_job_done_with_fg_job) {
 
 TEST(shell, builtin_in_bg) {
     vterm_send_str("cd . &\n");
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "cd . &",
         "[1] Started",
         PROMPT,
@@ -202,7 +198,7 @@ TEST(shell, pipeline_of_builtins_does_not_duplicate_prompt) {
      * from a subshell, the prompt was duplicated. */
 
     vterm_send_str("jobs | cd .\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "jobs | cd .",
         "jobs: no job control in this shell",
         PROMPT
@@ -211,7 +207,7 @@ TEST(shell, pipeline_of_builtins_does_not_duplicate_prompt) {
 
 TEST(shell, simple_andor_chain) {
     vterm_send_str("true && /bin/echo x\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "true && /bin/echo x",
         "x",
         PROMPT
@@ -220,7 +216,7 @@ TEST(shell, simple_andor_chain) {
 
 TEST(shell, simple_bg_andor_chain) {
     vterm_send_str("true && /bin/echo x &\n");
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "true && /bin/echo x &",
         "[1] Started",
         PROMPT "x",
@@ -231,16 +227,14 @@ TEST(shell, simple_bg_andor_chain) {
 
 TEST(shell, and_if_logic) {
     vterm_send_str("true && /bin/echo x\n");
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "true && /bin/echo x",
         "x",
         PROMPT
     );
 
     vterm_send_str("false && /bin/echo x\n");
-    assert_term(
-        PROMPT "true && /bin/echo x",
-        "x",
+    assert_term(1, PROMPT_LEN,
         PROMPT "false && /bin/echo x",
         PROMPT
     );
@@ -248,16 +242,14 @@ TEST(shell, and_if_logic) {
 
 TEST(shell, or_if_logic) {
     vterm_send_str("false || /bin/echo y\n");
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "false || /bin/echo y",
         "y",
         PROMPT
     );
 
     vterm_send_str("true || /bin/echo y\n");
-    assert_term(
-        PROMPT "false || /bin/echo y",
-        "y",
+    assert_term(1, PROMPT_LEN,
         PROMPT "true || /bin/echo y",
         PROMPT
     );
@@ -265,7 +257,7 @@ TEST(shell, or_if_logic) {
 
 TEST(shell, and_if_logic_bg) {
     vterm_send_str("true && /bin/echo x &\n");
-    assert_term(
+    assert_term_clear(4, PROMPT_LEN,
         PROMPT "true && /bin/echo x &",
         "[1] Started",
         PROMPT "x",
@@ -274,11 +266,7 @@ TEST(shell, and_if_logic_bg) {
     );
 
     vterm_send_str("false && /bin/echo x &\n");
-    assert_term(
-        PROMPT "true && /bin/echo x &",
-        "[1] Started",
-        PROMPT "x",
-        "[1] '/bin/echo' Exited (0)",
+    assert_term(4, PROMPT_LEN,
         PROMPT "false && /bin/echo x &",
         "[1] Started",
         PROMPT,
@@ -289,7 +277,7 @@ TEST(shell, and_if_logic_bg) {
 
 TEST(shell, or_if_logic_bg) {
     vterm_send_str("false || /bin/echo y &\n");
-    assert_term(
+    assert_term_clear(4, PROMPT_LEN,
         PROMPT "false || /bin/echo y &",
         "[1] Started",
         PROMPT "y",
@@ -298,11 +286,7 @@ TEST(shell, or_if_logic_bg) {
     );
 
     vterm_send_str("true || /bin/echo y &\n");
-    assert_term(
-        PROMPT "false || /bin/echo y &",
-        "[1] Started",
-        PROMPT "y",
-        "[1] '/bin/echo' Exited (0)",
+    assert_term(4, PROMPT_LEN,
         PROMPT "true || /bin/echo y &",
         "[1] Started",
         PROMPT,
@@ -313,7 +297,7 @@ TEST(shell, or_if_logic_bg) {
 
 TEST(shell, and_or_chain_with_builtins) {
     vterm_send_str("echo x && echo y\n");
-    assert_term(
+    assert_term(3, PROMPT_LEN,
         PROMPT "echo x && echo y",
         "x",
         "y",
@@ -323,7 +307,7 @@ TEST(shell, and_or_chain_with_builtins) {
 
 TEST(shell, prompt_after_launch_fg_builtin) {
     vterm_send_str("cd .\n");
-    assert_term(
+    assert_term(1, PROMPT_LEN,
         PROMPT "cd .",
         PROMPT
     );
@@ -331,24 +315,20 @@ TEST(shell, prompt_after_launch_fg_builtin) {
 
 TEST(shell, jobs_builtin) {
     vterm_send_str("jobs\n");
-    assert_term(
+    assert_term_clear(1, PROMPT_LEN,
         PROMPT "jobs",
         PROMPT
     );
 
     vterm_send_str("sleep 100 &\n");
-    assert_term(
-        PROMPT "jobs",
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("jobs\n");
-    assert_term(
-        PROMPT "jobs",
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term(3, PROMPT_LEN,
         PROMPT "jobs",
         "[1] Running",
         "   sleep 100 Running",
@@ -358,7 +338,7 @@ TEST(shell, jobs_builtin) {
 
 TEST(shell, builtin_and_or_logic) {
     vterm_send_str("cd /non-existant || echo ?\n");
-    assert_term(
+    assert_term_clear(3, PROMPT_LEN,
         PROMPT "cd /non-existant || echo ?",
         "cd: chdir: No such file or directory",
         "?",
@@ -366,10 +346,7 @@ TEST(shell, builtin_and_or_logic) {
     );
 
     vterm_send_str("cd /non-existant && echo ?\n");
-    assert_term(
-        PROMPT "cd /non-existant || echo ?",
-        "cd: chdir: No such file or directory",
-        "?",
+    assert_term(2, PROMPT_LEN,
         PROMPT "cd /non-existant && echo ?",
         "cd: chdir: No such file or directory",
         PROMPT
@@ -378,7 +355,7 @@ TEST(shell, builtin_and_or_logic) {
 
 TEST(shell, fg_stopped_bg_job) {
     vterm_send_str("cat &\n");
-    assert_term(
+    assert_term_clear(4, PROMPT_LEN,
         PROMPT "cat &",
         "[1] Started",
         PROMPT,
@@ -387,11 +364,7 @@ TEST(shell, fg_stopped_bg_job) {
     );
 
     vterm_send_str("fg %1\n");
-    assert_term(
-        PROMPT "cat &",
-        "[1] Started",
-        PROMPT,
-        "[1] Stopped",
+    assert_term(2, 0,
         PROMPT "fg %1",
         "[1] Continued"
     );
@@ -399,16 +372,14 @@ TEST(shell, fg_stopped_bg_job) {
 
 TEST(shell, kill_builtin_works_on_bg_jobs) {
     vterm_send_str("sleep 100 &\n");
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("jobs\n");
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term_clear(3, PROMPT_LEN,
         PROMPT "jobs",
         "[1] Running",
         "   sleep 100 Running",
@@ -416,26 +387,14 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
     );
 
     vterm_send_str("kill %1\n");
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
-        PROMPT "jobs",
-        "[1] Running",
-        "   sleep 100 Running",
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "kill %1",
         "[1] 'sleep' Terminated (15)",
         PROMPT
     );
 
     vterm_send_str("jobs\n");
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
-        PROMPT "jobs",
-        "[1] Running",
-        "   sleep 100 Running",
-        PROMPT "kill %1",
-        "[1] 'sleep' Terminated (15)",
+    assert_term(1, PROMPT_LEN,
         PROMPT "jobs",
         PROMPT
     );
@@ -443,27 +402,21 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
 
 TEST(shell, bg_on_stopped_job_resumes_it) {
     vterm_send_str("sleep 100 &\n");
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("kill -STOP %1\n");
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "kill -STOP %1",
         "[1] Stopped",
         PROMPT
     );
 
     vterm_send_str("bg %1\n");
-    assert_term(
-        PROMPT "sleep 100 &",
-        "[1] Started",
-        PROMPT "kill -STOP %1",
-        "[1] Stopped",
+    assert_term(2, PROMPT_LEN,
         PROMPT "bg %1",
         "[1] Continued",
         PROMPT
@@ -472,16 +425,14 @@ TEST(shell, bg_on_stopped_job_resumes_it) {
 
 TEST(shell, kill_multiple_proc_job) {
     vterm_send_str("sleep 100 | sleep 100 | sleep 100 &\n");
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 | sleep 100 | sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("kill %1\n");
-    assert_term(
-        PROMPT "sleep 100 | sleep 100 | sleep 100 &",
-        "[1] Started",
+    assert_term(4, PROMPT_LEN,
         PROMPT "kill %1",
         "[1] 'sleep' Terminated (15)",
         "    'sleep' Terminated (15)",
@@ -492,7 +443,7 @@ TEST(shell, kill_multiple_proc_job) {
 
 TEST(shell, sigint_on_non_final_proc_prints_newline) {
     vterm_send_str("self_kill -INT | self_kill -TERM\n");
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "self_kill -INT | self_kill -TERM",
         " ",
         "[1] 'self_kill' Interrupt (2)",
@@ -503,7 +454,7 @@ TEST(shell, sigint_on_non_final_proc_prints_newline) {
 
 TEST(shell, sigint_on_final_proc) {
     vterm_send_str("self_kill -INT\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "self_kill -INT",
         " ",
         PROMPT
@@ -512,7 +463,7 @@ TEST(shell, sigint_on_final_proc) {
 
 TEST(shell, process_exits_normally_in_bg) {
     vterm_send_str("true &\n");
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "true &",
         "[1] Started",
         PROMPT,
@@ -523,7 +474,7 @@ TEST(shell, process_exits_normally_in_bg) {
 
 TEST(shell, fg_process_signaled) {
     vterm_send_str("self_kill -TERM\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "self_kill -TERM",
         "[1] 'self_kill' Terminated (15)",
         PROMPT
@@ -532,7 +483,7 @@ TEST(shell, fg_process_signaled) {
 
 TEST(shell, fg_process_stopped) {
     vterm_send_str("self_kill -STOP\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "self_kill -STOP",
         "[1] Stopped",
         PROMPT
@@ -541,7 +492,7 @@ TEST(shell, fg_process_stopped) {
 
 TEST(shell, fg_process_stopped_interactively) {
     vterm_send_str("self_kill -TSTP\n");
-    assert_term(
+    assert_term(3, PROMPT_LEN,
         PROMPT "self_kill -TSTP",
         " ",
         "[1] Stopped",
@@ -551,13 +502,13 @@ TEST(shell, fg_process_stopped_interactively) {
 
 TEST(shell, send_sigint_to_process_that_catches_it) {
     vterm_send_str("sleep 100 | write_sleep\n");
-    assert_term(
+    assert_term(2, 0,
         PROMPT "sleep 100 | write_sleep",
         "x"
     );
 
     vterm_send_char('c', VTERM_MOD_CTRL);
-    assert_term(
+    assert_term(3, PROMPT_LEN,
         PROMPT "sleep 100 | write_sleep",
         "x",
         "^C",
@@ -567,14 +518,14 @@ TEST(shell, send_sigint_to_process_that_catches_it) {
 
 TEST(shell, stopped_process_then_kill_builtin) {
     vterm_send_str("self_kill -STOP | sleep 100 &\n");
-    assert_term(
+    assert_term(2, PROMPT_LEN,
         PROMPT "self_kill -STOP | sleep 100 &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("x");
-    assert_term(
+    assert_term(2, PROMPT_LEN + 1,
         PROMPT "self_kill -STOP | sleep 100 &",
         "[1] Started",
         PROMPT "x"
@@ -586,7 +537,7 @@ TEST(shell, stopped_process_then_kill_builtin) {
         TEST_FAIL_MESSAGE("verify_pstate(\"self_kill\", PSTATE_STOPPED");
 
     vterm_send_str("kill %1\n");
-    assert_term(
+    assert_term(4, PROMPT_LEN,
         PROMPT "self_kill -STOP | sleep 100 &",
         "[1] Started",
         PROMPT "kill %1",
@@ -597,40 +548,28 @@ TEST(shell, stopped_process_then_kill_builtin) {
 
 TEST(shell, stop_pline_with_plines_left) {
     vterm_send_str("sleep 1 || true &\n");
-    assert_term(
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 1 || true &",
         "[1] Started",
         PROMPT
     );
 
     vterm_send_str("kill -STOP %1\n");
-    assert_term(
-        PROMPT "sleep 1 || true &",
-        "[1] Started",
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "kill -STOP %1",
         "[1] Stopped",
         PROMPT
     );
 
     vterm_send_str("kill -CONT %1\n");
-    assert_term(
-        PROMPT "sleep 1 || true &",
-        "[1] Started",
-        PROMPT "kill -STOP %1",
-        "[1] Stopped",
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "kill -CONT %1",
         "[1] Continued",
         PROMPT
     );
 
     vterm_send_str("kill %1\n");
-    assert_term(
-        PROMPT "sleep 1 || true &",
-        "[1] Started",
-        PROMPT "kill -STOP %1",
-        "[1] Stopped",
-        PROMPT "kill -CONT %1",
-        "[1] Continued",
+    assert_term(2, PROMPT_LEN,
         PROMPT "kill %1",
         "[1] 'sleep' Terminated (15)",
         PROMPT
@@ -638,24 +577,23 @@ TEST(shell, stop_pline_with_plines_left) {
 }
 
 TEST(shell, cancel_andor_chain_with_interupt) {
-    vterm_send_str("write_sleep && echo x\n");
-    assert_term(
-        PROMPT "write_sleep && echo x",
+    vterm_send_str("interrupt_me && echo x\n");
+    assert_term(1, 1,
+        PROMPT "interrupt_me && echo x",
         "x"
     );
 
     vterm_send_char('c', VTERM_MOD_CTRL);
-    assert_term(
-        PROMPT "write_sleep && echo x",
-        "x",
-        "^C",
+    assert_term(2, PROMPT_LEN,
+        PROMPT "interrupt_me && echo x",
+        "x^C",
         PROMPT
     );
 }
 
 TEST(shell, cancel_andor_chain_with_signal) {
     vterm_send_str("self_kill -TERM || echo x\n");
-    assert_term(
+    assert_term(3, PROMPT_LEN,
         PROMPT "self_kill -TERM || echo x",
         "[1] 'self_kill' Terminated (15)",
         "x",
@@ -668,8 +606,8 @@ TEST(shell, cancel_andor_chain_with_signal) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(shell) {
-    RUN_TEST_CASE(shell, prompt_after_launch_bg_cmd);
     RUN_TEST_CASE(shell, prompt_after_reclaim_tty);
+    RUN_TEST_CASE(shell, prompt_after_launch_bg_cmd);
     RUN_TEST_CASE(shell, prompt_after_bg_job_done);
     RUN_TEST_CASE(shell, short_lived_bg_cmd);
     RUN_TEST_CASE(shell, interupt_foreground_job);

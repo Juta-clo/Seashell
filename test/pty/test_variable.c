@@ -16,7 +16,7 @@ TEST_SETUP(variable) {
 
     vterm_send_str("set FOO bar\n");
 
-    assert_term(
+    assert_term_clear(1, PROMPT_LEN,
         PROMPT "set FOO bar",
         PROMPT
     );
@@ -32,8 +32,7 @@ TEST_TEAR_DOWN(variable) {
 
 TEST(variable, variable) {
     vterm_send_str("echo $FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOO",
         "bar",
         PROMPT
@@ -42,8 +41,7 @@ TEST(variable, variable) {
 
 TEST(variable, back_to_back_variables) {
     vterm_send_str("echo $FOO$FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOO$FOO",
         "barbar",
         PROMPT
@@ -52,8 +50,7 @@ TEST(variable, back_to_back_variables) {
 
 TEST(variable, regular_text_then_variable) {
     vterm_send_str("echo abc$FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo abc$FOO",
         "abcbar",
         PROMPT
@@ -62,8 +59,7 @@ TEST(variable, regular_text_then_variable) {
 
 TEST(variable, variable_then_regular_text) {
     vterm_send_str("echo $FOOabc\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOOabc",
         " ",
         PROMPT
@@ -72,8 +68,7 @@ TEST(variable, variable_then_regular_text) {
 
 TEST(variable, variable_then_escaped_regular_text) {
     vterm_send_str("echo $FOO\\abc\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOO\\abc",
         "barabc",
         PROMPT
@@ -82,8 +77,7 @@ TEST(variable, variable_then_escaped_regular_text) {
 
 TEST(variable, variable_then_regular_delim) {
     vterm_send_str("/bin/echo $FOO.txt $FOO/home $FOO bee\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo $FOO.txt $FOO/home $FOO bee",
         "bar.txt bar/home bar bee",
         PROMPT
@@ -92,8 +86,7 @@ TEST(variable, variable_then_regular_delim) {
 
 TEST(variable, escaped_variable_does_not_expand) {
     vterm_send_str("echo \\$FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo \\$FOO",
         "$FOO",
         PROMPT
@@ -102,8 +95,7 @@ TEST(variable, escaped_variable_does_not_expand) {
 
 TEST(variable, set_builtin_fails_on_bad_key) {
     vterm_send_str("set \\$BAD bar\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "set \\$BAD bar",
         "set: failed to add variable",
         PROMPT
@@ -112,16 +104,13 @@ TEST(variable, set_builtin_fails_on_bad_key) {
 
 TEST(variable, variable_with_space_expands) {
     vterm_send_str("set FOO \"b a r\"\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term_clear(1, PROMPT_LEN,
         PROMPT "set FOO \"b a r\"",
         PROMPT
     );
 
     vterm_send_str("echo $FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
-        PROMPT "set FOO \"b a r\"",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOO",
         "b a r",
         PROMPT
@@ -130,16 +119,13 @@ TEST(variable, variable_with_space_expands) {
 
 TEST(variable, variable_with_quoted_and_unquoted_segments) {
     vterm_send_str("set FOO hello\" beautiful\"' world!'\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term_clear(1, PROMPT_LEN,
         PROMPT "set FOO hello\" beautiful\"' world!'",
         PROMPT
     );
 
     vterm_send_str("echo $FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
-        PROMPT "set FOO hello\" beautiful\"' world!'",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOO",
         "hello beautiful world!",
         PROMPT
@@ -148,8 +134,7 @@ TEST(variable, variable_with_quoted_and_unquoted_segments) {
 
 TEST(variable, variable_then_escaped_variable) {
     vterm_send_str("echo $FOO\\$FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOO\\$FOO",
         "bar$FOO",
         PROMPT
@@ -158,8 +143,7 @@ TEST(variable, variable_then_escaped_variable) {
 
 TEST(variable, tilde_expansion) {
     vterm_send_str("echo ~\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo ~",
         home,
         PROMPT
@@ -168,8 +152,7 @@ TEST(variable, tilde_expansion) {
 
 TEST(variable, escaped_tilde) {
     vterm_send_str("echo \\~\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo \\~",
         "~",
         PROMPT
@@ -178,8 +161,7 @@ TEST(variable, escaped_tilde) {
 
 TEST(variable, regular_text_around_escaped_tilde) {
     vterm_send_str("echo x\\~y\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo x\\~y",
         "x~y",
         PROMPT
@@ -188,8 +170,7 @@ TEST(variable, regular_text_around_escaped_tilde) {
 
 TEST(variable, variable_expands_inside_double_quotes) {
     vterm_send_str("echo \"$FOO\"\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo \"$FOO\"",
         "bar",
         PROMPT
@@ -198,28 +179,20 @@ TEST(variable, variable_expands_inside_double_quotes) {
 
 TEST(variable, exit_status_variable) {
     vterm_send_str("echo $?\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "echo $?",
         "0",
         PROMPT
     );
 
     vterm_send_str("false\n");
-    assert_term(
-        PROMPT "set FOO bar",
-        PROMPT "echo $?",
-        "0",
+    assert_term_clear(1, PROMPT_LEN,
         PROMPT "false",
         PROMPT
     );
 
     vterm_send_str("echo $?\n");
-    assert_term(
-        PROMPT "set FOO bar",
-        PROMPT "echo $?",
-        "0",
-        PROMPT "false",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $?",
         "1",
         PROMPT
@@ -228,16 +201,13 @@ TEST(variable, exit_status_variable) {
 
 TEST(variable, unset_builtin_with_exit_status_variable) {
     vterm_send_str("unset ?\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term_clear(1, PROMPT_LEN,
         PROMPT "unset ?",
         PROMPT
     );
 
     vterm_send_str("echo $?\n");
-    assert_term(
-        PROMPT "set FOO bar",
-        PROMPT "unset ?",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $?",
         "0",
         PROMPT
@@ -246,16 +216,13 @@ TEST(variable, unset_builtin_with_exit_status_variable) {
 
 TEST(variable, set_builtin_with_exit_status_variable) {
     vterm_send_str("set ? FOO\n");
-    assert_term(
-        PROMPT "set FOO bar",
+    assert_term_clear(1, PROMPT_LEN,
         PROMPT "set ? FOO",
         PROMPT
     );
 
     vterm_send_str("echo $?\n");
-    assert_term(
-        PROMPT "set FOO bar",
-        PROMPT "set ? FOO",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $?",
         "0",
         PROMPT

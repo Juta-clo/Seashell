@@ -497,21 +497,33 @@ void new_curses_ui() {
         if (ch == 'k')
             snap_i = MAX(0, (int) snap_i - 1);
 
-        if (ch == KEY_LEFT)
-            if (quad->ratio_x > 0.05F)
-                quad->ratio_x -= 0.05F;
+        if (ch == KEY_LEFT) {
+            if (quad->ratio_x > 0.02F) {
+                quad->ratio_x -= 0.02F;
+            } else
+                quad->ratio_x = 0.0F;
+        }
 
-        if (ch == KEY_RIGHT)
-            if (quad->ratio_x < 0.95F)
-                quad->ratio_x += 0.05F;
+        if (ch == KEY_RIGHT) {
+            if (quad->ratio_x < 0.98F) {
+                quad->ratio_x += 0.02F;
+            } else
+                quad->ratio_x = 1.00F;
+        }
 
-        if (ch == KEY_UP)
-            if (quad->ratio_y > 0.05F)
-                quad->ratio_y -= 0.05F;
+        if (ch == KEY_UP) {
+            if (quad->ratio_y > 0.02F) {
+                quad->ratio_y -= 0.02F;
+            } else
+                quad->ratio_y = 0.00F;
+        }
 
-        if (ch == KEY_DOWN)
-            if (quad->ratio_y < 0.95F)
-                quad->ratio_y += 0.05F;
+        if (ch == KEY_DOWN) {
+            if (quad->ratio_y < 0.98F) {
+                quad->ratio_y += 0.02F;
+            } else
+                quad->ratio_y = 1.00F;
+        }
     }
 
     sp_free(quad);

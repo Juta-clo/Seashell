@@ -15,14 +15,6 @@
 #include "proc_view.h"
 #include "unity.h"
 
-#define ASSERT_CURSOR 1
-#define ASSERT_LINE   2
-
-#define PTY_POLL_TFD   1
-#define PTY_POLL_SHELL 2
-#define PTY_POLL_VAL   3
-#define PTY_POLL_MFD   4
-
 da_pty_test all_tests;
 bool verbose_mode = false;
 bool run_valgrind = false;
@@ -40,7 +32,7 @@ struct pollfd pollfds[NFDS];
 bool first = true;
 
 struct timespec start, end;
-pty_test *cur_test;
+pty_test *test;
 
 // LLOG SET UP
 void pty_test_sink(const llog_info *info) {
@@ -63,7 +55,7 @@ void pty_test_sink(const llog_info *info) {
         log_buf[BUFSIZ - 1] = '\0';
     }
 
-    add_lines(&cur_test->test_lines, log_buf);
+    add_lines(&test->test_lines, log_buf);
 }
 static llog pty_log = { .sink = pty_test_sink };
 LLOG_DEFAULT(&pty_log);
@@ -257,86 +249,29 @@ char *flush_stream(int fd, bool break_on_eio) {
     return out;
 }
 
-void get_vt_snap(vt_snap *snap) {
-    vterm_state_get_cursorpos(cur_test->vterm.st, &snap->curs_pos);
-
-    for (int row = 0; row < cur_test->vterm.rows; ++row) {
-        char **line = da_push(&snap->lines);
-        *line = xcalloc(1, cur_test->vterm.cols + 1);
-
-        for (int col = 0; col < cur_test->vterm.cols; ++col) {
-            VTermScreenCell cell;
-            VTermPos pos = { .row = row, .col = col };
-
-            if (!vterm_screen_get_cell(cur_test->vterm.scr, pos, &cell))
-                TEST_FAIL_MESSAGE("vterm_screen_get_cell");
-
-            uint32_t ch = cell.chars[0];
-
-            if (ch == 0)
-                ch = ' ';
-
-            (*line)[col] = ch;
-        }
-    }
-}
-
-void take_vt_snapshot(void) {
-    vt_snap *snap = da_push(&cur_test->snaps);
+void free_vt_snap(vt_snap *snap) {
+    assert(snap);
+    for (size_t i = 0; i < snap->lines.size; ++i)
+        free(snap->lines.data[i]);
+    da_free(&snap->lines);
     *snap = (vt_snap){0};
-    get_vt_snap(snap);
-    snap->rows = cur_test->vterm.rows;
-    snap->cols = cur_test->vterm.cols;
 }
 
-void test_resize_term(int row, int col) {
-    if (row < 0 || col < 0)
-        TEST_FAIL_MESSAGE("test_resize_term: bad row/col");
+void get_vt_snap(vt_snap *snap) {
+    assert(snap);
+    *snap = (vt_snap){0};
 
-    vterm_set_size(cur_test->vterm.tty, row, col);
-    cur_test->vterm.rows = row;
-    cur_test->vterm.cols = col;
+    vterm_state_get_cursorpos(test->vterm.st, &snap->curs_pos);
 
-    struct winsize ws = { .ws_row = row, .ws_col = col };
-    if (ioctl(cur_test->mfd, TIOCSWINSZ, &ws) == -1)
-        TEST_FAIL_MESSAGE("ioctl");
-}
+    for (int row = 0; row < test->vterm.rows; ++row) {
+        char **line = da_push(&snap->lines);
+        *line = xcalloc(1, test->vterm.cols + 1);
 
-bool verify_cursor(int crow, int ccol) {
-    if (crow < 0 || crow >= cur_test->vterm.rows)
-        TEST_FAIL_MESSAGE("verify_cursor: out of bounds start row");
-    if (ccol < 0 || ccol >= cur_test->vterm.cols)
-        TEST_FAIL_MESSAGE("verify_cursor: out of bounds start col");
-
-    VTermPos curs_pos;
-    vterm_state_get_cursorpos(cur_test->vterm.st, &curs_pos);
-
-    bool rv = (crow == curs_pos.row && ccol == curs_pos.col);
-    return rv;
-}
-
-bool verify_vterm_state(const char *msg, int srow, int scol, char **line) {
-    size_t len = strlen(msg);
-    size_t n = 0;
-    bool msg_verified = false;
-    bool line_ok = true;
-
-    if (!msg || len == 0)
-        TEST_FAIL_MESSAGE("term_ensure: bad input");
-    if (srow < 0 || srow >= cur_test->vterm.rows)
-        TEST_FAIL_MESSAGE("term_ensure: out of bounds start row");
-    if (scol < 0 || scol >= cur_test->vterm.cols)
-        TEST_FAIL_MESSAGE("term_ensure: out of bounds start col");
-
-
-    for (int row = srow; row < cur_test->vterm.rows; ++row) {
-        scol = (row == srow) ? scol : 0;
-
-        for (int col = scol; col < cur_test->vterm.cols; ++col) {
+        for (int col = 0; col < test->vterm.cols; ++col) {
             VTermScreenCell cell;
             VTermPos pos = { .row = row, .col = col };
 
-            if (!vterm_screen_get_cell(cur_test->vterm.scr, pos, &cell))
+            if (!vterm_screen_get_cell(test->vterm.scr, pos, &cell))
                 TEST_FAIL_MESSAGE("vterm_screen_get_cell");
 
             uint32_t cp = cell.chars[0];
@@ -348,40 +283,76 @@ bool verify_vterm_state(const char *msg, int srow, int scol, char **line) {
 
             char ch = cp;
 
-            if (!msg_verified) {
-                if (ch != msg[n])
-                    line_ok = false;
+            if (ch == 0)
+                ch = ' ';
 
-                if (++n >= len)
-                    msg_verified = true;
-
-            } else {
-                if (ch != ' ')
-                    line_ok = false;
-            }
-
-            if (line)
-                hds_append_n(*line, &ch, 1);
+            (*line)[col] = ch;
         }
+    }
+}
 
-        if (msg_verified)
-            break;
+void take_vt_snapshot(void) {
+    vt_snap *snap = da_push(&test->snaps);
+    get_vt_snap(snap);
+    snap->rows = test->vterm.rows;
+    snap->cols = test->vterm.cols;
+}
+
+void test_resize_term(int row, int col) {
+    if (row < 0 || col < 0)
+        TEST_FAIL_MESSAGE("test_resize_term: bad row/col");
+
+    vterm_set_size(test->vterm.tty, row, col);
+    test->vterm.rows = row;
+    test->vterm.cols = col;
+
+    struct winsize ws = { .ws_row = row, .ws_col = col };
+    if (ioctl(test->mfd, TIOCSWINSZ, &ws) == -1)
+        TEST_FAIL_MESSAGE("ioctl");
+}
+
+bool verify_cursor(int crow, int ccol) {
+    if (crow < 0 || crow >= test->vterm.rows)
+        TEST_FAIL_MESSAGE("verify_cursor: out of bounds start row");
+    if (ccol < 0 || ccol >= test->vterm.cols)
+        TEST_FAIL_MESSAGE("verify_cursor: out of bounds start col");
+
+    VTermPos curs_pos;
+    vterm_state_get_cursorpos(test->vterm.st, &curs_pos);
+
+    bool rv = (crow == curs_pos.row && ccol == curs_pos.col);
+    return rv;
+}
+
+bool verify_vterm_state(const char *exp, vt_snap *snap) {
+    assert(exp && snap);
+    assert((int)strlen(exp) == test->vterm.rows * test->vterm.cols);
+
+    get_vt_snap(snap);
+
+    for (int row = 0; row < test->vterm.rows; ++row) {
+        char *line = snap->lines.data[row];
+
+        for (int col = 0; col < test->vterm.cols; ++col) {
+            if (exp[(row * test->vterm.cols) + col] != line[col])
+                return false;
+        }
     }
 
-    return line_ok;
+    return true;
 }
 
 void write_to_term(const char *str) {
     const char *c = str;
     size_t left = strlen(str);
     while (left != 0) {
-        size_t n = vterm_input_write(cur_test->vterm.tty, c, left);
+        size_t n = vterm_input_write(test->vterm.tty, c, left);
         c += n;
         left -= n;
     }
 }
 
-int pty_test_poll(int tfd) {
+int pty_test_poll(int tfd, bool log_mfd) {
     pollfds[POLL_TFD] = (struct pollfd){ .fd = tfd, .events = POLLIN };
 
     int rv = -1;
@@ -397,22 +368,25 @@ int pty_test_poll(int tfd) {
 
         if (pollfds[POLL_SHELL].revents & POLLIN) {
             data = flush_pipe(sh_pipe[0]);
-            add_lines(&cur_test->shell_log_lines, data);
+            add_lines(&test->shell_log_lines, data);
             rv = PTY_POLL_SHELL;
             goto cleanup;
         }
 
         if (pollfds[POLL_VAL].revents & POLLIN) {
             data = flush_pipe(val_pipe[0]);
-            add_lines(&cur_test->val_lines, data);
+            add_lines(&test->val_lines, data);
             rv = PTY_POLL_VAL;
             goto cleanup;
         }
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
-            data = flush_pty(cur_test->mfd);
-            dstrcat(&cur_test->ptydata, data);
-            add_lines(&cur_test->raw_lines, data);
+            data = flush_pty(test->mfd);
+            if (log_mfd)
+                LOG_INFO("mfd: %s", data);
+
+            dstrcat(&test->ptydata, data);
+            add_lines(&test->raw_lines, data);
             write_to_term(data);
             rv = PTY_POLL_MFD;
             goto cleanup;
@@ -430,12 +404,12 @@ bool kill_child(const char *name) {
     int tfd = start_timerfd(1);
 
     for (size_t i = 0; i < loops; ++i) {
-        if (child_pstat(cur_test->cpid, &pstats) == -1)
+        if (child_pstat(test->cpid, &pstats) == -1)
             TEST_FAIL_MESSAGE("child_pstat");
 
         for (size_t y = 0; y < pstats.size; ++y) {
             if (strcmp(pstats.data[y].name, name) == 0) {
-                if (cur_test->cpid == pstats.data[y].pid) {
+                if (test->cpid == pstats.data[y].pid) {
                     LOG_ERR("trying to kill seashell");
                     da_free(&pstats);
                     xclose(tfd);
@@ -449,7 +423,7 @@ bool kill_child(const char *name) {
             }
         }
 
-        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+        while (pty_test_poll(tfd, false) != PTY_POLL_TFD)
             continue;
 
         set_timerfd(tfd, 1);
@@ -468,7 +442,7 @@ bool verify_pstate(const char *name, const char *state) {
     int tfd = start_timerfd(1);
 
     for (size_t i = 0; i < loops; ++i) {
-        if (child_pstat(cur_test->cpid, &pstats) == -1)
+        if (child_pstat(test->cpid, &pstats) == -1)
             break;
 
         for (size_t y = 0; y < pstats.size; ++y) {
@@ -487,7 +461,7 @@ bool verify_pstate(const char *name, const char *state) {
         if (state_good)
             break;
 
-        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+        while (pty_test_poll(tfd, false) != PTY_POLL_TFD)
             continue;
 
         set_timerfd(tfd, 1);
@@ -507,7 +481,7 @@ bool verify_termios(struct termios exp) {
     int tfd = start_timerfd(1);
 
     for (int i = 0; i < sleep_time; ++i) {
-        xtcgetattr(cur_test->mfd, &tio);
+        xtcgetattr(test->mfd, &tio);
         if (memcmp(exp.c_cc, tio.c_cc, sizeof(tio.c_cc))            == 0 &&
             memcmp(&exp.c_iflag, &tio.c_iflag, sizeof(tio.c_iflag)) == 0 &&
             memcmp(&exp.c_oflag, &tio.c_oflag, sizeof(tio.c_oflag)) == 0 &&
@@ -518,7 +492,7 @@ bool verify_termios(struct termios exp) {
             return true;
         }
 
-        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+        while (pty_test_poll(tfd, false) != PTY_POLL_TFD)
             continue;
 
         set_timerfd(tfd, 1);
@@ -528,86 +502,96 @@ bool verify_termios(struct termios exp) {
     return false;
 }
 
-bool term_ensure(const char *msg, int row, int col, int type) {
-    if (type == ASSERT_LINE) {
-        if (verify_vterm_state(msg, row, col, NULL))
-            return true;
+char *lines_to_term(char **lines) {
+#define VTERM_ROWS_MAX 4096
+    assert(lines);
+    assert(test->vterm.rows <= 4096);
 
-    } else if (type == ASSERT_CURSOR)
-        if (verify_cursor(row, col))
-            return true;
+    for (int i = 0; i < test->vterm.rows && lines[i]; ++i) {
+        if (i == test->vterm.rows - 1 && lines[i + 1]) {
+            LOG_ERR("Too many terminal lines in assertion");
+            TEST_FAIL_MESSAGE("Too many terminal lines in assertion");
+        }
+    }
 
-    int rv = false;
-    char *line = NULL;
+    char *all_line = nullptr;
+    bool lines_done = false;
+    char spacing[VTERM_ROWS_MAX];
+    memset(spacing, ' ', VTERM_ROWS_MAX);
+
+    for (int i = 0; i < test->vterm.rows; ++i) {
+        if (!lines_done && lines[i] == NULL)
+            lines_done = true;
+
+        int gap = test->vterm.cols;
+
+        if (!lines_done) {
+            if (test->vterm.cols < (int)strlen(lines[i])) {
+                LOG_ERR("bad line request, len=%d, cols=%d: [%s]",
+                    (int)hds_len(lines[i]), test->vterm.cols, lines[i]);
+                TEST_FAIL_MESSAGE("bad line request");
+            }
+
+            hds_append(all_line, lines[i]);
+            gap -= (int)strlen(lines[i]);
+        }
+
+        hds_append_n(all_line, spacing, gap);
+    }
+
+    assert((int)strlen(all_line) == test->vterm.rows * test->vterm.cols);
+    return all_line;
+}
+
+bool term_ensure(char **lines, int crow, int ccol) {
+    assert(crow >= 0 && ccol >= 0);
+    assert(crow < test->vterm.rows && ccol < test->vterm.cols);
+
+    vt_snap snap;
     VTermPos curs_pos;
+    bool result = false;
+    char *exp = lines_to_term(lines);
+
+    if (verify_vterm_state(exp, &snap) && verify_cursor(crow, ccol)) {
+        free_vt_snap(&snap);
+        hds_free(exp);
+        return true;
+    }
+
     int tfd = start_timerfd((run_valgrind) ? 1000 : 100);
 
     while (true) {
-        int poll_rv = pty_test_poll(tfd);
+        int poll_rv = pty_test_poll(tfd, false);
 
         if (poll_rv == PTY_POLL_TFD) {
-            if (type == ASSERT_LINE) {
-                if (line) {
-                    LOG_ERR("bad line:");
-                    LOG_ERR("  exp[%s]", msg);
-                    LOG_ERR("  got[%s]", line);
-                }
-
-            } else if (type == ASSERT_CURSOR) {
-                vterm_state_get_cursorpos(cur_test->vterm.st, &curs_pos);
-                LOG_ERR("bad cursor: exp[%d,%d] got[%d,%d]",
-                    row, col, curs_pos.row, curs_pos.col);
-            }
+            LOG_ERR("--LINES--");
+            for (int i = 0; i < test->vterm.rows; ++i)
+                LOG_ERR("[%.*s] [%.*s]", test->vterm.cols,
+                        exp + (i * test->vterm.cols), test->vterm.cols,
+                        snap.lines.data[i]);
+            LOG_ERR("");
+            vterm_state_get_cursorpos(test->vterm.st, &curs_pos);
+            LOG_ERR("--CURSOR--");
+            LOG_ERR("[%d,%d] [%d,%d]",
+                crow, ccol, curs_pos.row, curs_pos.col);
 
             goto cleanup;
 
         } else if (poll_rv == PTY_POLL_MFD) {
-            if (type == ASSERT_LINE) {
-                if (line) {
-                    hds_free(line);
-                    line = NULL;
-                }
+            free_vt_snap(&snap);
 
-                if (verify_vterm_state(msg, row, col, &line)) {
-                    rv = true;
-                    goto cleanup;
-                }
-
-            } else if (type == ASSERT_CURSOR) {
-                if (verify_cursor(row, col)) {
-                    rv = true;
-                    goto cleanup;
-                }
+            if (verify_vterm_state(exp, &snap) && verify_cursor(crow, ccol)) {
+                result = true;
+                goto cleanup;
             }
         }
     }
 
 cleanup:
-    close(tfd);
-    hds_free(line);
-    return rv;
-}
-
-bool term_ensure_cursor(int row, int col) {
-    return term_ensure(NULL, row, col, ASSERT_CURSOR);
-}
-
-bool term_ensure_lines(char **lines) {
-    size_t n = 0;
-    for (char **line = lines; *line != NULL; ++line)
-        ++n;
-
-    if (n == 0) {
-        LOG_WARN("called term_ensure_lines with 0 lines");
-        return true;
-    }
-
-    for (size_t i = 0; i < n; ++i) {
-        if (!term_ensure(lines[i], i, 0, ASSERT_LINE))
-            return false;
-    }
-
-    return true;
+    xclose(tfd);
+    free_vt_snap(&snap);
+    hds_free(exp);
+    return result;
 }
 
 void child_pstat_snapshot(void) {
@@ -615,23 +599,23 @@ void child_pstat_snapshot(void) {
     char info_buf[INFO_BUF_SIZE];
 
     da_pstat pstats;
-    if (child_pstat(cur_test->cpid, &pstats) == -1)
+    if (child_pstat(test->cpid, &pstats) == -1)
         TEST_FAIL_MESSAGE("child_pstat");
 
     if (pstats.size > 0) {
-        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d)\n", cur_test->cpid);
-        add_lines(&cur_test->test_lines, info_buf);
+        snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d)\n", test->cpid);
+        add_lines(&test->test_lines, info_buf);
 
         for (size_t i = 0; i < pstats.size; ++i) {
-            add_lines(&cur_test->test_lines, "    ");
+            add_lines(&test->test_lines, "    ");
             snprintf(info_buf, INFO_BUF_SIZE, "%s (%d)\n",
                     pstats.data[i].name, pstats.data[i].pid);
-            add_lines(&cur_test->test_lines, info_buf);
+            add_lines(&test->test_lines, info_buf);
         }
     } else {
         snprintf(info_buf, INFO_BUF_SIZE, "seashell (%d) no children\n",
-                cur_test->cpid);
-        add_lines(&cur_test->test_lines, info_buf);
+                test->cpid);
+        add_lines(&test->test_lines, info_buf);
     }
 
     da_free(&pstats);
@@ -644,12 +628,12 @@ static void vterm_output_cb(const char *bytes, size_t len, void *user) {
 }
 
 void vterm_send_char(char ch, VTermModifier mod) {
-    VTerm *vtty = cur_test->vterm.tty;
+    VTerm *vtty = test->vterm.tty;
     vterm_keyboard_unichar(vtty, ch, mod);
 }
 
 void vterm_send_str(const char *msg) {
-    VTerm *vtty = cur_test->vterm.tty;
+    VTerm *vtty = test->vterm.tty;
     for (const char *c = msg; *c != '\0'; ++c) {
         uint32_t key = *c;
 
@@ -664,7 +648,7 @@ void vterm_send_str(const char *msg) {
 }
 
 void vterm_send_key(VTermKey key, VTermModifier mod) {
-    vterm_keyboard_key(cur_test->vterm.tty, key, mod);
+    vterm_keyboard_key(test->vterm.tty, key, mod);
 }
 
 int test_fail_count(void) {
@@ -726,49 +710,49 @@ void new_shell(void) {
     if (clock_gettime(CLOCK_MONOTONIC, &start) == -1)
         TEST_FAIL_MESSAGE("clock_gettime");
 
-    cur_test = da_push(&all_tests);
-    *cur_test = (pty_test){0};
+    test = da_push(&all_tests);
+    *test = (pty_test){0};
 
     /* init pty */
     struct winsize ws = { .ws_row = 15, .ws_col = 45 };
 
-    cur_test->cpid = xforkpty(&cur_test->mfd, NULL, &tio, &ws);
-    if (cur_test->cpid == 0)
+    test->cpid = xforkpty(&test->mfd, NULL, &tio, &ws);
+    if (test->cpid == 0)
         exec_seashell();
-    pollfds[POLL_MFD].fd = cur_test->mfd;
+    pollfds[POLL_MFD].fd = test->mfd;
 
-    if (ioctl(cur_test->mfd, FIONBIO, &(int){1}) == -1)
+    if (ioctl(test->mfd, FIONBIO, &(int){1}) == -1)
         TEST_FAIL_MESSAGE("ioctl");
 
     /* init vterm */
-    cur_test->vterm.tty = vterm_new(ws.ws_row, ws.ws_col);
-    if (!cur_test->vterm.tty)
+    test->vterm.tty = vterm_new(ws.ws_row, ws.ws_col);
+    if (!test->vterm.tty)
         TEST_FAIL_MESSAGE("vterm_new");
-    cur_test->vterm.rows = ws.ws_row;
-    cur_test->vterm.cols = ws.ws_col;
+    test->vterm.rows = ws.ws_row;
+    test->vterm.cols = ws.ws_col;
 
-    vterm_set_utf8(cur_test->vterm.tty, 1);
+    vterm_set_utf8(test->vterm.tty, 1);
 
-    cur_test->vterm.scr = vterm_obtain_screen(cur_test->vterm.tty);
-    if (!cur_test->vterm.scr)
+    test->vterm.scr = vterm_obtain_screen(test->vterm.tty);
+    if (!test->vterm.scr)
         TEST_FAIL_MESSAGE("vterm_obtain_screen");
 
-    cur_test->vterm.st = vterm_obtain_state(cur_test->vterm.tty);
-    if (!cur_test->vterm.st)
+    test->vterm.st = vterm_obtain_state(test->vterm.tty);
+    if (!test->vterm.st)
         TEST_FAIL_MESSAGE("vterm_obtain_state");
 
-    vterm_screen_reset(cur_test->vterm.scr, 1);
-    vterm_screen_enable_reflow(cur_test->vterm.scr, true);
+    vterm_screen_reset(test->vterm.scr, 1);
+    vterm_screen_enable_reflow(test->vterm.scr, true);
 
     vterm_output_set_callback(
-        cur_test->vterm.tty,
+        test->vterm.tty,
         vterm_output_cb,
-        &cur_test->mfd
+        &test->mfd
     );
 
     /* init misc data */
-    dstr_init(&cur_test->ptydata);
-    cur_test->test_name = strdup(Unity.CurrentTestName);
+    dstr_init(&test->ptydata);
+    test->test_name = strdup(Unity.CurrentTestName);
 
     /* seashell initializes printty (termios) then displays
      * the prompt so this works to avoid writing to the mfd
@@ -777,8 +761,7 @@ void new_shell(void) {
 
     /* assert the cursor *before* the screen contents. */
 
-    assert_cursor(0, 2);
-    assert_term("> ", " ");
+    assert_term(0, 2, PROMPT, " ");
 }
 
 void delete_shell(void) {
@@ -788,14 +771,14 @@ void delete_shell(void) {
     *  be passed to vterm so seashell doesn't fail becuase it did
     *  not receive the request. */
 
-    xkill(cur_test->cpid, SIGHUP);
+    xkill(test->cpid, SIGHUP);
 
     int checks = (run_valgrind) ? 1000 : 100;
     int tfd = start_timerfd(1);
     int rv, stat, i;
 
     for (i = 0; i < checks; ++i) {
-        if ((rv = waitpid(cur_test->cpid, &stat, WNOHANG)) == -1) {
+        if ((rv = waitpid(test->cpid, &stat, WNOHANG)) == -1) {
             LOG_ERR("waitpid: %m");
             exit(EXIT_FAILURE);
         }
@@ -803,7 +786,7 @@ void delete_shell(void) {
         if (rv != 0)
             break;
 
-        while (pty_test_poll(tfd) != PTY_POLL_TFD)
+        while (pty_test_poll(tfd, false) != PTY_POLL_TFD)
             continue;
 
         set_timerfd(tfd, 1);
@@ -813,23 +796,27 @@ void delete_shell(void) {
 
     if (i == 100) {
         LOG_ERR("waitpid timed out");
-        xkill(cur_test->cpid, SIGKILL);
+        xkill(test->cpid, SIGKILL);
 
-        if (waitpid(cur_test->cpid, &stat, 0) == -1) {
+        if (waitpid(test->cpid, &stat, 0) == -1) {
             LOG_ERR("waitpid: %m");
             exit(EXIT_FAILURE);
         }
     }
 
+    LOG_INFO("");
+    LOG_INFO("TEST SUMMARY");
+    LOG_INFO("============");
+
     if (WIFEXITED(stat)) {
         int exit_status = WEXITSTATUS(stat);
 
         if (exit_status == 99)
-            cur_test->val_err = true;
+            test->val_err = true;
 
         LOG_INFO("seashell exited with status %d", exit_status);
 
-        cur_test->success = !Unity.CurrentTestFailed;
+        test->success = !Unity.CurrentTestFailed;
     } else {
         if (WIFSIGNALED(stat)) {
             LOG_INFO("seashell was terminated by signal %d (%s)",
@@ -840,21 +827,25 @@ void delete_shell(void) {
          * this is true then we probably sent SIGKILL to it
          * becuase it hung. Or segfaulted. */
         Unity.CurrentTestFailed = true;
-        cur_test->success = false;
+        test->success = false;
     }
 
-    if (!cur_test->success)
+    if (!test->success) {
         take_vt_snapshot();
-    vterm_free(cur_test->vterm.tty);
-    close(cur_test->mfd);
+    }
+
+    vterm_free(test->vterm.tty);
+    close(test->mfd);
 
     if (clock_gettime(CLOCK_MONOTONIC, &end) == -1) {
         LOG_ERR("clock_gettime");
         exit(EXIT_FAILURE);
     }
 
-    cur_test->dur = (end.tv_sec - start.tv_sec) +
+    test->dur = (end.tv_sec - start.tv_sec) +
         (end.tv_nsec - start.tv_nsec) / 1e9;
 
-    LOG_INFO("test took %lf seconds", cur_test->dur);
+    LOG_INFO("test took %lf seconds", test->dur);
+    LOG_INFO("");
+    LOG_INFO("pty data: %s", test->ptydata.c_str);
 }

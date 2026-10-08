@@ -81,20 +81,6 @@ static void update_prompt(int style) {
     LOG_INFO("new prompt: \"%s\"", input.line);
 }
 
-static void ncol_cell(int *crow, int *ccol, int col_n) {
-    ASSERT_GE_INT(col_n, 0);
-    ASSERT_GE_INT(llen(), col_n);
-    ASSERT(crow && ccol);
-
-    *crow = input.start_row;
-    *ccol = col_n;
-
-    while (input.cols <= *ccol) {
-        *ccol -= input.cols;
-        ++*crow;
-    }
-}
-
 static void new_start_pos(void) {
     int row, col;
     xprintty_get_term_size(sh_env.pt, &input.rows, &input.cols);
@@ -120,8 +106,13 @@ static void update_start_pos(void) {
     xprintty_get_term_size(sh_env.pt, &input.rows, &input.cols);
     xprintty_get_cursor_pos(sh_env.pt, &crow, &ccol);
 
-    int rows_from_start = (input.start + input.off - 1) / input.cols;
+    LOG_INFO("cursor[%d,%d], term[%d,%d]", crow, ccol, input.rows, input.cols);
+
+    int rows_from_start = (input.start + input.off) / input.cols;
     input.start_row = crow - rows_from_start;
+
+    LOG_INFO("rows_from_start=%d, input.start_row=%d",
+            rows_from_start, input.start_row);
 
     if (input.start_row < 0) {
         LOG_WARN("start_row clamped to 0 (was %d)", input.start_row);
@@ -130,6 +121,20 @@ static void update_start_pos(void) {
 
     LOG_INFO("new start row = %d", input.start_row);
     ASSERT_G_INT(input.rows, input.start_row);
+}
+
+static void ncol_cell(int *crow, int *ccol, int col_n) {
+    ASSERT_GE_INT(col_n, 0);
+    ASSERT_GE_INT(llen(), col_n);
+    ASSERT(crow && ccol);
+
+    *crow = input.start_row;
+    *ccol = col_n;
+
+    while (input.cols <= *ccol) {
+        *ccol -= input.cols;
+        ++*crow;
+    }
 }
 
 static void input_draw(int rows, int start_line_idx) {
@@ -144,11 +149,15 @@ static void input_draw(int rows, int start_line_idx) {
         ncol_cell(&crow, &ccol, scr_i);
         printf("%c", input.line[line_i]);
 
-        if (ccol == input.cols - 1 && crow == rows - 1) {
-            if (input.start_row > 0) {
-                printf(" ");
+        if (ccol == input.cols - 1) {
+            if (crow != rows - 1) {
+                /* vterm doesn't clear wrap pending on \r or \b */
+                printf(" \x1b[1G");
+
+            } else if (input.start_row > 0) {
                 --input.start_row;
                 scr_i -= input.cols;
+                printf(" \x1b[1G");
             }
         }
 
@@ -164,32 +173,41 @@ static void input_update(void) {
     int rows;
     bool paging;
     int crow, ccol;
-    int rows_needed = (llen() / input.cols) + 1;
+    int req_idx = (input.start + input.off) / input.cols;
+    int start_idx;
 
-    if (rows_needed > input.rows) {
+    if (req_idx >= input.rows) {
         paging = true;
         rows = input.rows - 1;
+        start_idx = (rows * ((req_idx - input.rows) / rows)) + input.rows;
 
     } else {
         paging = false;
         rows = input.rows;
+        start_idx = 0;
     }
 
-    int req_line_idx = (input.start + input.off) / input.cols;
-    int start_line_idx = rows * (req_line_idx / rows);
-
+    ASSERT_GE_INT(req_idx, start_idx);
     xprintty_cursor_move(sh_env.pt, input.start_row, 0);
     xprintty_write(sh_env.pt, unibi_clr_eos);
 
+    const char *pager_str = ">...";
+    bool wrap_pending = input.cols <= (int)strlen(pager_str);
+
     if (paging) {
-        printf("%.*s", MIN(input.cols, 4), ">...");
-        if (input.rows > 1)
-            printf("\n");
+        printf("%.*s", MIN(input.cols, (int)strlen(pager_str)), pager_str);
+
+        if (input.rows > 1) {
+            if (wrap_pending) {
+                printf(" \x1b[1G");
+            } else
+                printf("\n");
+        }
     }
 
-    input_draw(rows, start_line_idx);
+    input_draw(rows, start_idx);
+    ncol_cell(&crow, &ccol, (input.off + input.start) - start_idx * input.cols);
 
-    ncol_cell(&crow, &ccol, (input.off + input.start) - start_line_idx * input.cols);
     if (paging)
         crow += 1;
 

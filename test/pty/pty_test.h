@@ -15,6 +15,11 @@
 #define PSTATE_SLEEPING "S"
 #define PSTATE_STOPPED  "T"
 
+#define PTY_POLL_TFD   1
+#define PTY_POLL_SHELL 2
+#define PTY_POLL_VAL   3
+#define PTY_POLL_MFD   4
+
 #define MAX(a, b) \
     ((a) > (b)) ? a : b
 
@@ -92,7 +97,7 @@ extern int val_test_errs;
 
 /* CREATED FOR EACH TEST */
 
-extern pty_test *cur_test;
+extern pty_test *test;
 
 /****** SETUP *******/
 
@@ -108,25 +113,21 @@ void pty_test_sink(const llog_info *info);
 
 #define LN(...) (char *[]){ __VA_ARGS__, NULL }
 
-#define assert_term(...) \
-    do { \
-        TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout"); \
-        take_vt_snapshot(); \
-    } while (false)
+#define assert_term(_row, _col, ...) \
+    do { TEST_ASSERT_MESSAGE(term_ensure(LN(__VA_ARGS__), _row, _col), \
+            "term_ensure failed"); \
+        take_vt_snapshot(); } while (false)
 
-#define assert_term_clear(...) \
-    do { \
-        TEST_ASSERT_MESSAGE(term_ensure_lines(LN(__VA_ARGS__)), "timeout"); \
+#define assert_term_clear(_row, _col, ...) \
+    do { TEST_ASSERT_MESSAGE(term_ensure(LN(__VA_ARGS__), _row, _col), \
+            "term_ensure failed"); \
         take_vt_snapshot(); \
-        vterm_send_char('l', VTERM_MOD_CTRL); \
-    } while (false)
+        vterm_send_char('l', VTERM_MOD_CTRL); } while (false)
 
-#define assert_cursor(row, col) \
-    TEST_ASSERT_MESSAGE(term_ensure_cursor(row, col), "bad cursor");
 #define assert_termios(exp) \
     TEST_ASSERT_MESSAGE(verify_termios(exp), "bad termios");
 
-void clear_vterm(void);
+int pty_test_poll(int tfd, bool log_mfd);
 void take_vt_snapshot(void);
 bool verify_termios(struct termios exp);
 bool verify_pstate(const char *name, const char *state);
@@ -142,9 +143,7 @@ int start_timerfd(int ms);
 void write_ps_output(void);
 void child_pstat_snapshot(void);
 void write_to_term(const char *str);
-bool term_ensure(const char *msg, int row, int col, int type);
-bool term_ensure_lines(char **lines);
-bool term_ensure_cursor(int row, int col);
+bool term_ensure(char **lines, int row, int col);
 void vterm_send_str(const char *msg);
 void vterm_send_key(VTermKey key, VTermModifier mod);
 void vterm_send_char(char ch, VTermModifier mod);
