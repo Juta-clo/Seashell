@@ -15,8 +15,13 @@ UTIL_PFFORMAT(1, 2) UTIL_NORETURN
 void err_exit(const char *fmt, ...);
 
 #define ASSERT_EQ_INT(a, b) \
-    err_assert_equal_int(a, b, #a, #b, __FILE__, __LINE__);
+    err_assert_eq_int(a, b, #a, #b, __FILE__, __LINE__);
 void err_assert_eq_int(int a, int b, const char *p1, const char *p2,
+        const char *file, int line);
+
+#define ASSERT_NEQ_INT(a, b) \
+    err_assert_not_eq_int(a, b, #a, #b, __FILE__, __LINE__);
+void err_assert_not_eq_int(int a, int b, const char *p1, const char *p2,
         const char *file, int line);
 
 #define ASSERT_G_INT(a, b) \

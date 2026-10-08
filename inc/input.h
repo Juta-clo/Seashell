@@ -12,7 +12,7 @@
 typedef struct {
     char *line;
     int start_row;
-    int offset;
+    int off;
     int rows, cols;
     int insert_mode;
     int start;

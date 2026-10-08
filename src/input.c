@@ -12,6 +12,9 @@
 #include "printty.h"
 #include "variable.h"
 
+#define MIN(a, b) ((a) < (b)) ? (a) : (b)
+#define MAX(a, b) ((a) > (b)) ? (a) : (b)
+
 #define PROMPT1 "> "
 
 #define DELETE_CURSOR 1
@@ -23,7 +26,31 @@
 #define INSERT_CHAR  1
 #define INSERT_PASTE 2
 
-input_editor input = { .offset = 0 };
+#define xprintty_cursor_move(pt, row, col) \
+    do { if (printty_cursor_move(pt, row, col) == PRINTTY_ERR) \
+            xfatal("printty_cursor_move"); } while (false)
+
+#define xprintty_write(pt, uc) \
+    do { if (printty_write(pt, uc) == PRINTTY_ERR) \
+            xfatal("printty_write"); } while (false)
+
+#define xprintty_write_name(pt, name) \
+    do { if (printty_write_name(pt, name) == PRINTTY_ERR) \
+            xfatal("printty_write_name"); } while (false)
+
+#define xprintty_get_cursor_pos(pt, row, col) \
+    do { if (printty_get_cursor_pos(pt, row, col) == PRINTTY_ERR) \
+            xfatal("printty_get_cursor_pos"); } while (false)
+
+#define xprintty_get_term_size(pt, rows, cols) \
+    do { if (printty_get_term_size(pt, rows, cols) == PRINTTY_ERR) \
+            xfatal("printty_get_term_size"); } while (false)
+
+#define xprintty_cstyle(pt, style) \
+    do { if (printty_cstyle(pt, style) == PRINTTY_ERR) \
+            xfatal("printty_cstyle"); } while (false)
+
+input_editor input = { .off = 0 };
 
 static void update_prompt(int style) {
     if (style == PROMPT_SIMPLE) {
@@ -54,13 +81,13 @@ static void update_prompt(int style) {
     LOG_INFO("new prompt: \"%s\"", input.line);
 }
 
-static void get_line_cell(int *crow, int *ccol, size_t i) {
-    assert(i >= 0);
-    assert(i <= hda_size(input.line) - 1);
-    assert(crow && ccol);
+static void ncol_cell(int *crow, int *ccol, int col_n) {
+    ASSERT_GE_INT(col_n, 0);
+    ASSERT_GE_INT(llen(), col_n);
+    ASSERT(crow && ccol);
 
     *crow = input.start_row;
-    *ccol = i;
+    *ccol = col_n;
 
     while (input.cols <= *ccol) {
         *ccol -= input.cols;
@@ -69,85 +96,104 @@ static void get_line_cell(int *crow, int *ccol, size_t i) {
 }
 
 static void new_start_pos(void) {
-    if (printty_get_term_size(sh_env.pt, &input.rows, &input.cols)
-            == PRINTTY_ERR)
-        xfatal("printty_get_sterm_size");
-
     int row, col;
-    if (printty_get_cursor_pos(sh_env.pt, &row, &col) == PRINTTY_ERR)
-        xfatal("printty_get_cursor_pos");
+    xprintty_get_term_size(sh_env.pt, &input.rows, &input.cols);
+    xprintty_get_cursor_pos(sh_env.pt, &row, &col);
 
     if (col != 0) {
-        printty_write(sh_env.pt, unibi_enter_reverse_mode);
-        printty_write(sh_env.pt, unibi_enter_bold_mode);
+        xprintty_write(sh_env.pt, unibi_enter_reverse_mode);
+        xprintty_write(sh_env.pt, unibi_enter_bold_mode);
         printf("%%\n");
-        printty_write(sh_env.pt, unibi_exit_attribute_mode);
+        xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
     }
 
-    if (printty_get_cursor_pos(sh_env.pt, &row, &col) == PRINTTY_ERR)
-        xfatal("printty_get_cursor_pos");
-
+    xprintty_get_cursor_pos(sh_env.pt, &row, &col);
     input.start_row = row;
 
     LOG_INFO("new start pos: [%d,%d]", row, col);
+    ASSERT_GE_INT(input.start_row, 0);
+    ASSERT_G_INT(input.rows, input.start_row);
 }
 
 static void update_start_pos(void) {
     int crow, ccol;
+    xprintty_get_term_size(sh_env.pt, &input.rows, &input.cols);
+    xprintty_get_cursor_pos(sh_env.pt, &crow, &ccol);
 
-    if (printty_get_term_size(sh_env.pt, &input.rows, &input.cols)
-            == PRINTTY_ERR)
-        xfatal("printty_get_term_size");
-
-    if (printty_get_cursor_pos(sh_env.pt, &crow, &ccol)
-            == PRINTTY_ERR)
-        xfatal("printty_get_cursor_pos");
-
-    int rows_from_start = (input.offset + input.start) / input.cols;
+    int rows_from_start = (input.start + input.off - 1) / input.cols;
     input.start_row = crow - rows_from_start;
 
-    LOG_INFO("new term size = [%d,%d]", input.rows, input.cols);
-    LOG_INFO("new cursor position = [%d,%d]", crow, ccol);
-    LOG_INFO("llen() = %d, offset = %d, start = %d", llen(),
-            input.offset, input.start);
-
-    ASSERT_GE_INT(input.start_row, 0);
-    ASSERT_G_INT(input.rows, input.start_row);
-
-    LOG_INFO("updated start position: %d", input.start_row);
-}
-
-static void input_update_cursor(int offset) {
-    assert(offset >= 0);
-    assert(offset <= line_len());
-
-    offset += input.start;
-
-    int crow, ccol;
-    get_line_cell(&crow, &ccol, offset);
-    printty_cursor_move(sh_env.pt, crow, ccol);
-
-    LOG_INFO("moved cursor to [%d,%d]", crow, ccol);
-}
-
-static void input_redraw(void) {
-    if (printty_cursor_move(sh_env.pt, input.start_row, 0) == PRINTTY_ERR)
-        xfatal("printty_cursor_move");
-
-    int crow, ccol;
-
-    for (size_t i = 0; i < hda_size(input.line) - 1; ++i) {
-        get_line_cell(&crow, &ccol, i);
-
-        if (crow == input.rows - 1 && ccol == input.cols - 1) {
-            printf("%c\r\n", input.line[i]);
-            --input.start_row;
-        } else
-            printf("%c", input.line[i]);
+    if (input.start_row < 0) {
+        LOG_WARN("start_row clamped to 0 (was %d)", input.start_row);
+        input.start_row = 0;
     }
 
-    printty_write(sh_env.pt, unibi_clr_eos);
-    input_update_cursor(input.offset);
+    LOG_INFO("new start row = %d", input.start_row);
+    ASSERT_G_INT(input.rows, input.start_row);
+}
+
+static void input_draw(int rows, int start_line_idx) {
+    int scr_i = 0;
+    int line_i = start_line_idx * input.cols;
+    int crow, ccol;
+
+    while (true) {
+        if (line_i >= llen() || scr_i >= input.cols * rows)
+            break;
+
+        ncol_cell(&crow, &ccol, scr_i);
+        printf("%c", input.line[line_i]);
+
+        if (ccol == input.cols - 1 && crow == rows - 1) {
+            if (input.start_row > 0) {
+                printf(" ");
+                --input.start_row;
+                scr_i -= input.cols;
+            }
+        }
+
+        ++scr_i;
+        ++line_i;
+    }
+}
+
+static void input_update(void) {
+    ASSERT_NEQ_INT(input.rows, 0);
+    ASSERT_NEQ_INT(input.cols, 0);
+
+    int rows;
+    bool paging;
+    int crow, ccol;
+    int rows_needed = (llen() / input.cols) + 1;
+
+    if (rows_needed > input.rows) {
+        paging = true;
+        rows = input.rows - 1;
+
+    } else {
+        paging = false;
+        rows = input.rows;
+    }
+
+    int req_line_idx = (input.start + input.off) / input.cols;
+    int start_line_idx = rows * (req_line_idx / rows);
+
+    xprintty_cursor_move(sh_env.pt, input.start_row, 0);
+    xprintty_write(sh_env.pt, unibi_clr_eos);
+
+    if (paging) {
+        printf("%.*s", MIN(input.cols, 4), ">...");
+        if (input.rows > 1)
+            printf("\n");
+    }
+
+    input_draw(rows, start_line_idx);
+
+    ncol_cell(&crow, &ccol, (input.off + input.start) - start_line_idx * input.cols);
+    if (paging)
+        crow += 1;
+
+    xprintty_cursor_move(sh_env.pt, crow, ccol);
 }
 
 static void input_move(int offset) {
@@ -157,8 +203,8 @@ static void input_move(int offset) {
         if (offset > line_len())
             return;
 
-        input_update_cursor(offset);
-        input.offset = offset;
+        input.off = offset;
+        input_update();
 
     } else {
         if (offset < 0)
@@ -166,41 +212,41 @@ static void input_move(int offset) {
         if (offset >= line_len())
             return;
 
-        input_update_cursor(offset);
-        input.offset = offset;
+        input.off = offset;
+        input_update();
     }
 }
 
 static void input_delete(int type) {
-    assert(input.offset >= 0);
-    assert(input.offset <= line_len());
-    assert(input.insert_mode || input.offset < line_len() || line_len() == 0);
+    assert(input.off >= 0);
+    assert(input.off <= line_len());
+    assert(input.insert_mode || input.off < line_len() || line_len() == 0);
 
     if (input.insert_mode) {
         if (type == DELETE_CURSOR) {
-            if (input.offset == 0)
+            if (input.off == 0)
                 return;
 
-            hda_delete(input.line, input.start + input.offset - 1, 1);
-            input.offset -= 1;
+            hda_delete(input.line, input.start + input.off - 1, 1);
+            input.off -= 1;
 
         } else if (type == DELETE_END) {
-            if (input.offset == line_len())
+            if (input.off == line_len())
                 return;
 
-            hda_delete(input.line, input.start + input.offset,
-                    line_len() - input.offset);
+            hda_delete(input.line, input.start + input.off,
+                    line_len() - input.off);
 
         } else if (type == DELETE_START) {
-            if (input.offset == 0)
+            if (input.off == 0)
                 return;
 
-            hda_delete(input.line, input.start, input.offset);
-            input.offset = 0;
+            hda_delete(input.line, input.start, input.off);
+            input.off = 0;
 
         } else if (type == DELETE_ALL) {
             hda_delete(input.line, input.start, line_len());
-            input.offset = 0;
+            input.off = 0;
         }
 
     } else {
@@ -208,41 +254,37 @@ static void input_delete(int type) {
             if (line_len() == 0)
                 return;
 
-            hda_delete(input.line, input.start + input.offset, 1);
-            if (input.offset == line_len() && input.offset != 0)
-                input.offset -= 1;
+            hda_delete(input.line, input.start + input.off, 1);
+            if (input.off == line_len() && input.off != 0)
+                input.off -= 1;
         }
     }
 
-    input_redraw();
+    input_update();
 }
 
 static void input_insert(int type, const char *s) {
-    assert(input.offset >= 0);
-    assert(input.offset <= line_len());
-    assert(input.insert_mode || input.offset < line_len());
+    assert(input.off >= 0);
+    assert(input.off <= line_len());
+    assert(input.insert_mode || input.off < line_len());
 
     if (input.insert_mode) {
         if (type == INSERT_CHAR) {
-            hda_insert_buf(input.line, input.start + input.offset, 1, s);
-            input.offset += 1;
+            hda_insert_buf(input.line, input.start + input.off, 1, s);
+            input.off += 1;
         }
     }
 
-    input_redraw();
+    input_update();
 }
 
 static void enter_mode_normal() {
-    if (printty_cstyle(sh_env.pt, PRINTTY_CBLOCK(false)) == PRINTTY_ERR)
-        xfatal("printty_cstyle");
-
+    xprintty_cstyle(sh_env.pt, PRINTTY_CBLOCK(false));
     input.insert_mode = false;
 }
 
 static void enter_mode_insert() {
-    if (printty_cstyle(sh_env.pt, PRINTTY_CBEAM(false)) == PRINTTY_ERR)
-        xfatal("printty_cstyle");
-
+    xprintty_cstyle(sh_env.pt, PRINTTY_CBEAM(false));
     input.insert_mode = true;
 }
 
@@ -251,10 +293,10 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
         input_delete(DELETE_CURSOR);
 
     } else if (key == PRINTTY_LEFT) {
-        input_move(input.offset - 1);
+        input_move(input.off - 1);
 
     } else if (key == PRINTTY_RIGHT) {
-        input_move(input.offset + 1);
+        input_move(input.off + 1);
     }
 }
 
@@ -275,22 +317,22 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         input_delete(DELETE_START);
 
     } else if (codepoint == 12/*C-l*/) {
-        printty_write(sh_env.pt, unibi_clear_screen);
+        xprintty_write(sh_env.pt, unibi_clear_screen);
         new_start_pos();
-        input_redraw();
+        input_update();
 
     } else if (codepoint == 27/*ESC*/) {
-        input_move(input.offset - 1);
+        input_move(input.off - 1);
         enter_mode_normal();
     }
 }
 
 static void normal_mode_feed_key(PrinttyInputKey key) {
     if (key == PRINTTY_LEFT) {
-        input_move(input.offset - 1);
+        input_move(input.off - 1);
 
     } else if (key == PRINTTY_RIGHT) {
-        input_move(input.offset + 1);
+        input_move(input.off + 1);
     }
 }
 
@@ -300,13 +342,13 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
 
     } else if (codepoint == 'a') {
         enter_mode_insert();
-        input_move(input.offset + 1);
+        input_move(input.off + 1);
 
     } else if (codepoint == 'h') {
-        input_move(input.offset - 1);
+        input_move(input.off - 1);
 
     } else if (codepoint == 'l') {
-        input_move(input.offset + 1);
+        input_move(input.off + 1);
 
     } else if (codepoint == 'x') {
         input_delete(DELETE_CURSOR);
@@ -337,10 +379,8 @@ void input_deinit(shell_env *env) {
     assert(env);
     /* null when called from the exit builtin */
     if (env->pt) {
-        if (printty_write(env->pt, unibi_exit_attribute_mode) == PRINTTY_ERR)
-            LOG_WARN("printty_write failed");
-        if (printty_write_name(env->pt, "Se") == PRINTTY_ERR)
-            LOG_WARN("printty_write_name failed");
+        xprintty_write(env->pt, unibi_exit_attribute_mode);
+        xprintty_write_name(env->pt, "Se");
         printty_destroy(env->pt);
     }
     env->pt = NULL;
@@ -348,8 +388,7 @@ void input_deinit(shell_env *env) {
 
 void display_job_msg(const char *msg) {
     int crow, ccol;
-    if (printty_get_cursor_pos(sh_env.pt, &crow, &ccol) == PRINTTY_ERR)
-        xfatal("printty_get_cursor_pos");
+    xprintty_get_cursor_pos(sh_env.pt, &crow, &ccol);
 
     if (ccol != 0)
         printf("\n");
@@ -366,7 +405,7 @@ void drop_line(void) {
 
 char *get_line(void) {
     if (!input.line) {
-        input.offset = 0;
+        input.off = 0;
         update_prompt(sh_env.prompt_style);
     }
 
@@ -375,7 +414,7 @@ char *get_line(void) {
         new_start_pos();
     }
 
-    input_redraw();
+    input_update();
     enter_mode_insert();
 
     while (true) {
@@ -415,7 +454,7 @@ char *get_line(void) {
         } else if (pev.type == PRINTTY_RESIZE) {
             LOG_INFO("resize detected");
             update_start_pos();
-            input_update_cursor(input.offset);
+            input_update();
         }
     }
 

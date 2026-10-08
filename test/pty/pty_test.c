@@ -705,14 +705,14 @@ void exec_seashell(void) {
                 val_lfd_arg,
 
             "/home/juta/Projects/Seashell/seashell",
-                "--prompt=ps",
+                "--prompt=simple",
                 shell_lfd_arg,
             NULL
         };
     } else {
         argv = (char *[]){
             "/home/juta/Projects/Seashell/seashell",
-                "--prompt=ps",
+                "--prompt=simple",
                 shell_lfd_arg,
             NULL
         };
