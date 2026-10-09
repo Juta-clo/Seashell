@@ -409,6 +409,7 @@ TEST(lexer, part_single_then_double) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(lexer) {
+    LOG_INFO(""); LOG_INFO("STARTING TEST MODULE: LEXER"); LOG_INFO("");
     RUN_TEST_CASE(lexer, all_operators);
     RUN_TEST_CASE(lexer, shell_usage);
     RUN_TEST_CASE(lexer, quotes_galore);

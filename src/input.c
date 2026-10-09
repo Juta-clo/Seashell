@@ -26,6 +26,9 @@
 #define INSERT_CHAR  1
 #define INSERT_PASTE 2
 
+#define OP_NONE 0
+#define OP_DEL  1
+
 #define xprintty_cursor_move(pt, row, col) \
     do { if (printty_cursor_move(pt, row, col) == PRINTTY_ERR) \
             xfatal("printty_cursor_move"); } while (false)
@@ -51,6 +54,169 @@
             xfatal("printty_cstyle"); } while (false)
 
 input_editor input = { .off = 0 };
+
+static inline int llen(void) {
+    return (int)(hda_size(input.line) - 1);
+}
+
+static inline int line_len(void) {
+    int rv = (int)(hda_size(input.line) - 1) - input.start;
+    assert(rv >= 0);
+    return rv;
+}
+
+static inline int next_non_ws(const char *line, int i) {
+    ASSERT(line);
+    ASSERT_GE_INT(i, 0);
+
+    ++i;
+
+    for (; i < (int)strlen(line); ++i)
+        if (line[i] != ' ')
+            return i;
+
+    return -1;
+}
+
+static inline int next_ws(const char *line, int i) {
+    ASSERT(line);
+    ASSERT_GE_INT(i, 0);
+
+    ++i;
+
+    for (; i < (int)strlen(line); ++i)
+        if (line[i] == ' ')
+            return i;
+
+    return -1;
+}
+
+static inline int prev_non_ws(const char *line, int i) {
+    ASSERT(line);
+    ASSERT_GE_INT(i, 0);
+
+    --i;
+
+    for (; i >= 0; --i)
+        if (line[i] != ' ')
+            return i;
+
+    return -1;
+}
+
+static inline int prev_ws(const char *line, int i) {
+    ASSERT(line);
+    ASSERT_GE_INT(i, 0);
+
+    --i;
+
+    for (; i >= 0; --i)
+        if (line[i] == ' ')
+            return i;
+
+    return -1;
+}
+
+int next_word(const char *line, int start, input_word *word) {
+    ASSERT(line && word);
+    ASSERT(start >= 0);
+    ASSERT(start < (int)strlen(line) + 1);
+
+    if (start == (int)strlen(line))
+        return -1;
+
+    int ws = start;
+
+    if (line[ws] != ' ') {
+        ws = next_ws(line, ws);
+        if (ws == -1)
+            return -1;
+    }
+
+    word->start = next_non_ws(line, ws);
+    if (word->start == -1)
+        return -1;
+
+    word->end = next_ws(line, word->start);
+    if (word->end == -1) {
+        word->end = strlen(line) - 1;
+    } else
+        --word->end;
+
+    ASSERT_GE_INT(word->start, 0);
+    ASSERT_GE_INT(word->end, 0);
+    ASSERT_G_INT((int)strlen(line), word->start);
+    ASSERT_G_INT((int)strlen(line), word->end);
+
+    return 0;
+}
+
+int prev_word(const char *line, int start, input_word *word) {
+    ASSERT(line && word);
+    ASSERT(start >= 0);
+    ASSERT(start < (int)strlen(line) + 1);
+
+    if (start == (int)strlen(line) + 1)
+        return -1;
+
+    int ws = start;
+
+    if (line[ws] != ' ') {
+        ws = prev_ws(line, ws);
+        if (ws == -1)
+            return -1;
+    }
+
+    word->end = prev_non_ws(line, ws);
+    if (word->end == -1)
+        return -1;
+
+    word->start = prev_ws(line, word->end);
+    if (word->start == -1) {
+        word->start = 0;
+    } else
+        ++word->start;
+
+    ASSERT_GE_INT(word->start, 0);
+    ASSERT_GE_INT(word->end, 0);
+    ASSERT_G_INT((int)strlen(line), word->start);
+    ASSERT_G_INT((int)strlen(line), word->end);
+
+    return 0;
+}
+
+int cur_word(const char *line, int start, input_word *word) {
+    ASSERT(line && word);
+    ASSERT(start >= 0);
+    ASSERT(start < (int)strlen(line) + 1);
+
+    if (start == (int)strlen(line) + 1)
+        return -1;
+
+    if (line[start] == ' ')
+        return -1;
+
+    word->start = prev_ws(line, start);
+
+    if (word->start == -1) {
+        word->start = 0;
+    } else
+        ++word->start;
+
+    word->end = next_ws(line, start);
+
+    if (word->end == -1) {
+        word->end = strlen(line) - 1;
+    } else
+        --word->end;
+
+    ASSERT_GE_INT(word->start, 0);
+    ASSERT_GE_INT(word->end, 0);
+    ASSERT_G_INT((int)strlen(line), word->start);
+    ASSERT_G_INT((int)strlen(line), word->end);
+
+    return 0;
+}
 
 static void update_prompt(int style) {
     if (style == PROMPT_SIMPLE) {
@@ -137,9 +303,9 @@ static void ncol_cell(int *crow, int *ccol, int col_n) {
     }
 }
 
-static void input_draw(int rows, int start_line_idx) {
+static void input_draw(int rows, int start_idx) {
     int scr_i = 0;
-    int line_i = start_line_idx * input.cols;
+    int line_i = start_idx * input.cols;
     int crow, ccol;
 
     while (true) {
@@ -170,21 +336,17 @@ static void input_update(void) {
     ASSERT_NEQ_INT(input.rows, 0);
     ASSERT_NEQ_INT(input.cols, 0);
 
-    int rows;
-    bool paging;
     int crow, ccol;
     int req_idx = (input.start + input.off) / input.cols;
-    int start_idx;
+    int rows = input.rows;
+    int start_idx = 0;
+    bool paging = req_idx >= input.rows;
 
-    if (req_idx >= input.rows) {
-        paging = true;
-        rows = input.rows - 1;
-        start_idx = (rows * ((req_idx - input.rows) / rows)) + input.rows;
+    if (paging) {
+        rows -= 1;
 
-    } else {
-        paging = false;
-        rows = input.rows;
-        start_idx = 0;
+        if (rows != 0)
+            start_idx = (rows * ((req_idx - input.rows) / rows)) + input.rows;
     }
 
     ASSERT_GE_INT(req_idx, start_idx);
@@ -202,6 +364,8 @@ static void input_update(void) {
                 printf(" \x1b[1G");
             } else
                 printf("\n");
+        } else {
+            return;
         }
     }
 
@@ -236,9 +400,12 @@ static void input_move(int offset) {
 }
 
 static void input_delete(int type) {
-    assert(input.off >= 0);
-    assert(input.off <= line_len());
+    ASSERT_GE_INT(input.off, 0);
+    ASSERT_GE_INT(line_len(), input.off);
     assert(input.insert_mode || input.off < line_len() || line_len() == 0);
+
+    if (line_len() == 0)
+        return;
 
     if (input.insert_mode) {
         if (type == DELETE_CURSOR) {
@@ -269,12 +436,31 @@ static void input_delete(int type) {
 
     } else {
         if (type == DELETE_CURSOR) {
-            if (line_len() == 0)
-                return;
-
             hda_delete(input.line, input.start + input.off, 1);
             if (input.off == line_len() && input.off != 0)
                 input.off -= 1;
+
+        } else if (type == DELETE_ALL) {
+            hda_delete(input.line, input.start, line_len());
+            input.off = 0;
+
+        } else if (type == DELETE_WORD) {
+            input_word word;
+
+            if (cur_word(input.line + input.start, input.off, &word) == -1) {
+                hda_delete(input.line, input.start + input.off, 1);
+                if (input.off == line_len() && input.off != 0)
+                    input.off -= 1;
+
+            } else {
+                hda_delete(input.line, word.start + input.start,
+                        (word.end - word.start) + 1);
+
+                input.off = word.start;
+
+                if (input.off > 0)
+                    --input.off;
+            }
         }
     }
 
@@ -342,6 +528,7 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
     } else if (codepoint == 27/*ESC*/) {
         input_move(input.off - 1);
         enter_mode_normal();
+
     }
 }
 
@@ -354,7 +541,25 @@ static void normal_mode_feed_key(PrinttyInputKey key) {
     }
 }
 
+static void operator_pending_feed_unicode(uint32_t codepoint, int op) {
+    if (op == OP_DEL) {
+        if (codepoint == 'd')
+            input_delete(DELETE_ALL);
+        else if (codepoint == 'w')
+            input_delete(DELETE_WORD);
+    }
+}
+
 static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
+    static int op = OP_NONE;
+    input_word word;
+
+    if (op != OP_NONE) {
+        operator_pending_feed_unicode(codepoint, op);
+        op = OP_NONE;
+        return;
+    }
+
     if (codepoint == 'i') {
         enter_mode_insert();
 
@@ -378,6 +583,35 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
     } else if (codepoint == 'I') {
         enter_mode_insert();
         input_move(0);
+
+    } else if (codepoint == 'b') {
+        if (cur_word(input.line + input.start, input.off, &word) != -1 &&
+                input.off != word.start) {
+            input_move(word.start);
+
+        } else if (prev_word(input.line + input.start, input.off, &word) == -1) {
+            input_move(0);
+        } else
+            input_move(word.start);
+
+    } else if (codepoint == 'w') {
+        if (next_word(input.line + input.start, input.off, &word) == -1) {
+            input_move(line_len() - 1);
+        } else
+            input_move(word.start);
+
+    } else if (codepoint == 'e') {
+        if (cur_word(input.line + input.start, input.off, &word) != -1 &&
+                input.off != word.end) {
+            input_move(word.end);
+
+        } else if (next_word(input.line + input.start, input.off, &word) == -1) {
+            input_move(line_len() - 1);
+        } else
+            input_move(word.end);
+
+    } else if (codepoint == 'd') {
+        op = OP_DEL;
     }
 }
 

@@ -634,7 +634,6 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, kill_multiple_proc_job);
     RUN_TEST_CASE(shell, sigint_on_non_final_proc_prints_newline);
     RUN_TEST_CASE(shell, sigint_on_final_proc);
-    RUN_TEST_CASE(shell, sigint_on_final_proc);
     RUN_TEST_CASE(shell, process_exits_normally_in_bg);
     RUN_TEST_CASE(shell, fg_process_signaled);
     RUN_TEST_CASE(shell, fg_process_stopped);

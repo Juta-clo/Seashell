@@ -75,15 +75,6 @@ static int validate_argc(char **argv, size_t min_argc, size_t max_argc) {
     return arg_n;
 }
 
-static int run_echo_builtin(char **argv, shell_env *_) {
-    if (validate_argc(argv, 1, 1) == -1)
-        return EXIT_FAILURE;
-
-    printf("%s\n", argv[1]);
-
-    return EXIT_SUCCESS;
-}
-
 static int run_fg_builtin(char **argv, shell_env *sh_env) {
     if (sh_env->subshell) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
@@ -445,7 +436,6 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "kill", .func = run_kill_builtin },
     { .name = "fg", .func = run_fg_builtin },
     { .name = "bg", .func = run_bg_builtin },
-    { .name = "echo", .func = run_echo_builtin }
 };
 
 sh_builtin *get_builtin(const char *arg) {

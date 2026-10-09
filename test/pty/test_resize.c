@@ -243,6 +243,15 @@ TEST(resize, resize_after_emulator_scroll) {
      * to libghostty-vt */
 }
 
+TEST(resize, pager_with_only_one_row) {
+    test_resize_term(1, 10);
+
+    vterm_send_str("hello, beautiful world!");
+    assert_term(0, 4,
+        ">..."
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -259,4 +268,5 @@ TEST_GROUP_RUNNER(resize) {
     RUN_TEST_CASE(resize, resize_that_enters_pager);
     RUN_TEST_CASE(resize, clearing_line_from_within_pager);
     RUN_TEST_CASE(resize, resize_after_emulator_scroll);
+    RUN_TEST_CASE(resize, pager_with_only_one_row);
 }

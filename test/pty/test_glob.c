@@ -215,8 +215,8 @@ TEST(glob, multiple_substring_prefix_suffix_match) {
 
     vterm_send_str("/bin/echo foo*bar*bee*zoo\n");
     assert_term(2, PROMPT_LEN,
-        PROMPT "/bin/echo *foo*bar*bee*zoo",
-        "./fooXbarXbeeXzooX",
+        PROMPT "/bin/echo foo*bar*bee*zoo",
+        "./fooXbarXbeeXzoo",
         PROMPT
     );
 }
@@ -375,22 +375,34 @@ TEST(glob, redirect_target_glob_ambiguous) {
     );
 }
 
+TEST(glob, glob_detected_in_empty_variable) {
+    vterm_send_str("set FOO \"\"\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT "set FOO \"\"",
+        PROMPT
+    );
+
+    vterm_send_str("echo $FOO*\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT "set FOO \"\"",
+        PROMPT "echo $FOO*",
+        " ",
+        PROMPT
+    );
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(glob) {
-    /* component matching */
     RUN_TEST_CASE(glob, glob_star_only);
     RUN_TEST_CASE(glob, prefix_match);
     RUN_TEST_CASE(glob, suffix_match);
     RUN_TEST_CASE(glob, suffix_and_prefix_match);
     RUN_TEST_CASE(glob, single_substring_match);
-    RUN_TEST_CASE(glob, multiple_substring_match);
     RUN_TEST_CASE(glob, substring_and_prefix_match);
     RUN_TEST_CASE(glob, substring_and_suffix_match);
     RUN_TEST_CASE(glob, multiple_substring_match);
-    RUN_TEST_CASE(glob, multiple_substring_match);
-
-    // /* directory traversal */
+    RUN_TEST_CASE(glob, multiple_substring_prefix_suffix_match);
     RUN_TEST_CASE(glob, nested_directory_match);
     RUN_TEST_CASE(glob, double_nested_directory_match);
     RUN_TEST_CASE(glob, directory_componenet_with_glob);
@@ -403,4 +415,5 @@ TEST_GROUP_RUNNER(glob) {
     RUN_TEST_CASE(glob, relative_dirent_works);
     RUN_TEST_CASE(glob, redirect_target_glob_non_ambiguous);
     RUN_TEST_CASE(glob, redirect_target_glob_ambiguous);
+    RUN_TEST_CASE(glob, glob_detected_in_empty_variable);
 }

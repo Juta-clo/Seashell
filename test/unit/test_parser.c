@@ -561,6 +561,7 @@ TEST(parser, multiple_redirects) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(parser) {
+    LOG_INFO(""); LOG_INFO("STARTING TEST MODULE: PARSER"); LOG_INFO("");
     RUN_TEST_CASE(parser, bg_not_final_token_should_fail);
     RUN_TEST_CASE(parser, redirect_with_no_target_fails);
     RUN_TEST_CASE(parser, no_cmd_redir_should_fail);

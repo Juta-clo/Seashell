@@ -293,12 +293,11 @@ TEST(jobs, two_proc_job_cont) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(jobs) {
+    LOG_INFO(""); LOG_INFO("STARTING TEST MODULE: JOBS"); LOG_INFO("");
     RUN_TEST_CASE(jobs, continue_running_job);
-
     RUN_TEST_CASE(jobs, one_proc_job_exit);
     RUN_TEST_CASE(jobs, one_proc_job_stop);
     RUN_TEST_CASE(jobs, one_proc_job_cont);
-
     RUN_TEST_CASE(jobs, two_proc_job_exit);
     RUN_TEST_CASE(jobs, two_proc_job_stop);
     RUN_TEST_CASE(jobs, two_proc_job_cont);

@@ -64,7 +64,7 @@ static void  ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
             continue;
         }
 
-        if (has_glob && *c == '*')
+        if (has_glob && type == EXT_REG && *c == '*')
             *has_glob = true;
 
         if (*c == '~') {
@@ -300,6 +300,8 @@ static int cmp_match(const void *p1, const void *p2) {
 }
 
 static int expand_globs(dstr *arg, da_charp *argv) {
+    ASSERT_G_INT(arg->len, 0);
+
     int rv = -1;
     bool slash_last = (arg->c_str[arg->len - 1] == '/');
 
@@ -402,6 +404,8 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
     }
 
     /* globbing */
+
+    LOG_INFO("before glob: %s", arg.c_str);
 
     if (has_glob) {
         da_charp glob_result = (argv) ? *argv : (da_charp){0};
