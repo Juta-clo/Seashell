@@ -9,6 +9,14 @@
 #define PROMPT_CWD 2
 #define PROMPT_PS 3
 
+typedef char * hds;
+
+typedef struct {
+    size_t i;
+    size_t start_i;
+    hds glob;
+} input_comp;
+
 typedef struct {
     char *line;
     int start_row;
@@ -16,6 +24,7 @@ typedef struct {
     int rows, cols;
     int insert_mode;
     int start;
+    input_comp comp;
 } input_editor;
 
 typedef struct {

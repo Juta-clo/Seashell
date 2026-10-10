@@ -55,7 +55,7 @@ int main(void) {
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
                 "--track-fds=bad", "--modify-fds=high",
-            SEASHELL_PATH "seashell", "--prompt=ps", (char *)NULL);
+            SEASHELL_PATH "seashell", "--prompt=cwd", (char *)NULL);
 
     errExit("execl: %m");
 }

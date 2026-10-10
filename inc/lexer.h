@@ -41,6 +41,7 @@ typedef enum {
 struct lx_part {
     char *raw;
     lx_quote quote;
+    int start, end;
 };
 
 typedef struct lx_part lx_part;

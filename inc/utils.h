@@ -45,6 +45,9 @@ void errno_msg(const char *fmt, ...);
 UTIL_PFFORMAT(1, 2) UTIL_NORETURN
 void usage_err(const char *fmt, ...);
 
+DA_TYPE(da_charp, char *);
+
+void free_charp_arr(da_charp *arr);
 void free_argv(char **argv);
 char **copy_argv(char **argv);
 

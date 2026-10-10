@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "printty.h"
 #include "variable.h"
+#include "path_glob.h"
 
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
@@ -24,7 +25,8 @@
 #define DELETE_ALL    5
 
 #define INSERT_CHAR  1
-#define INSERT_PASTE 2
+#define INSERT_STR   2
+#define INSERT_PASTE 3
 
 #define OP_NONE 0
 #define OP_DEL  1
@@ -63,6 +65,10 @@ static inline int line_len(void) {
     int rv = (int)(hda_size(input.line) - 1) - input.start;
     assert(rv >= 0);
     return rv;
+}
+
+static inline char *lstart(void) {
+    return input.line + input.start;
 }
 
 static inline int next_non_ws(const char *line, int i) {
@@ -156,7 +162,7 @@ int prev_word(const char *line, int start, input_word *word) {
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);
 
-    if (start == (int)strlen(line) + 1)
+    if (start == (int)strlen(line))
         return -1;
 
     int ws = start;
@@ -190,7 +196,7 @@ int cur_word(const char *line, int start, input_word *word) {
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);
 
-    if (start == (int)strlen(line) + 1)
+    if (start == (int)strlen(line))
         return -1;
 
     if (line[start] == ' ')
@@ -227,9 +233,14 @@ static void update_prompt(int style) {
 
         char *cwd = xgetcwd(cwd_str, PATH_MAX);
         char *cwd_base = basename(cwd);
+        sh_var *var = lookup_var(&sh_env.vars, "HOME");
 
-        hds_append(input.line, cwd_base);
-        hds_append(input.line, PROMPT1);
+        if (var && strcmp(cwd, var->value) == 0) {
+            hds_append(input.line, "~");
+        } else
+            hds_append(input.line, cwd_base);
+
+        hds_append(input.line, " > ");
 
     } else if (style == PROMPT_PS) {
         sh_var *var = lookup_var(&sh_env.vars, "PS");
@@ -432,6 +443,17 @@ static void input_delete(int type) {
         } else if (type == DELETE_ALL) {
             hda_delete(input.line, input.start, line_len());
             input.off = 0;
+
+        } else if (type == DELETE_WORD) {
+            input_word word;
+
+            if (cur_word(lstart(), input.off, &word) == -1)
+                return;
+
+            hda_delete(input.line, word.start + input.start,
+                    (word.end - word.start) + 1);
+
+            input.off = word.start;
         }
 
     } else {
@@ -447,20 +469,16 @@ static void input_delete(int type) {
         } else if (type == DELETE_WORD) {
             input_word word;
 
-            if (cur_word(input.line + input.start, input.off, &word) == -1) {
-                hda_delete(input.line, input.start + input.off, 1);
-                if (input.off == line_len() && input.off != 0)
-                    input.off -= 1;
+            if (cur_word(lstart(), input.off, &word) == -1)
+                return;
 
-            } else {
-                hda_delete(input.line, word.start + input.start,
-                        (word.end - word.start) + 1);
+            hda_delete(input.line, word.start + input.start,
+                    (word.end - word.start) + 1);
 
-                input.off = word.start;
+            input.off = word.start;
 
-                if (input.off > 0)
-                    --input.off;
-            }
+            if (input.off > 0)
+                --input.off;
         }
     }
 
@@ -476,6 +494,10 @@ static void input_insert(int type, const char *s) {
         if (type == INSERT_CHAR) {
             hda_insert_buf(input.line, input.start + input.off, 1, s);
             input.off += 1;
+
+        } else if (type == INSERT_STR) {
+            hda_insert_buf(input.line, input.start + input.off, strlen(s), s);
+            input.off += strlen(s);
         }
     }
 
@@ -492,8 +514,18 @@ static void enter_mode_insert() {
     input.insert_mode = true;
 }
 
+static void input_reset_comp(void) {
+    input.comp.i = 0;
+    input.comp.start_i = 0;
+    hds_free(input.comp.glob);
+    input.comp.glob = nullptr;
+}
+
 static void insert_mode_feed_key(PrinttyInputKey key) {
     if (key == PRINTTY_BACKSPACE) {
+        if (input.comp.glob)
+            input_reset_comp();
+
         input_delete(DELETE_CURSOR);
 
     } else if (key == PRINTTY_LEFT) {
@@ -504,7 +536,28 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
     }
 }
 
+static void get_path_entries(da_charp *pents) {
+    assert(pents);
+    *pents = (da_charp){0};
+
+    sh_var *var = lookup_var(&sh_env.vars, "PATH");
+    char *path_str = xstrdup(var->value);
+
+    char *tok = strtok(path_str, ":");
+    if (!tok)
+        xfatal("unexpected strtok return value");
+
+    do {
+        *da_push(pents) = xstrdup(tok);
+    } while ((tok = strtok(NULL, ":")));
+
+    free(path_str);
+}
+
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
+    if (codepoint != 9/*TAB*/)
+        input_reset_comp();
+
     if (codepoint >= 32 && codepoint <= 126) {
         input_insert(INSERT_CHAR, &utf8[0]);
 
@@ -529,6 +582,59 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         input_move(input.off - 1);
         enter_mode_normal();
 
+    } else if (codepoint == 9/*TAB*/) {
+        if (!input.comp.glob) {
+            input_word word;
+
+            if (cur_word(lstart(), MAX(0, input.off - 1), &word) == -1)
+                return;
+
+            hds_append_n(input.comp.glob, lstart() + word.start,
+                    (word.end + 1) - word.start);
+            hds_append_n(input.comp.glob, "*", 1);
+            input.comp.start_i = word.start;
+
+            LOG_INFO("new glob comp = [%d,%d]", word.start, word.end);
+        }
+
+        /* PATH COMPLETIONS */
+        da_charp matches = {0};
+        da_charp pents = {0};
+
+        get_path_entries(&pents);
+
+        for (size_t i = 0; i < pents.size; ++i) {
+            char *glob = nullptr;
+            hds_append(glob, pents.data[i]);
+            hds_append(glob, "/");
+            hds_append(glob, input.comp.glob);
+            LOG_INFO("PATH glob: %s", glob);
+
+            glob_pattern(glob, hds_len(glob), &matches);
+            hds_free(glob);
+
+            if (matches.size != 0)
+                break;
+        }
+
+        free_charp_arr(&pents);
+
+        if (matches.size == 0)
+            glob_pattern(input.comp.glob, hds_len(input.comp.glob), &matches);
+
+        if (matches.size == 0)
+            return;
+
+        for (size_t i = 0; i < matches.size; ++i) {
+            char *bn = xstrdup(basename(matches.data[i]));
+            free(matches.data[i]);
+            matches.data[i] = bn;
+        }
+
+        input_move(input.comp.start_i);
+        input_delete(DELETE_WORD);
+        input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
+        free_charp_arr(&matches);
     }
 }
 
@@ -585,27 +691,27 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
         input_move(0);
 
     } else if (codepoint == 'b') {
-        if (cur_word(input.line + input.start, input.off, &word) != -1 &&
+        if (cur_word(lstart(), input.off, &word) != -1 &&
                 input.off != word.start) {
             input_move(word.start);
 
-        } else if (prev_word(input.line + input.start, input.off, &word) == -1) {
+        } else if (prev_word(lstart(), input.off, &word) == -1) {
             input_move(0);
         } else
             input_move(word.start);
 
     } else if (codepoint == 'w') {
-        if (next_word(input.line + input.start, input.off, &word) == -1) {
+        if (next_word(lstart(), input.off, &word) == -1) {
             input_move(line_len() - 1);
         } else
             input_move(word.start);
 
     } else if (codepoint == 'e') {
-        if (cur_word(input.line + input.start, input.off, &word) != -1 &&
+        if (cur_word(lstart(), input.off, &word) != -1 &&
                 input.off != word.end) {
             input_move(word.end);
 
-        } else if (next_word(input.line + input.start, input.off, &word) == -1) {
+        } else if (next_word(lstart(), input.off, &word) == -1) {
             input_move(line_len() - 1);
         } else
             input_move(word.end);
@@ -692,6 +798,7 @@ char *get_line(void) {
 
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
+                input_reset_comp();
                 printf("\n");
                 break;
             }
@@ -711,5 +818,5 @@ char *get_line(void) {
     }
 
     LOG_INFO("parsed line: %s", input.line);
-    return input.line + input.start;
+    return lstart();
 }

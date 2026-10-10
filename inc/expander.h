@@ -16,7 +16,6 @@ struct ex_tok {
 
 typedef struct ex_tok ex_tok;
 DA_TYPE(da_ex_tok, ex_tok);
-DA_TYPE(da_charp, char *);
 
 int ex_expand(const ps_ast *ast);
 

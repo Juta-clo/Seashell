@@ -14,6 +14,7 @@ typedef struct {
     lx_tok *cur_tok;
     const char *part_start;
     const char *cur_char;
+    const char *cmd;
 } lx_scanner;
 
 char *lx_errstr(lx_status stat) {
@@ -160,6 +161,9 @@ static int end_part(lx_scanner *scanner) {
 
     da_part *parts = &scanner->cur_tok->parts;
     lx_part *part = &parts->data[parts->size - 1];
+
+    part->start = scanner->part_start - scanner->cmd;
+    part->end = scanner->cur_char - scanner->cmd;
 
     size_t len = 0;
     for (const char *c = scanner->part_start; c != scanner->cur_char; ++c)
@@ -326,7 +330,7 @@ int lx_tokenize(const char *cmd, da_tok *tokens) {
 
     da_init(tokens);
 
-    lx_scanner scanner = { LX_M_NORMAL, LX_M_NORMAL, NULL, NULL, cmd };
+    lx_scanner scanner = { LX_M_NORMAL, LX_M_NORMAL, NULL, NULL, cmd, cmd };
 
     for (; *scanner.cur_char != '\0'; ++scanner.cur_char) {
         switch (scanner.mode) {

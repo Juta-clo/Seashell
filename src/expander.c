@@ -12,15 +12,6 @@
 #include "variable.h"
 #include "shell_state.h"
 
-static void free_charp_array(da_charp *arr) {
-    for (size_t i = 0; i < arr->size; ++i)
-        free(arr->data[i]);
-
-    da_free(arr);
-
-    *arr = (da_charp){0};
-}
-
 static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
         ex_tok_type type) {
     if (c == start)
@@ -157,7 +148,7 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
     if (has_glob) {
         da_charp glob_result;
 
-        if (glob_pattern(arg.c_str, &glob_result) == -1)
+        if (glob_pattern(arg.c_str, arg.len, &glob_result) == -1)
             goto cleanup;
 
         if (glob_result.size == 0) {
@@ -168,12 +159,12 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
         if (redir) {
             if (glob_result.size > 1) {
                 err_msg("ambiguous redirect");
-                free_charp_array(&glob_result);
+                free_charp_arr(&glob_result);
                 goto cleanup;
 
             } else {
                 word->arg = xstrdup(glob_result.data[0]);
-                free_charp_array(&glob_result);
+                free_charp_arr(&glob_result);
             }
 
         } else if (!redir) {
@@ -211,7 +202,7 @@ static int create_argv(ps_cmd *cmd) {
     return 0;
 
 fail:
-    free_charp_array(&argv);
+    free_charp_arr(&argv);
     return -1;
 }
 

@@ -1,19 +1,10 @@
-#include "expander.h"
+#include "path_glob.h"
 #include "linc_tools.h"
 #include "utils.h"
 
 /* qsort */
 static int cmp_match(const void *p1, const void *p2) {
     return strcmp(*(char **)p1, *(char **)p2);
-}
-
-static void free_charp_array(da_charp *arr) {
-    for (size_t i = 0; i < arr->size; ++i)
-        free(arr->data[i]);
-
-    da_free(arr);
-
-    *arr = (da_charp){0};
 }
 
 static void get_path_components(char *str, da_charp *comps) {
@@ -119,15 +110,10 @@ static bool substrs_ok(const char *dent, da_charp *substrs, size_t pre_n,
 }
 
 static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
-    if (dirs) {
-        LOG_INFO("get_dir_entries: dirs=true");
-    } else
-        LOG_INFO("get_dir_entries: dirs=false");
-
     size_t og_dent_size = dents->size;
 
     for (size_t i = 0; i < og_dent_size; ++i) {
-        const char *path = dents->data[i];
+        char *path = dents->data[i];
 
         DIR *dir = xopendir(path);
         LOG_INFO("opened path: %s", path);
@@ -149,16 +135,16 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
             if (!inc_prev && is_prev_dirent)
                 continue;
 
-            if (!dirs || (dirent->d_type == DT_DIR || is_prev_dirent)) {
-                LOG_INFO("readdir found %s", dirent->d_name);
-            } else {
-                LOG_INFO("readdir skipped non-dir %s", dirent->d_name);
+            if (dirs && !(dirent->d_type == DT_DIR || is_prev_dirent))
                 continue;
-            }
 
             char **dent = da_push(dents);
             *dent = xmalloc(strlen(path) + strlen(dirent->d_name) + 2);
-            strcpy(*dent, path); /* +2 for '\0' and separating '/' */
+
+            if (strcmp(path, "/") == 0)
+                path[0] = '\0';
+
+            strcpy(*dent, path);
             strcat(*dent, "/");
             strcat(*dent, dirent->d_name);
         }
@@ -171,9 +157,7 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
         da_delete(dents, 0);
     }
 
-    LOG_INFO("dents updated:");
-    for (size_t i = 0; i < dents->size; ++i)
-        LOG_INFO("dents[%ld] = %s", i, dents->data[i]);
+    LOG_INFO("dents updated; new size %ld", dents->size);
 }
 
 static void filter_dents(const char *glob, da_charp *dents) {
@@ -197,39 +181,38 @@ static void filter_dents(const char *glob, da_charp *dents) {
         free(dent_cpy);
     }
 
-    free_charp_array(&substrs);
+    free_charp_arr(&substrs);
 
-    LOG_INFO("filtered dents; new size %ld [%s]:", dents->size, glob);
-    for (size_t i = 0; i < dents->size; ++i)
-        LOG_INFO("dents[%ld] = %s", i, dents->data[i]);
+    LOG_INFO("filtered dents; new size %ld [%s]", dents->size, glob);
 }
 
-int glob_pattern(const char *glob, da_charp *matches) {
+int glob_pattern(const char *glob, size_t len, da_charp *matches) {
     ASSERT(glob && matches);
-    ASSERT_G_INT(strlen(glob), 0);
+    ASSERT_G_INT(len, 0);
 
     *matches = (da_charp){0};
-    size_t len = strlen(glob);
 
     int rv = -1;
     bool slash_last = (glob[len - 1] == '/');
     da_charp comps = {0};
     da_charp dents = {0};
+    char *glob_text = xstrndup(glob, len);
 
-    if (glob[0] == '/')
-        *da_push(&dents) = xstrdup("/");
-
-    char *glob_text = xstrdup(glob);
     get_path_components(glob_text, &comps);
 
-    if (strcmp(".", comps.data[0]) == 0 ||
-        strcmp("..", comps.data[0]) == 0)
-    {
-        *da_push(&dents) = xstrdup(comps.data[0]);
-        da_delete(&comps, 0);
+    if (glob[0] == '/') {
+        *da_push(&dents) = xstrdup("/");
 
     } else {
-        *da_push(&dents) = xstrdup(".");
+        if (strcmp(".", comps.data[0]) == 0 ||
+            strcmp("..", comps.data[0]) == 0)
+        {
+            *da_push(&dents) = xstrdup(comps.data[0]);
+            da_delete(&comps, 0);
+
+        } else {
+            *da_push(&dents) = xstrdup(".");
+        }
     }
 
     for (size_t comp_i = 0; comp_i < comps.size; ++comp_i) {
@@ -257,7 +240,7 @@ int glob_pattern(const char *glob, da_charp *matches) {
 
 cleanup:
     free(glob_text);
-    free_charp_array(&dents);
+    free_charp_arr(&dents);
     da_free(&comps);
 
     return rv;

@@ -94,6 +94,23 @@ TEST(input, normal_mode_deletion_on_last_character) {
     );
 }
 
+TEST(input, tab_completion_with_no_line) {
+    vterm_send_str("\t");
+    assert_term(0, PROMPT_LEN,
+        PROMPT ""
+    );
+
+    vterm_send_str("x");
+    assert_term(0, PROMPT_LEN + 1,
+        PROMPT "x"
+    );
+
+    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN,
+        PROMPT "x"
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -103,4 +120,5 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, line_is_preserved_on_async_job_messages);
     RUN_TEST_CASE(input, sigchld_with_no_prompt_redraw);
     RUN_TEST_CASE(input, normal_mode_deletion_on_last_character);
+    RUN_TEST_CASE(input, tab_completion_with_no_line);
 }

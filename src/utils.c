@@ -151,6 +151,15 @@ void usage_err(const char *fmt, ...) {
 
 /* general */
 
+void free_charp_arr(da_charp *arr) {
+    for (size_t i = 0; i < arr->size; ++i)
+        free(arr->data[i]);
+
+    da_free(arr);
+
+    *arr = (da_charp){0};
+}
+
 void free_argv(char **argv) {
     for (char **arg = argv; *arg != NULL; ++arg)
         free(*arg);
