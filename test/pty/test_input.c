@@ -1,6 +1,5 @@
 #include "unity_fixture.h"
 #include "pty_test.h"
-#include "proc_view.h"
 
 TEST_GROUP(input);
 

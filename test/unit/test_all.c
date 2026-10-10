@@ -52,6 +52,7 @@ void run_all(void) {
     RUN_TEST_GROUP(parser);
     RUN_TEST_GROUP(jobs);
     RUN_TEST_GROUP(input);
+    RUN_TEST_GROUP(glob);
 }
 
 int main(int argc, const char **argv) {
