@@ -24,6 +24,11 @@ typedef struct {
 } input_comp;
 
 typedef struct {
+    size_t start_i;
+    size_t n;
+} input_del_ctx;
+
+typedef struct {
     char *line;
     int start_row;
     int off;

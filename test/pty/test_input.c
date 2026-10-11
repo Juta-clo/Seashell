@@ -111,6 +111,74 @@ TEST(input, tab_completion_with_no_line) {
     );
 }
 
+TEST(input, tab_completion_on_filename_with_whitespace) {
+    xclose(xopen("file with spaces", O_RDWR | O_CREAT | O_EXCL, 0600));
+
+    vterm_send_str("stat file\t");
+    bool rv = term_ensure(LN(
+        PROMPT "stat file\\ with\\ spaces"
+    ), 0, PROMPT_LEN + 23);
+    take_vt_snapshot();
+
+    xunlink("file with spaces");
+
+    if (!rv)
+       TEST_FAIL_MESSAGE("term_ensure_failed");
+}
+
+TEST(input, tab_completion_cycles_results) {
+    xclose(xopen("file1", O_RDWR | O_CREAT | O_EXCL, 0600));
+    xclose(xopen("foo", O_RDWR | O_CREAT | O_EXCL, 0600));
+    xclose(xopen("foo bar", O_RDWR | O_CREAT | O_EXCL, 0600));
+
+    char *lines[3] = {
+        PROMPT "stat file1",
+        PROMPT "stat foo",
+        PROMPT "stat foo\\ bar"
+    };
+
+    vterm_send_str("stat f");
+
+    bool rv;
+    for (size_t i = 0; i < ARR_LEN(lines) * 2; ++i) {
+        char *exp = lines[i % ARR_LEN(lines)];
+
+        vterm_send_str("\t");
+        if (!(rv = term_ensure(LN(exp), 0, strlen(exp))))
+            break;
+        take_vt_snapshot();
+    }
+
+    xunlink("file1");
+    xunlink("foo");
+    xunlink("foo bar");
+
+    if (!rv)
+       TEST_FAIL_MESSAGE("term_ensure_failed");
+}
+
+TEST(input, forward_slash_confirms_completion) {
+    xclose(xopen("foo", O_RDWR | O_CREAT | O_EXCL, 0600));
+
+    bool rv;
+
+    vterm_send_str("stat f\t");
+    if (!(rv = term_ensure(LN(PROMPT "stat foo"), 0, PROMPT_LEN + 8)))
+        goto cleanup;
+    take_vt_snapshot();
+
+    vterm_send_str("/ bar");
+    if (!(rv = term_ensure(LN(PROMPT "stat foo bar"), 0, PROMPT_LEN + 12)))
+        goto cleanup;
+    take_vt_snapshot();
+
+cleanup:
+    xunlink("foo");
+
+    if (!rv)
+       TEST_FAIL_MESSAGE("term_ensure_failed");
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -121,4 +189,7 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, sigchld_with_no_prompt_redraw);
     RUN_TEST_CASE(input, normal_mode_deletion_on_last_character);
     RUN_TEST_CASE(input, tab_completion_with_no_line);
+    RUN_TEST_CASE(input, tab_completion_on_filename_with_whitespace);
+    RUN_TEST_CASE(input, tab_completion_cycles_results);
+    RUN_TEST_CASE(input, forward_slash_confirms_completion);
 }

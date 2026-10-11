@@ -27,6 +27,7 @@
 #define DELETE_END    3
 #define DELETE_START  4
 #define DELETE_ALL    5
+#define DELETE_RANGE  6
 
 #define INSERT_CHAR  1
 #define INSERT_STR   2
@@ -228,12 +229,14 @@ int cur_word(const char *line, int start, input_word *word) {
     return 0;
 }
 
-static comp_tok input_current_tok(void) {
-    comp_tok rv = COMP_CMD;
+static int input_current_tok(comp_tok *comp, int *start, int *end) {
+    assert(comp && start && end);
+
+    *comp = COMP_CMD;
 
     da_tok toks;
     if (lx_tokenize(lstart(), &toks) != LX_OK)
-        return rv;
+        return -1;
 
     for (size_t i = 0; i < toks.size; ++i) {
         lx_tok *tok = &toks.data[i];
@@ -243,29 +246,29 @@ static comp_tok input_current_tok(void) {
         if (input.off >= tok->parts.data[0].start &&
             input.off <= tok->parts.data[tok->parts.size - 1].end)
         {
+            *start = tok->parts.data[0].start;
+            *end = tok->parts.data[tok->parts.size - 1].end;
+
             if (i == 0) {
-                rv = COMP_CMD;
-                break;
+                *comp = COMP_CMD;
+            } else if (toks.data[i - 1].kind == LX_TOK_WORD) {
+                *comp = COMP_ARG;
+            } else if (toks.data[i - 1].kind == LX_TOK_RDR_OUT ||
+                       toks.data[i - 1].kind == LX_TOK_RDR_IN ||
+                       toks.data[i - 1].kind == LX_TOK_RDR_ERR ||
+                       toks.data[i - 1].kind == LX_TOK_APPEND) {
+                *comp = COMP_REDIR;
+            } else {
+                *comp = COMP_CMD;
             }
 
-            if (toks.data[i - 1].kind == LX_TOK_WORD) {
-                rv = COMP_ARG;
-                break;
-            }
-
-            if (toks.data[i - 1].kind == LX_TOK_RDR_OUT ||
-                toks.data[i - 1].kind == LX_TOK_RDR_IN ||
-                toks.data[i - 1].kind == LX_TOK_RDR_ERR ||
-                toks.data[i - 1].kind == LX_TOK_APPEND)
-            {
-                rv = COMP_REDIR;
-                break;
-            }
+            lx_free(&toks);
+            return 0;
         }
     }
 
     lx_free(&toks);
-    return rv;
+    return -1;
 }
 
 static void update_prompt(int style) {
@@ -454,15 +457,22 @@ static void input_move(int offset) {
     }
 }
 
-static void input_delete(int type) {
+static void input_delete(int type, input_del_ctx *ctx) {
     ASSERT_GE_INT(input.off, 0);
     ASSERT_GE_INT(line_len(), input.off);
-    assert(input.insert_mode || input.off < line_len() || line_len() == 0);
+    ASSERT(input.insert_mode || input.off < line_len() || line_len() == 0);
 
     if (line_len() == 0)
         return;
 
-    if (input.insert_mode) {
+    if (type == DELETE_RANGE) {
+        ASSERT(ctx);
+        ASSERT_GE_INT(line_len() - input.off, ctx->n);
+        ASSERT_GE_INT(ctx->start_i, 0);
+
+        hda_delete(input.line, input.start + ctx->start_i, ctx->n);
+
+    } else if (input.insert_mode) {
         if (type == DELETE_CURSOR) {
             if (input.off == 0)
                 return;
@@ -570,7 +580,7 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
         if (input.comp.glob)
             input_reset_comp();
 
-        input_delete(DELETE_CURSOR);
+        input_delete(DELETE_CURSOR, NULL);
 
     } else if (key == PRINTTY_LEFT) {
         input_move(input.off - 1);
@@ -598,6 +608,21 @@ static void get_path_entries(da_charp *pents) {
     free(path_str);
 }
 
+static void escape_spaces(char **str) {
+    dstr out;
+    dstr_init(&out);
+
+    for (char *c = *str; *c != '\0'; ++c) {
+        if (*c == ' ') {
+            dstrcat(&out, "\\ ");
+        } else
+            dstrncat(&out, c, 1);
+    }
+
+    free(*str);
+    *str = out.c_str;
+}
+
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
     if (input.comp.glob && codepoint == '/') {
         input_reset_comp();
@@ -617,10 +642,10 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         input_move(0);
 
     } else if (codepoint == 11/*C-k*/) {
-        input_delete(DELETE_END);
+        input_delete(DELETE_END, NULL);
 
     } else if (codepoint == 21/*C-u*/) {
-        input_delete(DELETE_START);
+        input_delete(DELETE_START, NULL);
 
     } else if (codepoint == 12/*C-l*/) {
         xprintty_write(sh_env.pt, unibi_clear_screen);
@@ -632,20 +657,21 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         enter_mode_normal();
 
     } else if (codepoint == 9/*TAB*/) {
-        comp_tok tok = input_current_tok();
+        int tstart, tend;
+        comp_tok tok;
+
+        if (input_current_tok(&tok, &tstart, &tend) == -1) {
+            input_reset_comp();
+            return;
+        }
 
         if (!input.comp.glob) {
-            input_word word;
-
-            if (cur_word(lstart(), MAX(0, input.off - 1), &word) == -1)
-                return;
-
-            hds_append_n(input.comp.glob, lstart() + word.start,
-                    (word.end + 1) - word.start);
+            hds_append_n(input.comp.glob, lstart() + tstart, tend - tstart);
             hds_append_n(input.comp.glob, "*", 1);
-            input.comp.start_i = word.start;
+            input.comp.start_i = tstart;
 
-            LOG_INFO("new glob comp = [%d,%d]", word.start, word.end);
+            LOG_INFO("new comp tok = \"%.*s\", [%d,%d]",
+                    tend - tstart, lstart() + tstart, tstart, tend);
         }
 
         da_charp matches = {0};
@@ -700,11 +726,13 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
 
             free(matches.data[i]);
             free(glob_copy);
+
+            escape_spaces(&result.c_str);
             matches.data[i] = result.c_str;
         }
 
         input_move(input.comp.start_i);
-        input_delete(DELETE_WORD);
+        input_delete(DELETE_RANGE, &(input_del_ctx){ tstart, tend - tstart });
         input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
         free_charp_arr(&matches);
     }
@@ -722,9 +750,9 @@ static void normal_mode_feed_key(PrinttyInputKey key) {
 static void operator_pending_feed_unicode(uint32_t codepoint, int op) {
     if (op == OP_DEL) {
         if (codepoint == 'd')
-            input_delete(DELETE_ALL);
+            input_delete(DELETE_ALL, NULL);
         else if (codepoint == 'w')
-            input_delete(DELETE_WORD);
+            input_delete(DELETE_WORD, NULL);
     }
 }
 
@@ -752,7 +780,7 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
         input_move(input.off + 1);
 
     } else if (codepoint == 'x') {
-        input_delete(DELETE_CURSOR);
+        input_delete(DELETE_CURSOR, NULL);
 
     } else if (codepoint == 'A') {
         enter_mode_insert();

@@ -26,6 +26,9 @@
 #define MIN(a, b) \
     ((a) < (b)) ? a : b
 
+#define ARR_LEN(arr) \
+    (sizeof(arr) / sizeof(typeof(*arr)))
+
 DA_TYPE(da_charp, char *);
 
 struct vt_snap {
