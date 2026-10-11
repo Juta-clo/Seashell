@@ -11,6 +11,12 @@
 
 typedef char * hds;
 
+typedef enum {
+    COMP_CMD,
+    COMP_ARG,
+    COMP_REDIR
+} comp_tok;
+
 typedef struct {
     size_t i;
     size_t start_i;

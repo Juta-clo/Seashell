@@ -151,6 +151,14 @@ void usage_err(const char *fmt, ...) {
 
 /* general */
 
+bool is_dir(const char *path) {
+    struct stat sb;
+    if (stat(path, &sb) == -1)
+        return false;
+
+    return S_ISDIR(sb.st_mode);
+}
+
 void free_charp_arr(da_charp *arr) {
     for (size_t i = 0; i < arr->size; ++i)
         free(arr->data[i]);

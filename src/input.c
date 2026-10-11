@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <linux/limits.h>
-#include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <string.h> /* include before libgen.h! */
+#include <libgen.h>
+
+#undef basename
 
 #include "linc_tools.h"
 #include "input.h"
@@ -12,6 +15,7 @@
 #include "printty.h"
 #include "variable.h"
 #include "path_glob.h"
+#include "lexer.h"
 
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
@@ -222,6 +226,46 @@ int cur_word(const char *line, int start, input_word *word) {
     ASSERT_G_INT((int)strlen(line), word->end);
 
     return 0;
+}
+
+static comp_tok input_current_tok(void) {
+    comp_tok rv = COMP_CMD;
+
+    da_tok toks;
+    if (lx_tokenize(lstart(), &toks) != LX_OK)
+        return rv;
+
+    for (size_t i = 0; i < toks.size; ++i) {
+        lx_tok *tok = &toks.data[i];
+        if (tok->kind != LX_TOK_WORD)
+            continue;
+
+        if (input.off >= tok->parts.data[0].start &&
+            input.off <= tok->parts.data[tok->parts.size - 1].end)
+        {
+            if (i == 0) {
+                rv = COMP_CMD;
+                break;
+            }
+
+            if (toks.data[i - 1].kind == LX_TOK_WORD) {
+                rv = COMP_ARG;
+                break;
+            }
+
+            if (toks.data[i - 1].kind == LX_TOK_RDR_OUT ||
+                toks.data[i - 1].kind == LX_TOK_RDR_IN ||
+                toks.data[i - 1].kind == LX_TOK_RDR_ERR ||
+                toks.data[i - 1].kind == LX_TOK_APPEND)
+            {
+                rv = COMP_REDIR;
+                break;
+            }
+        }
+    }
+
+    lx_free(&toks);
+    return rv;
 }
 
 static void update_prompt(int style) {
@@ -555,6 +599,11 @@ static void get_path_entries(da_charp *pents) {
 }
 
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
+    if (input.comp.glob && codepoint == '/') {
+        input_reset_comp();
+        return;
+    }
+
     if (codepoint != 9/*TAB*/)
         input_reset_comp();
 
@@ -583,6 +632,8 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         enter_mode_normal();
 
     } else if (codepoint == 9/*TAB*/) {
+        comp_tok tok = input_current_tok();
+
         if (!input.comp.glob) {
             input_word word;
 
@@ -597,38 +648,59 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
             LOG_INFO("new glob comp = [%d,%d]", word.start, word.end);
         }
 
-        /* PATH COMPLETIONS */
         da_charp matches = {0};
         da_charp pents = {0};
 
-        get_path_entries(&pents);
+        if (tok == COMP_CMD) {
+            get_path_entries(&pents);
 
-        for (size_t i = 0; i < pents.size; ++i) {
-            char *glob = nullptr;
-            hds_append(glob, pents.data[i]);
-            hds_append(glob, "/");
-            hds_append(glob, input.comp.glob);
-            LOG_INFO("PATH glob: %s", glob);
+            for (size_t i = 0; i < pents.size; ++i) {
+                char *glob = nullptr;
+                hds_append(glob, pents.data[i]);
+                hds_append(glob, "/");
+                hds_append(glob, input.comp.glob);
+                LOG_INFO("PATH glob: %s", glob);
 
-            glob_pattern(glob, hds_len(glob), &matches);
-            hds_free(glob);
+                glob_pattern(glob, hds_len(glob), &matches);
+                hds_free(glob);
 
-            if (matches.size != 0)
-                break;
+                if (matches.size != 0)
+                    break;
+            }
+
+            free_charp_arr(&pents);
+        } else if (tok == COMP_ARG || tok == COMP_REDIR) {
+            if (matches.size == 0)
+                glob_pattern(input.comp.glob, hds_len(input.comp.glob), &matches);
+
+            LOG_INFO("File glob: %s", input.comp.glob);
         }
-
-        free_charp_arr(&pents);
-
-        if (matches.size == 0)
-            glob_pattern(input.comp.glob, hds_len(input.comp.glob), &matches);
 
         if (matches.size == 0)
             return;
 
         for (size_t i = 0; i < matches.size; ++i) {
-            char *bn = xstrdup(basename(matches.data[i]));
+            char *glob_copy = xstrdup(input.comp.glob);
+            char *glob_dirname = dirname(glob_copy);
+            bool path_pre = (strcmp(glob_dirname, ".") != 0);
+
+            bool append_slash = is_dir(matches.data[i]);
+            char *bn = basename(matches.data[i]);
+
+            dstr result;
+            dstr_init(&result);
+
+            if (path_pre)
+                dstr_printf(&result, "%s/", glob_dirname);
+
+            dstrcat(&result, bn);
+
+            if (append_slash)
+                dstrcat(&result, "/");
+
             free(matches.data[i]);
-            matches.data[i] = bn;
+            free(glob_copy);
+            matches.data[i] = result.c_str;
         }
 
         input_move(input.comp.start_i);
@@ -792,6 +864,7 @@ char *get_line(void) {
         if (pev.type == PRINTTY_UNICODE) {
             if (input.insert_mode) {
                 insert_mode_feed_unicode(pev.codepoint, pev.utf8);
+
             } else {
                 normal_mode_feed_unicode(pev.codepoint, pev.utf8);
             }
