@@ -179,6 +179,172 @@ cleanup:
        TEST_FAIL_MESSAGE("term_ensure_failed");
 }
 
+TEST(input, first_word_after_pipeline_uses_path_completion) {
+    vterm_send_str("ls -a | gre\t");
+    assert_term(0, PROMPT_LEN + 12,
+        PROMPT "ls -a | grep"
+    );
+}
+
+TEST(input, first_word_after_andor_uses_path_completion) {
+    vterm_send_str("ls -a && gre\t");
+    assert_term(0, PROMPT_LEN + 13,
+        PROMPT "ls -a && grep"
+    );
+
+    vterm_send_str("\b\b\b\b\b\b\b|| grep\t");
+    assert_term(0, PROMPT_LEN + 13,
+        PROMPT "ls -a || grep"
+    );
+}
+
+TEST(input, no_operation_on_history_scroll_with_non_saved) {
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    vterm_send_str("foo");
+    assert_term(0, PROMPT_LEN + 3,
+        PROMPT "foo"
+    );
+}
+
+TEST(input, history_scroll_with_one_item_saved) {
+    vterm_send_str("cd .\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT "cd .",
+        PROMPT
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN + 4,
+        PROMPT "cd .",
+        PROMPT "cd ."
+    );
+
+    vterm_send_key(VTERM_KEY_DOWN, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN,
+        PROMPT "cd .",
+        PROMPT
+    );
+}
+
+TEST(input, scrolling_history_past_end_and_start) {
+    vterm_send_str("cd .\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT "cd .",
+        PROMPT
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN + 4,
+        PROMPT "cd .",
+        PROMPT "cd ."
+    );
+
+    vterm_send_key(VTERM_KEY_DOWN, VTERM_MOD_NONE);
+    vterm_send_key(VTERM_KEY_DOWN, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN,
+        PROMPT "cd .",
+        PROMPT
+    );
+}
+
+TEST(input, restore_typed_input_after_scrolling_history) {
+    vterm_send_str("cd .\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT "cd .",
+        PROMPT
+    );
+
+    vterm_send_str("foobar");
+    assert_term(1, PROMPT_LEN + 6,
+        PROMPT "cd .",
+        PROMPT "foobar"
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN + 4,
+        PROMPT "cd .",
+        PROMPT "cd ."
+    );
+
+    vterm_send_key(VTERM_KEY_DOWN, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN + 6,
+        PROMPT "cd .",
+        PROMPT "foobar"
+    );
+}
+
+TEST(input, submitting_history_entry_saves_it_again) {
+    vterm_send_str("false\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "false",
+        PROMPT
+    );
+
+    vterm_send_str("true\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "true",
+        PROMPT
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 5,
+        PROMPT "false"
+    );
+
+    vterm_send_str("\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT "false",
+        PROMPT
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN + 5,
+        PROMPT "false",
+        PROMPT "false"
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN + 4,
+        PROMPT "false",
+        PROMPT "true"
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(1, PROMPT_LEN + 5,
+        PROMPT "false",
+        PROMPT "false"
+    );
+}
+
+TEST(input, submitting_history_entry_with_saved_typed_input) {
+    vterm_send_str("false\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "false",
+        PROMPT
+    );
+
+    vterm_send_str("foo");
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    vterm_send_str("\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "false",
+        PROMPT
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 5,
+        PROMPT "false"
+    );
+
+    vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
+    vterm_send_key(VTERM_KEY_DOWN, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -192,4 +358,12 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, tab_completion_on_filename_with_whitespace);
     RUN_TEST_CASE(input, tab_completion_cycles_results);
     RUN_TEST_CASE(input, forward_slash_confirms_completion);
+    RUN_TEST_CASE(input, first_word_after_pipeline_uses_path_completion);
+    RUN_TEST_CASE(input, first_word_after_andor_uses_path_completion);
+    RUN_TEST_CASE(input, no_operation_on_history_scroll_with_non_saved);
+    RUN_TEST_CASE(input, history_scroll_with_one_item_saved);
+    RUN_TEST_CASE(input, scrolling_history_past_end_and_start);
+    RUN_TEST_CASE(input, restore_typed_input_after_scrolling_history);
+    RUN_TEST_CASE(input, submitting_history_entry_saves_it_again);
+    RUN_TEST_CASE(input, submitting_history_entry_with_saved_typed_input);
 }

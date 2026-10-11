@@ -569,10 +569,13 @@ static void enter_mode_insert() {
 }
 
 static void input_reset_comp(void) {
-    input.comp.i = 0;
-    input.comp.start_i = 0;
-    hds_free(input.comp.glob);
-    input.comp.glob = nullptr;
+    if (input.comp.glob) {
+        input.comp.i = 0;
+        input.comp.start_i = 0;
+        hds_free(input.comp.glob);
+        input.comp.glob = nullptr;
+        input_update();
+    }
 }
 
 static void insert_mode_feed_key(PrinttyInputKey key) {
@@ -821,6 +824,53 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
     }
 }
 
+static void history_push(const char *line) {
+    hda_insert(input.hist.lines, 0, 1, { hda_dup(line) });
+    input.hist.i = 0;
+
+    if (input.hist.saved) {
+        hda_free(input.hist.saved);
+        input.hist.saved = nullptr;
+    }
+
+    LOG_INFO("history push: \"%s\"", line);
+}
+
+static void history_prev(void) {
+    if (input.hist.i == 0) {
+        if (input.hist.saved) {
+            hda_free(input.line);
+            input.line = input.hist.saved;
+            input.hist.saved = nullptr;
+            input.off = line_len();
+        }
+
+        return;
+    }
+
+    hda_free(input.line);
+    input.line = hda_dup(input.hist.lines[--input.hist.i]);
+    input.off = line_len();
+}
+
+static void history_next(void) {
+    if (hda_size(input.hist.lines) == 0)
+        return;
+    if (input.hist.i == hda_size(input.hist.lines) - 1 && input.hist.saved)
+        return;
+
+    if (!input.hist.saved) {
+        input.hist.saved = input.line;
+    } else {
+        hda_free(input.line);
+        ++input.hist.i;
+    }
+
+    input.line = hda_dup(input.hist.lines[input.hist.i]);
+    input.off = line_len();
+    LOG_INFO("history_next: input.line = \"%s\"", input.line);
+}
+
 void input_init(shell_env *env) {
     assert(env);
     if (!(env->pt = printty_create(NULL)))
@@ -899,9 +949,19 @@ char *get_line(void) {
 
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
+                if (line_len() > 0)
+                    history_push(input.line);
                 input_reset_comp();
                 printf("\n");
                 break;
+
+            } else if (pev.key == PRINTTY_UP) {
+                history_next();
+                input_update();
+
+            } else if (pev.key == PRINTTY_DOWN) {
+                history_prev();
+                input_update();
             }
 
             if (input.insert_mode) {

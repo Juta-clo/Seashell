@@ -3,7 +3,7 @@
  *
  * GENERATED FILE - DO NOT EDIT DIRECTLY
  *
- * Commit [76475ba]
+ * Commit [af70e53]
  */
 
 #ifndef LINC_TOOLS_H_INCLUDED
@@ -172,6 +172,16 @@ static inline void *_hda_grow(void *hda, size_t el_sz, size_t n) {
     _HDA_SIZE(hda) = size + n;
 
     return hda;
+}
+
+static inline void *hda_dup(const void *hda) {
+    void *out = malloc(_HDA_BYTE_N + _HDA_CAP(hda));
+    if (!out)
+        _LINC_LIB_FATAL("malloc: out of memory");
+
+    memcpy(out, _HDA_START(hda), _HDA_BYTE_N + _HDA_CAP(hda));
+
+    return (char *)out + _HDA_BYTE_N;
 }
 
 static inline void *_hda_insert_imp(void *hda, const void *els,

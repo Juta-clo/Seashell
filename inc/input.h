@@ -24,6 +24,12 @@ typedef struct {
 } input_comp;
 
 typedef struct {
+    char **lines;
+    char *saved;
+    size_t i;
+} input_hist;
+
+typedef struct {
     size_t start_i;
     size_t n;
 } input_del_ctx;
@@ -36,6 +42,7 @@ typedef struct {
     int insert_mode;
     int start;
     input_comp comp;
+    input_hist hist;
 } input_editor;
 
 typedef struct {
