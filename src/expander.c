@@ -206,22 +206,17 @@ fail:
     return -1;
 }
 
-int ex_expand(const ps_ast *ast) {
-    for (size_t i = 0; i < ast->andors.size; ++i) {
-        ps_andor *andor = &ast->andors.data[i];
-        ps_pline *pline = &andor->pline;
+int ex_expand_pline(const ps_pline *pline) {
+    for (size_t j = 0; j < pline->cmds.size; ++j) {
+        ps_cmd *cmd = &pline->cmds.data[j];
 
-        for (size_t j = 0; j < pline->cmds.size; ++j) {
-            ps_cmd *cmd = &pline->cmds.data[j];
+        if (create_argv(cmd) == -1)
+            return -1;
 
-            if (create_argv(cmd) == -1)
+        for (size_t k = 0; k < cmd->redirs.size; ++k) {
+            ps_redir *redir = &cmd->redirs.data[k];
+            if (expand_word(&redir->target, NULL, true) == -1)
                 return -1;
-
-            for (size_t k = 0; k < cmd->redirs.size; ++k) {
-                ps_redir *redir = &cmd->redirs.data[k];
-                if (expand_word(&redir->target, NULL, true) == -1)
-                    return -1;
-            }
         }
     }
 

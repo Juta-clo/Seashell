@@ -80,23 +80,18 @@ static ps_ast *line_to_ast(char *line) {
         return NULL;
     }
 
-    if (ex_expand(ast) == -1) {
-        ps_free(ast);
-        free(ast);
-        lx_free(&toks);
-        return NULL;
-    }
-
     lx_free(&toks);
     return ast;
 }
 
-static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
+static int launch_job(ps_pline *pline, bool bg, pid_t jid) {
     if (!bg)
         xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);
 
-    bool handled = false;
+    if (ex_expand_pline(pline) == -1)
+        return -1;
 
+    bool handled = false;
     if (pline->cmds.size == 1 && pline->cmds.data[0].redirs.size == 0 && !bg) {
         sh_builtin *builtin = get_builtin(pline->cmds.data[0].argv[0]);
 
@@ -124,6 +119,8 @@ static void launch_job(ps_pline *pline, bool bg, pid_t jid) {
         LOG_INFO("[%d] Started %s %d", jid, pline->cmds.data[0].argv[0],
                 pld.pgid);
     }
+
+    return 0;
 }
 
 static bool try_run_next_job(const job_event *jev, bool bg) {
@@ -141,7 +138,9 @@ static bool try_run_next_job(const job_event *jev, bool bg) {
         if (!jev->success && andor->op == PS_AND_IF)
             continue;
 
-        launch_job(&andor->pline, bg, plan->jid);
+        if (launch_job(&andor->pline, bg, plan->jid) == -1)
+            return false;
+
         execed_pline = true;
         break;
     }
@@ -355,18 +354,27 @@ int main(int argc, char *const *argv) {
             xfatal("parsed empty ast");
 
         ps_pline *first_pline = &ast->andors.data[0].pline;
-
         int jid = create_job_id();
 
         if (!ast->bg) {
             sh_env.fg_jid = jid;
             printty_stop(sh_env.pt);
-        } else {
-            printf("[%d] Started\n", jid);
+        }
+
+        if (launch_job(first_pline, ast->bg, jid) == -1) {
+            printty_start(sh_env.pt);
+            ps_free(ast);
+            sh_env.need_prompt = true;
+            sh_env.fg_jid = NOFG;
+            continue;
+        }
+
+        if (ast->bg) {
+            // pid_t pgid = lookup_job_pgrp(jid);
+            printf("[%d] Started\n", jid /*, pgid*/);
             sh_env.need_prompt = true;
         }
 
-        launch_job(first_pline, ast->bg, jid);
         add_plan(jid, ast);
     }
 
