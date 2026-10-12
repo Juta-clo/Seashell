@@ -123,7 +123,8 @@ static int launch_job(ps_pline *pline, bool bg, pid_t jid) {
     return 0;
 }
 
-static bool try_run_next_job(const job_event *jev, bool bg) {
+static bool try_run_next_job(const job_event *jev, int how) {
+    bool bg = (how == IN_BG);
     bool execed_pline = false;
 
     job_plan *plan = lookup_plan(jev->jid, NULL);

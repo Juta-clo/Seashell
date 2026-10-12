@@ -638,6 +638,16 @@ TEST(shell, job_id_creation_after_unordered) {
     );
 }
 
+TEST(shell, set_builtin_affects_plines_in_andor_chain) {
+    vterm_send_str("set FOO x && echo $FOO && set FOO y && echo $FOO\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "set FOO x && echo $FOO && set FOO y && echo $FOO",
+        "x",
+        "y",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -681,4 +691,5 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, cancel_andor_chain_with_interupt);
     RUN_TEST_CASE(shell, cancel_andor_chain_with_signal);
     RUN_TEST_CASE(shell, job_id_creation_after_unordered);
+    RUN_TEST_CASE(shell, set_builtin_affects_plines_in_andor_chain);
 }

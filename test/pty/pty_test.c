@@ -714,7 +714,7 @@ void new_shell(void) {
     *test = (pty_test){0};
 
     /* init pty */
-    struct winsize ws = { .ws_row = 15, .ws_col = 45 };
+    struct winsize ws = { .ws_row = 15, .ws_col = 60 };
 
     test->cpid = xforkpty(&test->mfd, NULL, &tio, &ws);
     if (test->cpid == 0)
@@ -794,7 +794,7 @@ void delete_shell(void) {
 
     xclose(tfd);
 
-    if (i == 100) {
+    if (i == checks) {
         LOG_ERR("waitpid timed out");
         xkill(test->cpid, SIGKILL);
 
