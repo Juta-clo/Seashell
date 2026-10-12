@@ -56,6 +56,10 @@
     do { if (printty_get_term_size(pt, rows, cols) == PRINTTY_ERR) \
             xfatal("printty_get_term_size"); } while (false)
 
+#define xprintty_set_color(pt, fg, bg) \
+    do { if (printty_set_color(pt, fg, bg) == PRINTTY_ERR) \
+            xfatal("printty_set_color"); } while (false)
+
 #define xprintty_cstyle(pt, style) \
     do { if (printty_cstyle(pt, style) == PRINTTY_ERR) \
             xfatal("printty_cstyle"); } while (false)
@@ -373,12 +377,12 @@ static void input_draw(int rows, int start_idx) {
         ncol_cell(&crow, &ccol, scr_i);
 
         if (line_i < input.start)
-            printty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
+            xprintty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
 
         printf("%c", input.line[line_i]);
 
         if (line_i < input.start)
-            printty_write(sh_env.pt, unibi_exit_attribute_mode);
+            xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
 
         if (ccol == input.cols - 1) {
             if (crow != rows - 1) {
@@ -422,7 +426,9 @@ static void input_update(void) {
     bool wrap_pending = input.cols <= (int)strlen(pager_str);
 
     if (paging) {
+        xprintty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
         printf("%.*s", MIN(input.cols, (int)strlen(pager_str)), pager_str);
+        xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
 
         if (input.rows > 1) {
             if (wrap_pending) {

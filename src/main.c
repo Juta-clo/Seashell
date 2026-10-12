@@ -166,12 +166,29 @@ static char *get_jev_str(const job_event *jev) {
                 dstr_printf(&msg, "%*s", offset, "");
 
             if (pview->stat == PROC_EXIT) {
-                dstr_printf(&msg, "'%s' Exited (%d)",
-                        pview->argv[0], pview->exit_stat);
+                dstrcat(&msg, "'");
+
+                size_t len = argv_len(pview->argv);
+                for (size_t i = 0; i < len; ++i) {
+                    dstrcat(&msg, pview->argv[i]);
+                    if (i != len - 1)
+                        dstrcat(&msg, " ");
+                }
+
+                dstr_printf(&msg, "' Exited (%d)", pview->exit_stat);
 
             } else if (pview->stat == PROC_SIG) {
-                dstr_printf(&msg, "'%s' %s (%d)", pview->argv[0],
-                        strsignal(pview->term_sig), pview->term_sig);
+                dstrcat(&msg, "'");
+
+                size_t len = argv_len(pview->argv);
+                for (size_t i = 0; i < len; ++i) {
+                    dstrcat(&msg, pview->argv[i]);
+                    if (i != len - 1)
+                        dstrcat(&msg, " ");
+                }
+
+                dstr_printf(&msg, "' %s (%d)", strsignal(pview->term_sig),
+                        pview->term_sig);
             } else
                 xfatal("unexpected process status");
 
@@ -371,7 +388,8 @@ int main(int argc, char *const *argv) {
 
         if (ast->bg) {
             // pid_t pgid = lookup_job_pgrp(jid);
-            printf("[%d] Started\n", jid /*, pgid*/);
+            // printf("[%d] %d\n", jid , pgid);
+            printf("[%d] Started\n", jid);
             sh_env.need_prompt = true;
         }
 

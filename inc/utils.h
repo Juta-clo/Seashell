@@ -48,6 +48,7 @@ void usage_err(const char *fmt, ...);
 DA_TYPE(da_charp, char *);
 
 bool is_dir(const char *file);
+size_t argv_len(char **argv);
 void free_charp_arr(da_charp *arr);
 void free_argv(char **argv);
 char **copy_argv(char **argv);

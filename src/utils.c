@@ -168,6 +168,13 @@ void free_charp_arr(da_charp *arr) {
     *arr = (da_charp){0};
 }
 
+size_t argv_len(char **argv) {
+    size_t len = 0;
+    for (char **arg = argv; *arg != NULL; ++arg)
+        ++len;
+    return len;
+}
+
 void free_argv(char **argv) {
     for (char **arg = argv; *arg != NULL; ++arg)
         free(*arg);

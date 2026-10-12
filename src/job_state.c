@@ -127,26 +127,20 @@ static bool job_signaled(jc_job *job) {
     return false;
 }
 
-pid_t request_job_id(pid_t jid) {
-    for (size_t i = 0; i < jctl.jobs.size; ++i)
-        if (jid == jctl.jobs.data[i].jid)
-            return -1;
-
-    return jid;
-}
-
 pid_t create_job_id(void) {
     pid_t jid = 1;
 
     if (jctl.jobs.size == 0)
         return jid;
 
-    for (size_t i = 0; i < jctl.jobs.size; ++i) {
+    for (size_t i = 0; i < jctl.jobs.size;) {
         if (jid == jctl.jobs.data[i].jid) {
             ++jid;
             i = 0;
             continue;
         }
+
+        ++i;
     }
 
     return jid;

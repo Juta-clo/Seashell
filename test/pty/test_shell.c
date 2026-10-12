@@ -66,7 +66,7 @@ TEST(shell, prompt_after_bg_job_done) {
 
     assert_term(2, PROMPT_LEN + 1,
         PROMPT "x",
-        "[1] 'sleep' Terminated (15)",
+        "[1] 'sleep 100' Terminated (15)",
         PROMPT "x"
     );
 }
@@ -176,7 +176,7 @@ TEST(shell, bg_job_done_with_fg_job) {
     assert_term(3, 0,
         PROMPT "write_sleep",
         "x",
-        "[1] 'sleep' Terminated (15)"
+        "[1] 'sleep 100' Terminated (15)"
     );
 }
 
@@ -186,7 +186,7 @@ TEST(shell, builtin_in_bg) {
         PROMPT "cd . &",
         "[1] Started",
         PROMPT,
-        "[1] 'cd' Exited (0)",
+        "[1] 'cd .' Exited (0)",
         PROMPT
     );
 }
@@ -220,7 +220,7 @@ TEST(shell, simple_bg_andor_chain) {
         PROMPT "true && /bin/echo x &",
         "[1] Started",
         PROMPT "x",
-        "[1] '/bin/echo' Exited (0)",
+        "[1] '/bin/echo x' Exited (0)",
         PROMPT
     );
 }
@@ -261,7 +261,7 @@ TEST(shell, and_if_logic_bg) {
         PROMPT "true && /bin/echo x &",
         "[1] Started",
         PROMPT "x",
-        "[1] '/bin/echo' Exited (0)",
+        "[1] '/bin/echo x' Exited (0)",
         PROMPT
     );
 
@@ -281,7 +281,7 @@ TEST(shell, or_if_logic_bg) {
         PROMPT "false || /bin/echo y &",
         "[1] Started",
         PROMPT "y",
-        "[1] '/bin/echo' Exited (0)",
+        "[1] '/bin/echo y' Exited (0)",
         PROMPT
     );
 
@@ -389,7 +389,7 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
     vterm_send_str("kill %1\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "kill %1",
-        "[1] 'sleep' Terminated (15)",
+        "[1] 'sleep 100' Terminated (15)",
         PROMPT
     );
 
@@ -434,9 +434,9 @@ TEST(shell, kill_multiple_proc_job) {
     vterm_send_str("kill %1\n");
     assert_term(4, PROMPT_LEN,
         PROMPT "kill %1",
-        "[1] 'sleep' Terminated (15)",
-        "    'sleep' Terminated (15)",
-        "    'sleep' Terminated (15)",
+        "[1] 'sleep 100' Terminated (15)",
+        "    'sleep 100' Terminated (15)",
+        "    'sleep 100' Terminated (15)",
         PROMPT
     );
 }
@@ -446,8 +446,8 @@ TEST(shell, sigint_on_non_final_proc_prints_newline) {
     assert_term(4, PROMPT_LEN,
         PROMPT "self_kill -INT | self_kill -TERM",
         " ",
-        "[1] 'self_kill' Interrupt (2)",
-        "    'self_kill' Terminated (15)",
+        "[1] 'self_kill -INT' Interrupt (2)",
+        "    'self_kill -TERM' Terminated (15)",
         PROMPT
     );
 }
@@ -476,7 +476,7 @@ TEST(shell, fg_process_signaled) {
     vterm_send_str("self_kill -TERM\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "self_kill -TERM",
-        "[1] 'self_kill' Terminated (15)",
+        "[1] 'self_kill -TERM' Terminated (15)",
         PROMPT
     );
 }
@@ -571,7 +571,7 @@ TEST(shell, stop_pline_with_plines_left) {
     vterm_send_str("kill %1\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "kill %1",
-        "[1] 'sleep' Terminated (15)",
+        "[1] 'sleep 1' Terminated (15)",
         PROMPT
     );
 }
@@ -595,8 +595,45 @@ TEST(shell, cancel_andor_chain_with_signal) {
     vterm_send_str("self_kill -TERM || echo x\n");
     assert_term(3, PROMPT_LEN,
         PROMPT "self_kill -TERM || echo x",
-        "[1] 'self_kill' Terminated (15)",
+        "[1] 'self_kill -TERM' Terminated (15)",
         "x",
+        PROMPT
+    );
+}
+
+TEST(shell, job_id_creation_after_unordered) {
+    vterm_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT
+    );
+
+    vterm_send_str("ping 1.1.1.1 >/dev/null &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "ping 1.1.1.1 >/dev/null &",
+        "[2] Started",
+        PROMPT
+    );
+
+    kill_child("sleep");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT,
+        "[1] 'sleep 100' Terminated (15)",
+        PROMPT
+    );
+
+    vterm_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] Started",
+        PROMPT
+    );
+
+    vterm_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[3] Started",
         PROMPT
     );
 }
@@ -643,4 +680,5 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, stop_pline_with_plines_left);
     RUN_TEST_CASE(shell, cancel_andor_chain_with_interupt);
     RUN_TEST_CASE(shell, cancel_andor_chain_with_signal);
+    RUN_TEST_CASE(shell, job_id_creation_after_unordered);
 }
