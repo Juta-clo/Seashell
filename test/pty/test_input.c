@@ -340,6 +340,7 @@ TEST(input, submitting_history_entry_with_saved_typed_input) {
 
     vterm_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
     vterm_send_key(VTERM_KEY_DOWN, VTERM_MOD_NONE);
+    vterm_send_key(VTERM_KEY_DOWN, VTERM_MOD_NONE);
     assert_term(0, PROMPT_LEN,
         PROMPT
     );

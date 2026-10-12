@@ -371,7 +371,14 @@ static void input_draw(int rows, int start_idx) {
             break;
 
         ncol_cell(&crow, &ccol, scr_i);
+
+        if (line_i < input.start)
+            printty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
+
         printf("%c", input.line[line_i]);
+
+        if (line_i < input.start)
+            printty_write(sh_env.pt, unibi_exit_attribute_mode);
 
         if (ccol == input.cols - 1) {
             if (crow != rows - 1) {
