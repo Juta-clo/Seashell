@@ -292,12 +292,10 @@ static void update_prompt(int style) {
             hds_append(input.line, cwd_base);
 
         hds_append(input.line, " > ");
-
     } else if (style == PROMPT_PS) {
         sh_var *var = lookup_var(&sh_env.vars, "PS");
         if (!var) {
             hds_append(input.line, PROMPT1);
-
         } else {
             hds_append(input.line, var->value);
         }
@@ -378,8 +376,14 @@ static void input_draw(int rows, int start_idx) {
 
         if (line_i < input.start)
             xprintty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
-
-        printf("%c", input.line[line_i]);
+        if (input.line[line_i] < 32 || input.line[line_i] > 126) {
+            xprintty_set_color(sh_env.pt, PRINTTY_BLACK, PRINTTY_RED);
+            xprintty_write(sh_env.pt, unibi_enter_bold_mode);
+            printf("%c", '?');
+            xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
+        } else {
+            printf("%c", input.line[line_i]);
+        }
 
         if (line_i < input.start)
             xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
@@ -388,7 +392,6 @@ static void input_draw(int rows, int start_idx) {
             if (crow != rows - 1) {
                 /* vterm doesn't clear wrap pending on \r or \b */
                 printf(" \x1b[1G");
-
             } else if (input.start_row > 0) {
                 --input.start_row;
                 scr_i -= input.cols;
@@ -458,7 +461,6 @@ static void input_move(int offset) {
 
         input.off = offset;
         input_update();
-
     } else {
         if (offset < 0)
             return;
@@ -484,7 +486,6 @@ static void input_delete(int type, input_del_ctx *ctx) {
         ASSERT_GE_INT(ctx->start_i, 0);
 
         hda_delete(input.line, input.start + ctx->start_i, ctx->n);
-
     } else if (input.insert_mode) {
         if (type == DELETE_CURSOR) {
             if (input.off == 0)
@@ -492,25 +493,21 @@ static void input_delete(int type, input_del_ctx *ctx) {
 
             hda_delete(input.line, input.start + input.off - 1, 1);
             input.off -= 1;
-
         } else if (type == DELETE_END) {
             if (input.off == line_len())
                 return;
 
             hda_delete(input.line, input.start + input.off,
                     line_len() - input.off);
-
         } else if (type == DELETE_START) {
             if (input.off == 0)
                 return;
 
             hda_delete(input.line, input.start, input.off);
             input.off = 0;
-
         } else if (type == DELETE_ALL) {
             hda_delete(input.line, input.start, line_len());
             input.off = 0;
-
         } else if (type == DELETE_WORD) {
             input_word word;
 
@@ -528,11 +525,9 @@ static void input_delete(int type, input_del_ctx *ctx) {
             hda_delete(input.line, input.start + input.off, 1);
             if (input.off == line_len() && input.off != 0)
                 input.off -= 1;
-
         } else if (type == DELETE_ALL) {
             hda_delete(input.line, input.start, line_len());
             input.off = 0;
-
         } else if (type == DELETE_WORD) {
             input_word word;
 
@@ -561,7 +556,6 @@ static void input_insert(int type, const char *s) {
         if (type == INSERT_CHAR) {
             hda_insert_buf(input.line, input.start + input.off, 1, s);
             input.off += 1;
-
         } else if (type == INSERT_STR) {
             hda_insert_buf(input.line, input.start + input.off, strlen(s), s);
             input.off += strlen(s);
@@ -597,10 +591,8 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
             input_reset_comp();
 
         input_delete(DELETE_CURSOR, NULL);
-
     } else if (key == PRINTTY_LEFT) {
         input_move(input.off - 1);
-
     } else if (key == PRINTTY_RIGHT) {
         input_move(input.off + 1);
     }
@@ -647,31 +639,21 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
 
     if (codepoint != 9/*TAB*/)
         input_reset_comp();
-
-    if (codepoint >= 32 && codepoint <= 126) {
-        input_insert(INSERT_CHAR, &utf8[0]);
-
-    } else if (codepoint == 5/*C-e*/) {
+    if (codepoint == 5/*C-e*/) {
         input_move(line_len());
-
     } else if (codepoint == 1/*C-a*/) {
         input_move(0);
-
     } else if (codepoint == 11/*C-k*/) {
         input_delete(DELETE_END, NULL);
-
     } else if (codepoint == 21/*C-u*/) {
         input_delete(DELETE_START, NULL);
-
     } else if (codepoint == 12/*C-l*/) {
         xprintty_write(sh_env.pt, unibi_clear_screen);
         new_start_pos();
         input_update();
-
     } else if (codepoint == 27/*ESC*/) {
         input_move(input.off - 1);
         enter_mode_normal();
-
     } else if (codepoint == 9/*TAB*/) {
         int tstart, tend;
         comp_tok tok;
@@ -751,13 +733,14 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         input_delete(DELETE_RANGE, &(input_del_ctx){ tstart, tend - tstart });
         input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
         free_charp_arr(&matches);
+    } else {
+        input_insert(INSERT_CHAR, &utf8[0]);
     }
 }
 
 static void normal_mode_feed_key(PrinttyInputKey key) {
     if (key == PRINTTY_LEFT) {
         input_move(input.off - 1);
-
     } else if (key == PRINTTY_RIGHT) {
         input_move(input.off + 1);
     }
@@ -784,28 +767,21 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
 
     if (codepoint == 'i') {
         enter_mode_insert();
-
     } else if (codepoint == 'a') {
         enter_mode_insert();
         input_move(input.off + 1);
-
     } else if (codepoint == 'h') {
         input_move(input.off - 1);
-
     } else if (codepoint == 'l') {
         input_move(input.off + 1);
-
     } else if (codepoint == 'x') {
         input_delete(DELETE_CURSOR, NULL);
-
     } else if (codepoint == 'A') {
         enter_mode_insert();
         input_move(line_len());
-
     } else if (codepoint == 'I') {
         enter_mode_insert();
         input_move(0);
-
     } else if (codepoint == 'b') {
         if (cur_word(lstart(), input.off, &word) != -1 &&
                 input.off != word.start) {
@@ -815,13 +791,11 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
             input_move(0);
         } else
             input_move(word.start);
-
     } else if (codepoint == 'w') {
         if (next_word(lstart(), input.off, &word) == -1) {
             input_move(line_len() - 1);
         } else
             input_move(word.start);
-
     } else if (codepoint == 'e') {
         if (cur_word(lstart(), input.off, &word) != -1 &&
                 input.off != word.end) {
@@ -831,9 +805,10 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
             input_move(line_len() - 1);
         } else
             input_move(word.end);
-
     } else if (codepoint == 'd') {
         op = OP_DEL;
+    } else if (codepoint == 'y') {
+        printty_clipboard_copy(sh_env.pt, input.line + input.start);
     }
 }
 
@@ -886,12 +861,14 @@ static void history_next(void) {
 
 void input_init(shell_env *env) {
     assert(env);
+
     if (!(env->pt = printty_create(NULL)))
         xfatal("printty_create");
     if (printty_start(env->pt) == PRINTTY_ERR)
         xfatal("printty_resume");
     if (printty_cbreak(env->pt) == PRINTTY_ERR)
         xfatal("printty_cbreak");
+
     printty_set_suspend_mask(env->pt, env->og_mask);
     printty_set_esc_delay(env->pt, 25);
 }
@@ -904,6 +881,7 @@ void input_deinit(shell_env *env) {
         xprintty_write_name(env->pt, "Se");
         printty_destroy(env->pt);
     }
+
     env->pt = NULL;
 }
 
@@ -944,34 +922,30 @@ char *get_line(void) {
         if (rv == PRINTTY_EOF) {
             LOG_INFO("eof, exiting");
             exit(EXIT_SUCCESS);
-
         } else if (rv == PRINTTY_ERR) {
             xfatal("failed parsing line");
-
         } else if (rv == PRINTTY_SIG) {
             return NULL;
         }
 
         if (pev.type == PRINTTY_UNICODE) {
             if (input.insert_mode) {
-                insert_mode_feed_unicode(pev.codepoint, pev.utf8);
-
+                insert_mode_feed_unicode(pev.cp, pev.utf8);
             } else {
-                normal_mode_feed_unicode(pev.codepoint, pev.utf8);
+                normal_mode_feed_unicode(pev.cp, pev.utf8);
             }
 
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
                 if (line_len() > 0)
                     history_push(input.line);
+
                 input_reset_comp();
                 printf("\n");
                 break;
-
             } else if (pev.key == PRINTTY_UP) {
                 history_next();
                 input_update();
-
             } else if (pev.key == PRINTTY_DOWN) {
                 history_prev();
                 input_update();
@@ -979,7 +953,6 @@ char *get_line(void) {
 
             if (input.insert_mode) {
                 insert_mode_feed_key(pev.key);
-
             } else {
                 normal_mode_feed_key(pev.key);
             }
@@ -988,6 +961,16 @@ char *get_line(void) {
             LOG_INFO("resize detected");
             update_start_pos();
             input_update();
+
+        } else if (pev.type == PRINTTY_PASTE_BEGIN) {
+            char *paste_data;
+            if (!(paste_data = printty_res_paste(sh_env.pt))) {
+                LOG_WARN("timed out waiting for paste");
+                continue;
+            }
+
+            input_insert(INSERT_STR, paste_data);
+            hda_free(paste_data);
         }
     }
 

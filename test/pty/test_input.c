@@ -346,6 +346,16 @@ TEST(input, submitting_history_entry_with_saved_typed_input) {
     );
 }
 
+TEST(input, bracketed_paste) {
+    vterm_keyboard_start_paste(test->vterm.tty);
+    vterm_send_str("PASTE\nDATA!");
+    vterm_keyboard_end_paste(test->vterm.tty);
+
+    assert_term(0, PROMPT_LEN + 11,
+        PROMPT "PASTE?DATA!"
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -367,4 +377,5 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, restore_typed_input_after_scrolling_history);
     RUN_TEST_CASE(input, submitting_history_entry_saves_it_again);
     RUN_TEST_CASE(input, submitting_history_entry_with_saved_typed_input);
+    RUN_TEST_CASE(input, bracketed_paste);
 }
