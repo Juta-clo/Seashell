@@ -376,6 +376,7 @@ static void input_draw(int rows, int start_idx) {
 
         if (line_i < input.start)
             xprintty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
+
         if (input.line[line_i] < 32 || input.line[line_i] > 126) {
             xprintty_set_color(sh_env.pt, PRINTTY_BLACK, PRINTTY_RED);
             xprintty_write(sh_env.pt, unibi_enter_bold_mode);
@@ -390,13 +391,12 @@ static void input_draw(int rows, int start_idx) {
 
         if (ccol == input.cols - 1) {
             if (crow != rows - 1) {
-                /* vterm doesn't clear wrap pending on \r or \b */
                 printf(" \x1b[1G");
             } else if (input.start_row > 0) {
                 --input.start_row;
-                scr_i -= input.cols;
                 printf(" \x1b[1G");
             }
+
         }
 
         ++scr_i;
@@ -429,6 +429,14 @@ static void input_update(void) {
     bool wrap_pending = input.cols <= (int)strlen(pager_str);
 
     if (paging) {
+        while (input.start_row > 0) {
+            xprintty_cursor_move(sh_env.pt, input.rows - 1, 0);
+            xprintty_write(sh_env.pt, unibi_scroll_forward);
+            --input.start_row;
+        }
+
+        xprintty_write(sh_env.pt, unibi_cursor_home);
+
         xprintty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
         printf("%.*s", MIN(input.cols, (int)strlen(pager_str)), pager_str);
         xprintty_write(sh_env.pt, unibi_exit_attribute_mode);

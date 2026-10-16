@@ -356,6 +356,85 @@ TEST(input, bracketed_paste) {
     );
 }
 
+TEST(input, bracketed_paste_that_causes_emulator_scrolls) {
+    test_resize_term(5, 5);
+
+    vterm_send_str("\n\n\n\n");
+    assert_term(4, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vterm_keyboard_start_paste(test->vterm.tty);
+    vterm_send_str("XXXXXXXX");
+    vterm_keyboard_end_paste(test->vterm.tty);
+    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+
+    assert_term(3, 4,
+        PROMPT,
+        PROMPT,
+        PROMPT "XXX",
+        "XXXXX",
+        " "
+    );
+}
+
+TEST(input, bracketed_paste_that_enters_pager) {
+    test_resize_term(5, 5);
+
+    vterm_send_str("\n\n\n\n");
+    assert_term(4, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vterm_keyboard_start_paste(test->vterm.tty);
+    vterm_send_str("XXXXXXXXXXXXXXXXXXXXXXX");
+    assert_term(1, 0,
+        ">...",
+        " "
+    );
+    vterm_keyboard_end_paste(test->vterm.tty);
+}
+
+TEST(input, large_bracketed_paste) {
+    vterm_keyboard_start_paste(test->vterm.tty);
+    vterm_send_str( /* \n only converted to 0 if paste successful */
+        "\nXXXXXXXXXXXXXXXXXXXXXXXX"
+        "XXXXXXXXXXXXXXXXXXXXXXXXX"
+        "XXXXXXXXXXXXXXXXXXXXXXXX"
+        "XXXXXXXXXXXXXXXXXXXXXXXX"
+        "XXXXXXXXXXXXXXXXXXXXXX"
+    );
+    vterm_keyboard_end_paste(test->vterm.tty);
+
+    assert_term(2, 2,
+        PROMPT "?XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+               "XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+               "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+               "XXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+               "XX"
+    );
+}
+
+TEST(input, yanked_test) {
+    vterm_send_str("X");
+    vterm_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
+    vterm_send_str("y");
+
+    TEST_ASSERT(pty_poll_str("\x1b]52;c;WA==\x1b\\"));
+
+    assert_term(0, PROMPT_LEN,
+        PROMPT "X"
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -378,4 +457,8 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, submitting_history_entry_saves_it_again);
     RUN_TEST_CASE(input, submitting_history_entry_with_saved_typed_input);
     RUN_TEST_CASE(input, bracketed_paste);
+    RUN_TEST_CASE(input, bracketed_paste_that_causes_emulator_scrolls);
+    RUN_TEST_CASE(input, bracketed_paste_that_enters_pager);
+    RUN_TEST_CASE(input, large_bracketed_paste);
+    RUN_TEST_CASE(input, yanked_test);
 }

@@ -398,6 +398,36 @@ cleanup:
     return rv;
 }
 
+bool pty_poll_str(const char *str) {
+    int tfd = start_timerfd((run_valgrind) ? 1000 : 100);
+    size_t start = test->ptydata.len;
+
+    while (pty_test_poll(tfd, true) != PTY_POLL_TFD) {
+        if (start >= test->ptydata.len)
+            continue;
+
+        for (size_t i = start; i < test->ptydata.len; ++i) {
+            if (strstr(&test->ptydata.c_str[i], str)) {
+                xclose(tfd);
+                return true;
+            }
+        }
+    }
+
+    xclose(tfd);
+    LOG_ERR("Failed to find: %s", str);
+    return false;
+}
+
+void pty_poll_sleep(int ms) {
+    int tfd = start_timerfd(ms);
+
+    while (pty_test_poll(tfd, true) != PTY_POLL_TFD)
+        continue;
+
+    xclose(tfd);
+}
+
 bool kill_child(const char *name) {
     da_pstat pstats;
     size_t loops = 100;

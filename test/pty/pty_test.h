@@ -137,6 +137,8 @@ bool verify_pstate(const char *name, const char *state);
 void test_resize_term(int row, int col);
 bool kill_child(const char *name);
 void sleep_ms(int ms);
+void pty_poll_sleep(int ms);
+bool pty_poll_str(const char *str);
 void print_valgrind_overview(void);
 dstr *push_line(da_dstr *lines);
 dstr *last_line(da_dstr *lines);
