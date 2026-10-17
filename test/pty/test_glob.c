@@ -33,19 +33,29 @@ void add_file(glob_dir *dir, const char *name) {
     if (strlen(name) >= PATH_MAX - 1)
         TEST_FAIL_MESSAGE("file name too large");
 
-    xchdir(dir->pathname);
+    if (chdir(dir->pathname) == -1)
+        xtest_fatal("chdir: %m");
 
-    xclose(xopen(name, O_CREAT | O_RDWR, 0600));
-    *da_push(&dir->files) = xstrdup(name);
+    if (close(open(name, O_CREAT | O_RDWR, 0600)) == -1)
+        xtest_fatal("close: %m");
 
-    xchdir(GLOB_DIR);
+    char *p = strdup(name);
+    if (!p)
+        xtest_fatal("strdup: %m");
+
+    *da_push(&dir->files) = p;
+
+    if (chdir(GLOB_DIR) == -1)
+        xtest_fatal("chdir: %m");
 }
 
 glob_dir *add_dir(const char *pathname) {
     if (strlen(pathname) >= PATH_MAX - 1)
         TEST_FAIL_MESSAGE("file name too large");
 
-    xmkdir(pathname, 0700);
+    if (mkdir(pathname, 0700) == -1)
+        xtest_fatal("mkdir: %m");
+
 
     glob_dir *dir = dir_next();
     snprintf(dir->pathname, PATH_MAX, "%s", pathname);
@@ -56,7 +66,8 @@ glob_dir *add_dir(const char *pathname) {
 
 void file_cleanup(da_charp *files) {
     for (size_t i = 0; i < files->size; ++i) {
-        xunlink(files->data[i]);
+        if (unlink(files->data[i]) == -1)
+            xtest_fatal("unlink: %m");
         free(files->data[i]);
     }
 
@@ -65,28 +76,38 @@ void file_cleanup(da_charp *files) {
 
 void dir_cleanup(void) {
     for (int i = dir_n - 1; i >= 0; --i) {
-        xchdir(dirs[i].pathname);
-        file_cleanup(&dirs[i].files);
-        xchdir(GLOB_DIR);
+        if (chdir(dirs[i].pathname) == -1)
+            xtest_fatal("chdir: %m");
 
-        xrmdir(dirs[i].pathname);
+        file_cleanup(&dirs[i].files);
+
+        if (chdir(GLOB_DIR) == -1)
+            xtest_fatal("chdir: %m");
+
+        if (rmdir(dirs[i].pathname) == -1)
+            xtest_fatal("rmdir: %m");
     }
 }
 
 TEST_SETUP(glob) {
     dir_n = 0;
 
-    xgetcwd(og_cwd, PATH_MAX);
-    add_dir(GLOB_DIR);
-    xchdir(GLOB_DIR);
+    if (!getcwd(og_cwd, PATH_MAX))
+        xtest_fatal("getcwd");
 
-    new_shell();
+    add_dir(GLOB_DIR);
+
+    if (chdir(GLOB_DIR) == -1)
+        xtest_fatal("chdir: %m");
+
+    test_setup();
 }
 
 TEST_TEAR_DOWN(glob) {
-    delete_shell();
+    test_teardown();
     dir_cleanup();
-    xchdir(og_cwd);
+    if (chdir(og_cwd) == -1)
+        xtest_fatal("chdir: %m");
 }
 
 /************ Tests ************/
@@ -94,14 +115,14 @@ TEST_TEAR_DOWN(glob) {
 TEST(glob, glob_star_only) {
     add_file(CWD, "a");
 
-    vterm_send_str("/bin/echo *\n");
+    vt_send_str("/bin/echo *\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "/bin/echo *",
         "./a",
         PROMPT
     );
 
-    vterm_send_str("/bin/echo ./*\n");
+    vt_send_str("/bin/echo ./*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./*",
         "./a",
@@ -115,7 +136,7 @@ TEST(glob, prefix_match) {
     add_file(CWD, "harold");
     add_file(CWD, "peal");
 
-    vterm_send_str("/bin/echo he*\n");
+    vt_send_str("/bin/echo he*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo he*",
         "./hello",
@@ -128,7 +149,7 @@ TEST(glob, suffix_match) {
     add_file(CWD, "boon");
     add_file(CWD, "swear");
 
-    vterm_send_str("/bin/echo *rn\n");
+    vt_send_str("/bin/echo *rn\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo *rn",
         "./horn",
@@ -142,7 +163,7 @@ TEST(glob, suffix_and_prefix_match) {
     add_file(CWD, "aca");
     add_file(CWD, "aaa");
 
-    vterm_send_str("/bin/echo *b*\n");
+    vt_send_str("/bin/echo *b*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo *b*",
         "./aba",
@@ -155,7 +176,7 @@ TEST(glob, single_substring_match) {
     add_file(CWD, "boofoboo");
     add_file(CWD, "boobooboo");
 
-    vterm_send_str("/bin/echo *foo*\n");
+    vt_send_str("/bin/echo *foo*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo *foo*",
         "./boofooboo",
@@ -169,7 +190,7 @@ TEST(glob, multiple_substring_match) {
     add_file(CWD, "XfoXbarX");
     add_file(CWD, "XfooXarX");
 
-    vterm_send_str("/bin/echo *foo*bar*\n");
+    vt_send_str("/bin/echo *foo*bar*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo *foo*bar*",
         "./XfooXbarX",
@@ -183,7 +204,7 @@ TEST(glob, substring_and_prefix_match) {
     add_file(CWD, "XbarX");
     add_file(CWD, "XfoobarXXX");
 
-    vterm_send_str("/bin/echo foo*bar*\n");
+    vt_send_str("/bin/echo foo*bar*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo foo*bar*",
         "./fooXbarX",
@@ -197,7 +218,7 @@ TEST(glob, substring_and_suffix_match) {
     add_file(CWD, "foXbar");
     add_file(CWD, "foobarX");
 
-    vterm_send_str("/bin/echo *foo*bar\n");
+    vt_send_str("/bin/echo *foo*bar\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo *foo*bar",
         "./XfooXbar",
@@ -213,7 +234,7 @@ TEST(glob, multiple_substring_prefix_suffix_match) {
     add_file(CWD, "foobarbeezooXXX");
     add_file(CWD, "XfooXbarXbeeXzooX");
 
-    vterm_send_str("/bin/echo foo*bar*bee*zoo\n");
+    vt_send_str("/bin/echo foo*bar*bee*zoo\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo foo*bar*bee*zoo",
         "./fooXbarXbeeXzoo",
@@ -225,7 +246,7 @@ TEST(glob, nested_directory_match) {
     glob_dir *dir = add_dir("dir1");
     add_file(dir, "foo");
 
-    vterm_send_str("/bin/echo ./dir1/*\n");
+    vt_send_str("/bin/echo ./dir1/*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./dir1/*",
         "./dir1/foo",
@@ -237,7 +258,7 @@ TEST(glob, double_nested_directory_match) {
     add_dir("dir1");
     add_file(add_dir("dir1/dir2"), "foo");
 
-    vterm_send_str("/bin/echo ./dir1/dir2/*\n");
+    vt_send_str("/bin/echo ./dir1/dir2/*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./dir1/dir2/*",
         "./dir1/dir2/foo",
@@ -250,7 +271,7 @@ TEST(glob, directory_componenet_with_glob) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    vterm_send_str("/bin/echo ./dir*/foo\n");
+    vt_send_str("/bin/echo ./dir*/foo\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./dir*/foo",
         "./dir/foo ./dir2/foo",
@@ -263,7 +284,7 @@ TEST(glob, directory_and_file_componenet_with_glob) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    vterm_send_str("/bin/echo ./dir*/*\n");
+    vt_send_str("/bin/echo ./dir*/*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./dir*/*",
         "./dir/foo ./dir2/foo",
@@ -276,7 +297,7 @@ TEST(glob, directory_glob_and_file_prefix_match) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    vterm_send_str("/bin/echo ./dir*/f*\n");
+    vt_send_str("/bin/echo ./dir*/f*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./dir*/f*",
         "./dir/foo ./dir2/foo",
@@ -289,7 +310,7 @@ TEST(glob, directory_glob_and_file_suffix_match) {
     add_file(add_dir("dir2"), "foo");
     add_file(add_dir("dir"), "foo");
 
-    vterm_send_str("/bin/echo ./dir*/*o\n");
+    vt_send_str("/bin/echo ./dir*/*o\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./dir*/*o",
         "./dir/foo ./dir2/foo",
@@ -304,7 +325,7 @@ TEST(glob, double_nested_directory_globs) {
     add_file(add_dir("abc/def"), "foo");
     add_file(add_dir("a12/d34"), "foo");
 
-    vterm_send_str("/bin/echo ./a*/d*/*\n");
+    vt_send_str("/bin/echo ./a*/d*/*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./a*/d*/*",
         "./a12/d34/foo ./abc/def/foo",
@@ -315,7 +336,7 @@ TEST(glob, double_nested_directory_globs) {
 TEST(glob, multiple_stars_are_compressed) {
     add_file(add_dir("abc"), "foo");
 
-    vterm_send_str("/bin/echo ./***/*\n");
+    vt_send_str("/bin/echo ./***/*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./***/*",
         "./abc/foo",
@@ -327,7 +348,7 @@ TEST(glob, intermediary_component_with_complex_glob_pattern) {
     add_dir("a");
     add_file(add_dir("a/fooXbarXbeeXzoo"), "foo");
 
-    vterm_send_str("/bin/echo ./a/foo*bar*bee*zoo/*\n");
+    vt_send_str("/bin/echo ./a/foo*bar*bee*zoo/*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo ./a/foo*bar*bee*zoo/*",
         "./a/fooXbarXbeeXzoo/foo",
@@ -339,7 +360,7 @@ TEST(glob, relative_dirent_works) {
     add_file(add_dir("a"), "foo");
     add_dir("a/b");
 
-    vterm_send_str("/bin/echo a/b/../*\n");
+    vt_send_str("/bin/echo a/b/../*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "/bin/echo a/b/../*",
         "./a/b/../b ./a/b/../foo",
@@ -350,14 +371,16 @@ TEST(glob, relative_dirent_works) {
 TEST(glob, redirect_target_glob_non_ambiguous) {
     add_file(CWD, "foo");
 
-    vterm_send_str("echo hi > f*\n");
+    vt_send_str("echo hi > f*\n");
     assert_term(1, PROMPT_LEN,
         PROMPT "echo hi > f*",
         PROMPT
     );
 
     char buf[3];
-    int fd = xopen("foo", O_RDONLY);
+    int fd = open("foo", O_RDONLY);
+    if (fd == -1)
+        xtest_fatal("open: %m");
 
     TEST_ASSERT_EQUAL_INT(2, read(fd, buf, 2));
     TEST_ASSERT_EQUAL_STRING_LEN("hi", buf, 2);
@@ -367,7 +390,7 @@ TEST(glob, redirect_target_glob_ambiguous) {
     add_file(CWD, "foo1");
     add_file(CWD, "foo2");
 
-    vterm_send_str("echo hi > f*\n");
+    vt_send_str("echo hi > f*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "echo hi > f*",
         "seashell: ambiguous redirect",
@@ -376,17 +399,17 @@ TEST(glob, redirect_target_glob_ambiguous) {
 }
 
 TEST(glob, glob_detected_in_empty_variable) {
-    vterm_send_str("set FOO \"\"\n");
+    vt_send_str("set FOO \"\"\n");
     assert_term(1, PROMPT_LEN,
         PROMPT "set FOO \"\"",
         PROMPT
     );
 
-    vterm_send_str("echo $FOO*\n");
+    vt_send_str("echo $FOO*\n");
     assert_term(3, PROMPT_LEN,
         PROMPT "set FOO \"\"",
         PROMPT "echo $FOO*",
-        " ",
+        "",
         PROMPT
     );
 }

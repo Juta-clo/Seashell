@@ -6,11 +6,11 @@ TEST_GROUP(resize);
 /************ Fixture ************/
 
 TEST_SETUP(resize) {
-    new_shell();
+    test_setup();
 }
 
 TEST_TEAR_DOWN(resize) {
-    delete_shell();
+    test_teardown();
 }
 
 /************ Tests ************/
@@ -19,11 +19,12 @@ TEST_TEAR_DOWN(resize) {
 
 TEST(resize, resize_that_causes_cursor_wrap) {
     test_resize_term(10, 1);
-    vterm_send_str("x");
+    vt_send_str("x");
     assert_term(PROMPT_LEN + 1, 0,
         ">",
         " ",
-        "x"
+        "x",
+        " "
     );
 }
 
@@ -38,29 +39,30 @@ TEST(resize, resize_that_causes_cursor_wrap_then_unwrap) {
 
     test_resize_term(10, 1);
 
-    vterm_send_str("acd");
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_str("acd");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     assert_term(PROMPT_LEN + 1, 0,
         ">",
         " ",
         "a",
         "c",
-        "d"
+        "d",
+        " "
     );
 
     test_resize_term(10, 10);
 
-    vterm_send_str("b");
+    vt_send_str("b");
     assert_term(0, PROMPT_LEN + 2,
         PROMPT "abcd"
     );
 }
 
 TEST(resize, resize_with_cursor_on_row_less_then_end_of_line) {
-    vterm_send_str("\n\n\n\nbcdefghijklmnopqrstuvwxyz");
-    vterm_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
-    vterm_send_str("I");
+    vt_send_str("\n\n\n\nbcdefghijklmnopqrstuvwxyz");
+    vt_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
+    vt_send_str("I");
     assert_term(4, PROMPT_LEN,
         PROMPT,
         PROMPT,
@@ -71,7 +73,7 @@ TEST(resize, resize_with_cursor_on_row_less_then_end_of_line) {
 
     test_resize_term(10, 10);
 
-    vterm_send_str("a");
+    vt_send_str("a");
     assert_term(4, PROMPT_LEN + 1,
         PROMPT,
         PROMPT,
@@ -86,15 +88,14 @@ TEST(resize, resize_with_cursor_on_row_less_then_end_of_line) {
 TEST(resize, insert_text_in_pager) {
     test_resize_term(2, 5);
 
-    vterm_send_str("abcdefgh");
+    vt_send_str("abcdefgh");
     assert_term(1, 0,
-        ">...",
-        " "
+        ">..."
     );
 
-    vterm_send_str("ijk");
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_str("ijk");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     assert_term(1, 1,
         ">...",
         "ijk"
@@ -104,12 +105,9 @@ TEST(resize, insert_text_in_pager) {
 TEST(resize, insert_text_that_enters_pager) {
     test_resize_term(5, 1);
 
-    vterm_send_str("xxx");
+    vt_send_str("xxx");
     assert_term(1, 0,
         ">",
-        " ",
-        " ",
-        " ",
         " "
     );
 }
@@ -117,7 +115,7 @@ TEST(resize, insert_text_that_enters_pager) {
 TEST(resize, insert_that_causes_emulator_scroll) {
     test_resize_term(4, PROMPT_LEN + 1);
 
-    vterm_send_str("\n\n\nx");
+    vt_send_str("\n\n\nx");
     assert_term(3, 0,
         PROMPT,
         PROMPT,
@@ -129,15 +127,16 @@ TEST(resize, insert_that_causes_emulator_scroll) {
 TEST(resize, resize_to_larger_row_size_while_in_pager) {
     test_resize_term(5, 4);
 
-    vterm_send_str("hello, beautiful world");
+    vt_send_str("hello, beautiful world");
     assert_term(2, 0,
         ">...",
-        "orld"
+        "orld",
+        " "
     );
 
     test_resize_term(10, 4);
 
-    vterm_send_str("!");
+    vt_send_str("!");
     assert_term(6, 1,
         PROMPT "he",
         "llo,",
@@ -152,9 +151,9 @@ TEST(resize, resize_to_larger_row_size_while_in_pager) {
 TEST(resize, resize_to_larger_column_size_while_in_pager) {
     test_resize_term(5, 1);
 
-    vterm_send_str("abcdef");
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_str("abcdef");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     assert_term(2, 0,
         ">",
         "d",
@@ -171,7 +170,7 @@ TEST(resize, resize_to_larger_column_size_while_in_pager) {
 }
 
 TEST(resize, resize_that_enters_pager) {
-    vterm_send_str("hello, beautiful world!");
+    vt_send_str("hello, beautiful world!");
     assert_term(0, 25,
         PROMPT "hello, beautiful world!"
     );
@@ -188,9 +187,9 @@ TEST(resize, resize_that_enters_pager) {
 TEST(resize, clearing_line_from_within_pager) {
     test_resize_term(2, 4);
 
-    vterm_send_str("abcdefghi");
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_str("abcdefghi");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     assert_term(1, 1,
         ">...",
         "ghi"
@@ -198,7 +197,7 @@ TEST(resize, clearing_line_from_within_pager) {
 
     test_resize_term(10, 10);
 
-    vterm_send_char('u', VTERM_MOD_CTRL);
+    vt_send_ch('u', VTERM_MOD_CTRL);
     assert_term(0, PROMPT_LEN,
         PROMPT "hi"
     );
@@ -207,9 +206,9 @@ TEST(resize, clearing_line_from_within_pager) {
 TEST(resize, resize_after_emulator_scroll) {
     test_resize_term(6, 4);
 
-    vterm_send_str("\n\n\n\nabcdef");
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    vterm_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_str("\n\n\n\nabcdef");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     assert_term(4, 2,
         PROMPT,
         PROMPT,
@@ -246,7 +245,7 @@ TEST(resize, resize_after_emulator_scroll) {
 TEST(resize, pager_with_only_one_row) {
     test_resize_term(1, 10);
 
-    vterm_send_str("hello, beautiful world!");
+    vt_send_str("hello, beautiful world!");
     assert_term(0, 4,
         ">..."
     );

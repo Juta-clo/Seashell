@@ -20,11 +20,11 @@ struct termios printty_cbreak_tio(struct termios orig) {
 }
 
 TEST_SETUP(termios) {
-    new_shell();
+    test_setup();
 }
 
 TEST_TEAR_DOWN(termios) {
-    delete_shell();
+    test_teardown();
 }
 
 /************ Tests ************/
@@ -37,12 +37,12 @@ TEST(termios, printty_cbreak_termios_value) {
 }
 
 TEST(termios, initial_shell_termios) {
-    vterm_send_str("sleep 100\n");
+    vt_send_str("sleep 100\n");
     assert_termios(tio);
 }
 
 TEST(termios, cbreak_mode_restored_after_fg_job) {
-    vterm_send_str("echo x\n");
+    vt_send_str("echo x\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "echo x",
         "x",
@@ -56,31 +56,31 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
     struct termios changed_tio = tio;
     changed_tio.c_lflag &= ~ECHO;
 
-    vterm_send_str("change_tio 100\n");
+    vt_send_str("change_tio 100\n");
     assert_term(2, 0,
         PROMPT "change_tio 100",
         "x"
     );
     assert_termios(changed_tio);
 
-    vterm_send_char('z', VTERM_MOD_CTRL);
+    vt_send_ch('z', VTERM_MOD_CTRL);
     assert_term_clear(4, PROMPT_LEN,
         PROMPT "change_tio 100",
         "x",
-        " ",
+        "",
         "[1] Stopped",
         PROMPT
     );
     assert_termios(printty_cbreak_tio(tio));
 
-    vterm_send_str("write_sleep\n");
+    vt_send_str("write_sleep\n");
     assert_term(2, 0,
         PROMPT "write_sleep",
         "x"
     );
     assert_termios(tio);
 
-    vterm_send_char('c', VTERM_MOD_CTRL);
+    vt_send_ch('c', VTERM_MOD_CTRL);
     assert_term_clear(3, PROMPT_LEN,
         PROMPT "write_sleep",
         "x",
@@ -89,23 +89,23 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
     );
     assert_termios(printty_cbreak_tio(tio));
 
-    vterm_send_str("fg %1\n");
+    vt_send_str("fg %1\n");
     assert_term(2, 0,
         PROMPT "fg %1",
         "[1] Continued"
     );
     assert_termios(changed_tio);
 
-    vterm_send_char('c', VTERM_MOD_CTRL);
+    vt_send_ch('c', VTERM_MOD_CTRL);
     assert_term_clear(3, PROMPT_LEN,
         PROMPT "fg %1",
         "[1] Continued",
-        " ",
+        "",
         PROMPT
     );
     assert_termios(printty_cbreak_tio(changed_tio));
 
-    vterm_send_str("write_sleep\n");
+    vt_send_str("write_sleep\n");
     assert_term(2, 0,
         PROMPT "write_sleep",
         "x"

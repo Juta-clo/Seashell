@@ -317,9 +317,10 @@ static void new_start_pos(void) {
         xprintty_write(sh_env.pt, unibi_enter_bold_mode);
         printf("%%\n");
         xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
+        /* we might have scrolled */
+        xprintty_get_cursor_pos(sh_env.pt, &row, &col);
     }
 
-    xprintty_get_cursor_pos(sh_env.pt, &row, &col);
     input.start_row = row;
 
     LOG_INFO("new start pos: [%d,%d]", row, col);
@@ -593,19 +594,6 @@ static void input_reset_comp(void) {
     }
 }
 
-static void insert_mode_feed_key(PrinttyInputKey key) {
-    if (key == PRINTTY_BACKSPACE) {
-        if (input.comp.glob)
-            input_reset_comp();
-
-        input_delete(DELETE_CURSOR, NULL);
-    } else if (key == PRINTTY_LEFT) {
-        input_move(input.off - 1);
-    } else if (key == PRINTTY_RIGHT) {
-        input_move(input.off + 1);
-    }
-}
-
 static void get_path_entries(da_charp *pents) {
     assert(pents);
     *pents = (da_charp){0};
@@ -637,6 +625,19 @@ static void escape_spaces(char **str) {
 
     free(*str);
     *str = out.c_str;
+}
+
+static void insert_mode_feed_key(PrinttyInputKey key) {
+    if (key == PRINTTY_BACKSPACE) {
+        if (input.comp.glob)
+            input_reset_comp();
+
+        input_delete(DELETE_CURSOR, NULL);
+    } else if (key == PRINTTY_LEFT) {
+        input_move(input.off - 1);
+    } else if (key == PRINTTY_RIGHT) {
+        input_move(input.off + 1);
+    }
 }
 
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {

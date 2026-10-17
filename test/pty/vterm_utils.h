@@ -1,0 +1,37 @@
+#ifndef VTERM_UTILS_H
+#define VTERM_UTILS_H
+
+#include <vterm.h>
+
+#include "linc_tools.h"
+
+DA_TYPE(da_charp, char *);
+
+typedef struct {
+    VTerm *vp;
+    VTermScreen *scr;
+    VTermState *st;
+    int rows;
+    int cols;
+} vt_vterm;
+
+typedef struct {
+    int crow, ccol;
+    da_charp lines;
+    int rows, cols;
+} vt_snap;
+
+DA_TYPE(da_vt_snap, vt_snap);
+
+bool vt_snap_cmp(vt_snap *exp);
+vt_snap vt_get_snap(void);
+void vt_free_snap(vt_snap *snap);
+void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol);
+
+void vt_send_str(const char *msg);
+void vt_send_ch(char ch, VTermModifier mod);
+void vt_send_key(VTermKey key, VTermModifier mod);
+
+vt_vterm vt_new_vterm(int *fd, int rows, int cols);
+
+#endif

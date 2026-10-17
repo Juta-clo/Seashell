@@ -16,17 +16,23 @@ void run_all(void) {
 }
 
 int main(int argc, const char **argv) {
-    harness_init(argc, argv);
+    test_harness_init(argc, argv);
     UnityMain(argc, argv, run_all);
+    test_harness_deinit();
 
-    if (all_tests.size == 0)
+    if (ptyh.tests.size == 0)
         exit(EXIT_SUCCESS);
 
-    if (run_valgrind)
-        print_valgrind_overview();
+    if (memcheck) {
+        printf("\nValgrind memcheck -- ");
+        if (ptyh.val_errs == 0)
+            printf("\x1b[97;42mCLEAN\x1b[m\n");
+        else
+            printf("\x1b[97;41m%d TESTS DIRTY\x1b[m\n", ptyh.val_errs);
+    }
 
-    if (!verbose_mode && test_fail_count() == 0)
-        exit(EXIT_SUCCESS);
+    if ((!verbose && ptyh.fails == 0 && ptyh.val_errs == 0) || !script)
+        exit((ptyh.fails == 0 && ptyh.val_errs == 0) ? 0 : 1);
 
     start_debug_repl();
 }

@@ -9,6 +9,7 @@
 
 #include "linc_tools.h"
 #include "proc_view.h"
+#include "pty_test.h"
 
 #define PPID "PPid"
 #define NAME "Name"
@@ -16,23 +17,13 @@
 
 #define BUF_SIZE 4096
 
-static void err_exit(char *msg) {
-    LOG_ERR("%s: %m", msg);
-    exit(EXIT_FAILURE);
-}
-
-static void fatal(char *msg) {
-    LOG_ERR("%s", msg);
-    exit(EXIT_FAILURE);
-}
-
 static char *stat_val_str(pid_t pid, char *field) {
     char stat_path[PATH_MAX];
     snprintf(stat_path, PATH_MAX, "/proc/%d/status", pid);
 
     FILE *stat = fopen(stat_path, "r");
     if (!stat)
-        err_exit("fopen");
+        xtest_fatal("fopen: %m");
 
     static char buf[BUF_SIZE];
 
@@ -43,13 +34,13 @@ static char *stat_val_str(pid_t pid, char *field) {
 
     if (!rv) {
         if (feof(stat))
-            fatal("couldn't find specified field");
+            xtest_fatal("couldn't find specified field");
 
         else if (ferror(stat) && errno == ESRCH)
         /* /proc file gone; proc exited */
             goto fail;
 
-        err_exit("fgets");
+        xtest_fatal("fgets");
     }
 
     if (buf[strlen(buf) - 1] == '\n')
@@ -57,18 +48,18 @@ static char *stat_val_str(pid_t pid, char *field) {
 
     char *c = strchr(buf, ':');
     if (!c)
-        err_exit("strchr");
+        xtest_fatal("strchr");
 
     for (++c; *c == ' ' || *c == '\t'; ++c)
         continue;
 
     if (fclose(stat) == EOF)
-        err_exit("fclose");
+        xtest_fatal("fclose: %m");
     return c;
 
 fail:
     if (fclose(stat) == EOF)
-        err_exit("fclose");
+        xtest_fatal("fclose: %m");
     return NULL;
 }
 
@@ -89,7 +80,7 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
 
     FILE *stat = fopen(child_path, "r");
     if (!stat)
-        err_exit("fopen");
+        xtest_fatal("fopen: %m");
 
     static char buf[BUF_SIZE];
 
@@ -104,7 +95,7 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
         /* /proc file gone; proc exited */
             goto fail;
 
-        err_exit("fgets");
+        xtest_fatal("fgets: %m");
     }
 
     char *endptr = buf;
@@ -114,7 +105,7 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
 
         long child_pid = strtol(start, &endptr, 10);
         if (child_pid == LONG_MAX || child_pid == LONG_MIN)
-            fatal("strtol overflow");
+            xtest_fatal("strtol overflow");
 
         if (start == endptr)
             break;
@@ -138,6 +129,6 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
 
 fail:
     if (fclose(stat) == EOF)
-        err_exit("fclose");
+        xtest_fatal("fclose: %m");
     return -1;
 }

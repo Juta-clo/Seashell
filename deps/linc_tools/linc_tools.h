@@ -1187,6 +1187,15 @@ llog.h
 #define LOG_ERR(fmt, ...) \
     llog_log(llog_default(), LLOG_ERR, &LLOG_SITE, fmt __VA_OPT__(,) __VA_ARGS__)
 
+#define LLOG_INFO(llog, fmt, ...) \
+    llog_log(llog, LLOG_INFO, &LLOG_SITE, fmt __VA_OPT__(,) __VA_ARGS__)
+
+#define LLOG_WARN(llog, fmt, ...) \
+    llog_log(llog, LLOG_WARN, &LLOG_SITE, fmt __VA_OPT__(,) __VA_ARGS__)
+
+#define LLOG_ERR(llog, fmt, ...) \
+    llog_log(llog, LLOG_ERR, &LLOG_SITE, fmt __VA_OPT__(,) __VA_ARGS__)
+
 typedef enum {
     LLOG_INFO,
     LLOG_WARN,

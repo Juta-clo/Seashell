@@ -5,9 +5,8 @@
 #include <string.h>
 
 #include "linc_tools.h"
-#include "curses_xfuncs.h"
-#include "pty_test.h"
 #include "curses_debug.h"
+#include "pty_test.h"
 
 #define NFDS 1
 
@@ -17,6 +16,16 @@ static void ncurses_cleanup(void) {
     endwin();
 }
 
+static void curs_err(const char *msg) {
+    endwin();
+
+    fflush(stdout);
+    fflush(stderr);
+
+    fprintf(stderr, "\n\x1b[41m!FATAL CURSES ERROR!\x1b[0m: %s\n", msg);
+    _exit(EXIT_FAILURE);
+}
+
 static char *get_line(void) {
 #define LINE_BUF 8192
     static char input_line[LINE_BUF];
@@ -24,10 +33,8 @@ static char *get_line(void) {
     if (!fgets(input_line, LINE_BUF, stdin))
         curs_err("fgets failed");
 
-    if (feof(stdout)) {
-        LOG_INFO("eof, exiting");
+    if (feof(stdout))
         exit(EXIT_SUCCESS);
-    }
 
     if (input_line[strlen(input_line) - 1] == '\n')
         input_line[strlen(input_line) - 1 ] = '\0';
@@ -36,20 +43,20 @@ static char *get_line(void) {
 }
 
 static void get_test_next(size_t *start_i) {
-    assert(*start_i < all_tests.size);
+    assert(*start_i < ptyh.tests.size);
 
-    if (*start_i == all_tests.size - 1)
+    if (*start_i == ptyh.tests.size - 1)
         return;
 
-    if (verbose_mode) {
+    if (verbose) {
         ++*start_i;
         return;
     }
 
-    for (size_t i = *start_i + 1; i < all_tests.size; ++i) {
-        pty_test *test = &all_tests.data[i];
+    for (size_t i = *start_i + 1; i < ptyh.tests.size; ++i) {
+        pty_test *test = &ptyh.tests.data[i];
 
-        if (!test->success || test->val_err) {
+        if (!test->test_ok || test->val_err) {
             *start_i = i;
             break;
         }
@@ -57,20 +64,20 @@ static void get_test_next(size_t *start_i) {
 }
 
 static void get_test_prev(size_t *start_i) {
-    assert(*start_i < all_tests.size);
+    assert(*start_i < ptyh.tests.size);
 
     if (*start_i == 0)
         return;
 
-    if (verbose_mode) {
+    if (verbose) {
         --*start_i;
         return;
     }
 
     for (size_t i = *start_i - 1; (int) i >= 0; --i) {
-        pty_test *test = &all_tests.data[i];
+        pty_test *test = &ptyh.tests.data[i];
 
-        if (!test->success || test->val_err) {
+        if (!test->test_ok || test->val_err) {
             *start_i = i;
             return;
         }
@@ -79,8 +86,11 @@ static void get_test_prev(size_t *start_i) {
 
 /* SPLITTY HANDLERS */
 int split_init(sp_node *node) {
-    if (!node->user_data)
-        node->user_data = xmalloc(sizeof(curs_win));
+    if (!node->user_data) {
+        node->user_data = malloc(sizeof(curs_win));
+        if (!node->user_data)
+            curs_err("malloc");
+    }
 
     sp_rect rect = node->rect;
     curs_win *win = node->user_data;
@@ -174,7 +184,8 @@ void init_curses(void) {
     if (!mousemask(ALL_MOUSE_EVENTS, NULL))
         curs_err("mousemask");
 
-    xatexit(ncurses_cleanup);
+    if (atexit(ncurses_cleanup) == -1)
+        curs_err("atexit");
 
     if (refresh() == ERR)
         curs_err("refresh");
@@ -196,7 +207,9 @@ sp_rect get_info_bar_rect(void) {
 }
 
 chtype *str_to_chtype_arr(const char *s, size_t n, chtype attrs) {
-    chtype *out = xmalloc(sizeof(chtype) * (n + 1));
+    chtype *out = malloc(sizeof(chtype) * (n + 1));
+    if (!out)
+        curs_err("malloc");
 
     size_t i = 0;
 
@@ -260,7 +273,7 @@ void render_quad_borders(curs_win *gaps[GAP_MAX]) {
             }
         }
 
-        xwrefresh(gap->winp);
+        wrefresh(gap->winp);
     }
 }
 
@@ -268,15 +281,28 @@ void render_test_bar(curs_win *test_bar, size_t test_i) {
     if (!test_bar->realized)
         return;
 
-    pty_test *test = &all_tests.data[test_i];
+    pty_test *test = &ptyh.tests.data[test_i];
     char test_bar_str[BUFSIZ];
     int cp_n;
 
     if (werase(test_bar->winp) == ERR)
         curs_err("werase");
 
-    int n = snprintf(test_bar_str, sizeof(test_bar_str),
-            "[%zu/%zu]: %s", test_i + 1, all_tests.size, test->test_name);
+    int n;
+
+    if (test->test_ok) {
+        n = snprintf(test_bar_str, sizeof(test_bar_str),
+            "[%zu/%zu]: %s:OK", test_i + 1,
+            ptyh.tests.size, test->test_name
+        );
+    } else {
+        n = snprintf(test_bar_str, sizeof(test_bar_str),
+            "[%zu/%zu]: %s:FAIL:%s:%d:%s",
+            test_i + 1, ptyh.tests.size,
+            test->test_name, test->test_file,
+            test->fail_line, test->fail_msg.c_str
+        );
+    }
 
     if (n < 0)
         curs_err("snprintf");
@@ -287,12 +313,12 @@ void render_test_bar(curs_win *test_bar, size_t test_i) {
     if (n > test_bar->rect->cols)
         n = test_bar->rect->cols;
 
-    if      (!test->success) cp_n = BWHITE_RED;
+    if      (!test->test_ok) cp_n = BWHITE_RED;
     else if (test->val_err)  cp_n = BWHITE_YELLOW;
     else                     cp_n = BWHITE_GREEN;
 
     rnprintf(test_bar->winp, 0, 0, n, COLOR_PAIR(cp_n), "%s", test_bar_str);
-    xwrefresh(test_bar->winp);
+    wrefresh(test_bar->winp);
 }
 
 void render_vterm_snap(curs_win *win, vt_snap *snap) {
@@ -328,13 +354,13 @@ void render_vterm_snap(curs_win *win, vt_snap *snap) {
     if (rect.rows > snap->rows && rect.cols > snap->cols)
         rnprintf(win->winp, snap->rows, snap->cols, 1, 0, "*");
 
-    int curs_row = snap->curs_pos.row;
-    int curs_col = snap->curs_pos.col;
+    int curs_row = snap->crow;
+    int curs_col = snap->ccol;
 
     if (curs_row < avail_rows && curs_col < avail_cols)
         mvwchgat(win->winp, curs_row, curs_col, 1, A_REVERSE, 0, NULL);
 
-    xwrefresh(win->winp);
+    wrefresh(win->winp);
 }
 
 static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
@@ -346,7 +372,7 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
 
     if (lines->size == 0) {
         rnprintf(win->winp, 0, 0, win->rect->cols, 0, "[No data]");
-        xwrefresh(win->winp);
+        wrefresh(win->winp);
         return;
     }
 
@@ -368,7 +394,7 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
         }
     }
 
-    xwrefresh(win->winp);
+    wrefresh(win->winp);
 }
 
 static int lookup_win(curs_win *wins[WIN_MAX], int y, int x) {
@@ -441,12 +467,13 @@ void new_curses_ui() {
 
     /* get test data to display */
     size_t test_i = 0;
-    if (!verbose_mode)
-        if (all_tests.data[test_i].success && !all_tests.data[test_i].val_err)
+    if (!verbose)
+        if (ptyh.tests.data[test_i].test_ok &&
+           !ptyh.tests.data[test_i].val_err)
             get_test_next(&test_i);
 
     int offsets[WIN_MAX] = {0};
-    size_t snap_i = all_tests.data[test_i].snaps.size - 1;
+    size_t snap_i = ptyh.tests.data[test_i].snaps.size - 1;
 
     while (true) {
         sp_refresh(quad, get_quad_rect());
@@ -455,12 +482,12 @@ void new_curses_ui() {
         erase();
         refresh();
 
-        pty_test *test = &all_tests.data[test_i];
+        pty_test *test = &ptyh.tests.data[test_i];
 
         render_quad_borders(gaps);
         render_test_bar(test_bar, test_i);
         render_debug_win(wins[WIN_TEST], &test->test_lines, offsets[WIN_TEST]);
-        render_debug_win(wins[WIN_LOG], &test->shell_log_lines, offsets[WIN_LOG]);
+        render_debug_win(wins[WIN_LOG], &test->shlog_lines, offsets[WIN_LOG]);
         render_debug_win(wins[WIN_VAL], &test->val_lines, offsets[WIN_VAL]);
 
         if (test->snaps.size != 0)
@@ -481,14 +508,14 @@ void new_curses_ui() {
             for (size_t i = 0; i < WIN_MAX; ++i)
                 offsets[i] = 0;
             get_test_prev(&test_i);
-            snap_i = all_tests.data[test_i].snaps.size - 1;
+            snap_i = ptyh.tests.data[test_i].snaps.size - 1;
         }
 
         if (ch == 'l') {
             for (size_t i = 0; i < WIN_MAX; ++i)
                 offsets[i] = 0;
             get_test_next(&test_i);
-            snap_i = all_tests.data[test_i].snaps.size - 1;
+            snap_i = ptyh.tests.data[test_i].snaps.size - 1;
         }
 
         if (ch == 'j')
