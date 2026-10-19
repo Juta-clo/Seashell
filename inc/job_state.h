@@ -100,6 +100,7 @@ struct job_event {
     da_proc_view pviews;
 };
 
+void print_job_event(const job_event *jev);
 pid_t request_job_id(pid_t jid);
 pid_t create_job_id(void);
 
@@ -108,6 +109,8 @@ da_jevent get_job_info(void);
 job_event *pop_job_event(void);
 
 int update_job_proc(wait_event wev);
+void add_job_event(job_event jev);
+bool set_job_continue(pid_t jid, job_event *jev);
 void free_job_event(job_event *jev);
 
 void clear_job_table(void);

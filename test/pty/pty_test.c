@@ -81,15 +81,13 @@ static int test_pty_poll(int tfd) {
         if (pollfds[POLL_SHELL].revents & POLLIN) {
             data = flush_pipe(sh_pipe[0]);
             add_lines(&test->shlog_lines, data);
-            rv = PTY_POLL_SHELL;
-            goto cleanup;
+            continue;
         }
 
         if (pollfds[POLL_VAL].revents & POLLIN) {
             data = flush_pipe(val_pipe[0]);
             add_lines(&test->val_lines, data);
-            rv = PTY_POLL_VAL;
-            goto cleanup;
+            continue;
         }
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
@@ -500,8 +498,10 @@ bool verify_term(char **lines, int crow, int ccol) {
 
     vt_lines_to_snap(lines, &test->vt_exp, crow, ccol);
 
-    if (vt_snap_cmp(&test->vt_exp))
+    if (vt_snap_cmp(&test->vt_exp)) {
+        vt_free_snap(&test->vt_exp);
         return true;
+    }
 
     int tfd = start_timerfd((memcheck) ? 1000 : 100);
 
@@ -512,12 +512,15 @@ bool verify_term(char **lines, int crow, int ccol) {
             test->vt_act = vt_get_snap();
             if (close(tfd) == -1)
                 xtest_fatal("close: %m");
+
             return false;
 
         } else if (poll_rv == PTY_POLL_MFD) {
             if (vt_snap_cmp(&test->vt_exp)) {
                 if (close(tfd) == -1)
                     xtest_fatal("close: %m");
+
+                vt_free_snap(&test->vt_exp);
                 return true;
             }
         }

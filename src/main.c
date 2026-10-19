@@ -67,7 +67,7 @@ static ps_ast *line_to_ast(char *line) {
     drop_line();
 
     if (rv != LX_OK) {
-        err_msg("lex error");
+        err_msg(lx_errstr(rv));
         return NULL;
     }
 
@@ -85,11 +85,11 @@ static ps_ast *line_to_ast(char *line) {
 }
 
 static int launch_job(ps_pline *pline, bool bg, pid_t jid) {
-    if (!bg)
-        xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);
-
     if (ex_expand_pline(pline) == -1)
         return -1;
+
+    if (!bg)
+        xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);
 
     bool handled = false;
     if (pline->cmds.size == 1 && pline->cmds.data[0].redirs.size == 0 && !bg) {
@@ -149,64 +149,6 @@ static bool try_run_next_job(const job_event *jev, int how) {
     return execed_pline;
 }
 
-static char *get_jev_str(const job_event *jev) {
-    dstr msg;
-    dstr_init(&msg);
-
-    if (jev->builtin) {
-        dstr_printf(&msg, "[%d] Done (builtin)", jev->jid);
-
-    } else if (jev->type == JEXITED) {
-        dstr_printf(&msg, "[%d] ", jev->jid);
-        int offset = msg.len;
-
-        for (size_t i = 0; i < jev->pviews.size; ++i) {
-            proc_view *pview = &jev->pviews.data[i];
-
-            if (i != 0)
-                dstr_printf(&msg, "%*s", offset, "");
-
-            if (pview->stat == PROC_EXIT) {
-                dstrcat(&msg, "'");
-
-                size_t len = argv_len(pview->argv);
-                for (size_t i = 0; i < len; ++i) {
-                    dstrcat(&msg, pview->argv[i]);
-                    if (i != len - 1)
-                        dstrcat(&msg, " ");
-                }
-
-                dstr_printf(&msg, "' Exited (%d)", pview->exit_stat);
-
-            } else if (pview->stat == PROC_SIG) {
-                dstrcat(&msg, "'");
-
-                size_t len = argv_len(pview->argv);
-                for (size_t i = 0; i < len; ++i) {
-                    dstrcat(&msg, pview->argv[i]);
-                    if (i != len - 1)
-                        dstrcat(&msg, " ");
-                }
-
-                dstr_printf(&msg, "' %s (%d)", strsignal(pview->term_sig),
-                        pview->term_sig);
-            } else
-                xfatal("unexpected process status");
-
-            if (i != jev->pviews.size - 1)
-                dstr_printf(&msg, "\n");
-        }
-
-    } else if (jev->type == JSTOPPED) {
-        dstr_printf(&msg, "[%d] Stopped", jev->jid);
-
-    } else if (jev->type == JCONTINUED) {
-        dstr_printf(&msg, "[%d] Continued", jev->jid);
-    }
-
-    return msg.c_str;
-}
-
 void reclaim_terminal(void) {
     if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");
@@ -216,26 +158,8 @@ void reclaim_terminal(void) {
     sh_env.need_prompt = true;
 }
 
-bool shell_in_fg(void) {
-    return sh_env.fg_jid == NOFG;
-}
-
 bool fg_event(job_event *jev) {
     return sh_env.fg_jid  == jev->jid;
-}
-
-void print_job_event(const job_event *jev) {
-    sh_env.need_prompt = true;
-
-    char *msg = get_jev_str(jev);
-    LOG_INFO("%s", msg);
-
-    if (shell_in_fg()) {
-        display_job_msg(msg);
-    } else
-        printf("%s\n", msg);
-
-    free(msg);
 }
 
 static void handle_fg_event(const job_event *jev) {
@@ -277,9 +201,6 @@ static void handle_fg_event(const job_event *jev) {
             printf("\n");
 
         print_job_event(jev);
-
-    } else if (jev->type == JCONTINUED) {
-        /* Only triggered by the 'fg' builtin */
     }
 }
 
@@ -346,7 +267,7 @@ int main(int argc, char *const *argv) {
     while (true) {
         char *line;
 
-        if (shell_in_fg()) {
+        if (sh_env.fg_jid == NOFG) {
             line = get_line();
             if (!line) {
                 process_signals();
@@ -388,9 +309,8 @@ int main(int argc, char *const *argv) {
         }
 
         if (ast->bg) {
-            // pid_t pgid = lookup_job_pgrp(jid);
-            // printf("[%d] %d\n", jid , pgid);
-            printf("[%d] Started\n", jid);
+            pid_t pgid = lookup_job_pgrp(jid);
+            printf("[%d] %d\n", jid , pgid);
             sh_env.need_prompt = true;
         }
 

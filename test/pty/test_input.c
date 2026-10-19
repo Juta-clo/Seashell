@@ -38,7 +38,7 @@ TEST(input, line_is_preserved_on_async_job_messages) {
     vt_send_str("sleep 100 &\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 &",
-        "[1] Started",
+        "[1] %d",
         PROMPT
     );
 
@@ -56,14 +56,14 @@ TEST(input, line_is_preserved_on_async_job_messages) {
 
     assert_term(2, PROMPT_LEN + 2,
         PROMPT "abc",
-        "[1] 'sleep 100' Terminated (15)",
+        "[1] Terminated      sleep 100",
         PROMPT "abc"
     );
 
     vt_send_str("def\n");
     assert_term(4, PROMPT_LEN,
         PROMPT "abc",
-        "[1] 'sleep 100' Terminated (15)",
+        "[1] Terminated      sleep 100",
         PROMPT "abdefc",
         "seashell: command not found: abdefc",
         PROMPT

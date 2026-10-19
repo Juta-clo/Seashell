@@ -47,6 +47,9 @@ void usage_err(const char *fmt, ...);
 
 DA_TYPE(da_charp, char *);
 
+#define MAX(a, b) ((a) > (b)) ? (a) : (b)
+#define MIN(a, b) ((a) < (b)) ? (a) : (b)
+
 bool is_dir(const char *file);
 size_t argv_len(char **argv);
 void free_charp_arr(da_charp *arr);

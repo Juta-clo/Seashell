@@ -2,11 +2,13 @@
 #include <string.h>
 #include <assert.h>
 
+#include "input.h"
 #include "linc_tools.h"
 #include "job_state.h"
 #include "wait_stat.h"
 #include "utils.h"
 #include "exec_funcs.h"
+#include "shell_state.h"
 
 static job_table jctl = {0};
 static da_jevent jevs = {0};
@@ -127,6 +129,104 @@ static bool job_signaled(jc_job *job) {
     return false;
 }
 
+static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
+    return (p1->stat == p2->stat) &&
+        ((p2->stat == PROC_EXIT) || p2->stat == PROC_RUN ||
+        (p1->stat == PROC_SIG && p1->term_sig == p2->term_sig) ||
+        (p1->stat == PROC_STOP && p1->stop_sig == p2->stop_sig));
+}
+
+static char *get_pline_str(const job_event *jev, int offset) {
+    dstr out;
+    dstr_init(&out);
+
+    int init_offset;
+    int cur_offset;
+    int argv_offset = 6;
+    int min_offset = 3;
+
+    for (size_t y = 0; y < jev->pviews.size; ++y) {
+        proc_view *pview = &jev->pviews.data[y];
+        int total = out.len;
+
+        if (y == 0 || !same_ev_type(pview, &pview[-1])) {
+            if (pview->stat == PROC_EXIT) {
+                dstrcat(&out, "done");
+            } else if (pview->stat == PROC_SIG) {
+                dstr_printf(&out, "%s", strsignal(pview->term_sig));
+            } else if (pview->stat == PROC_STOP) {
+                dstr_printf(&out, "%s", strsignal(pview->stop_sig));
+            } else
+                argv_offset -= 1;
+
+            cur_offset = (out.len - total) + offset;
+
+            if (y == 0) {
+                dstr_printf(&out, "%*s", argv_offset, "");
+                init_offset = out.len + offset;
+            } else {
+                dstr_printf(&out, "%*s",
+                        MAX(min_offset, init_offset - cur_offset), "");
+            }
+        }
+
+        size_t len = argv_len(pview->argv);
+
+        for (size_t i = 0; i < len; ++i) {
+            dstrcat(&out, pview->argv[i]);
+            if (i != len - 1)
+                dstrcat(&out, " ");
+        }
+
+        if (y != jev->pviews.size - 1) {
+            if (same_ev_type(pview, &pview[1])) {
+                dstr_printf(&out, " | ");
+            } else {
+                dstr_printf(&out, " |\n%*s", offset, "");
+            }
+        }
+    }
+
+    return out.c_str;
+}
+
+static char *get_jev_str(const job_event *jev) {
+    dstr msg;
+    dstr_init(&msg);
+
+    if (jev->builtin) {
+        /* Always an exit event for parent shell builtin */
+        dstr_printf(&msg, "[%d] done      %s (builtin)", jev->jid,
+                jev->pviews.data[0].argv[0]);
+        return msg.c_str;
+    }
+
+    if (jev->type == JCONTINUED) {
+        dstr_printf(&msg, "[%d] continued ", jev->jid);
+    } else
+        dstr_printf(&msg, "[%d] ", jev->jid);
+
+    char *pline_str = get_pline_str(jev, msg.len);
+    dstrcat(&msg, pline_str);
+
+    free(pline_str);
+    return msg.c_str;
+}
+
+void print_job_event(const job_event *jev) {
+    sh_env.need_prompt = true;
+
+    char *msg = get_jev_str(jev);
+    LOG_INFO("%s", msg);
+
+    if (sh_env.fg_jid == NOFG) {
+        display_job_msg(msg);
+    } else
+        printf("%s\n", msg);
+
+    free(msg);
+}
+
 pid_t create_job_id(void) {
     pid_t jid = 1;
 
@@ -183,7 +283,6 @@ pid_t lookup_job_pgrp(pid_t jid) {
     return -1;
 }
 
-
 job_event *pop_job_event(void) {
     static job_event jev;
 
@@ -198,11 +297,10 @@ job_event *pop_job_event(void) {
 }
 
 void add_job_event(job_event jev) {
-    job_event *new_jev = da_push(&jevs);
-    *new_jev = jev;
+    *da_push(&jevs) = jev;
 }
 
-void capture_pviews(jc_job *job, job_event *jev) {
+void capture_job_state(jc_job *job, job_event *jev) {
     da_init(&jev->pviews);
 
     for (size_t i = 0; i < job->pgrp.procs.size; ++i) {
@@ -237,7 +335,7 @@ da_jevent get_job_info(void) {
         };
 
         da_init(&jev->pviews);
-        capture_pviews(job, jev);
+        capture_job_state(job, jev);
     }
 
     return jevs;
@@ -249,7 +347,7 @@ void push_continue_event(jc_job *job) {
 
     jev->type = JCONTINUED;
 
-    capture_pviews(job, jev);
+    capture_job_state(job, jev);
 }
 
 void push_stop_event(jc_job *job) {
@@ -259,7 +357,7 @@ void push_stop_event(jc_job *job) {
     jev->type = JSTOPPED;
     jev->intr_stop = job_inter_stopped(job);;
 
-    capture_pviews(job, jev);
+    capture_job_state(job, jev);
 }
 
 void push_exit_event(jc_job *job) {
@@ -282,7 +380,7 @@ void push_exit_event(jc_job *job) {
             jev->success = false;
     }
 
-    capture_pviews(job, jev);
+    capture_job_state(job, jev);
 }
 
 int update_job_proc(wait_event wev) {
@@ -297,12 +395,12 @@ int update_job_proc(wait_event wev) {
     job_stat stat = calc_job_stat(job);
 
     if (job->stat == JOB_RUN && stat == JOB_STOP) {
-        push_stop_event(job);
         job->stat = stat;
+        push_stop_event(job);
 
     } else if (job->stat == JOB_STOP && stat == JOB_RUN) {
-        push_continue_event(job);
         job->stat = stat;
+        push_continue_event(job);
 
     } else if (stat == JOB_EXIT) {
         push_exit_event(job);
@@ -310,6 +408,25 @@ int update_job_proc(wait_event wev) {
     }
 
     return 0;
+}
+
+bool set_job_continue(pid_t jid, job_event *jev) {
+    size_t i = get_job_index(jid);
+    jc_job *job = &jctl.jobs.data[i];
+    bool change = job->stat == JOB_STOP;
+
+    job->stat = JOB_RUN;
+
+    for (size_t i = 0; i < job->pgrp.procs.size; ++i)
+        if (job->pgrp.procs.data[i].stat == PROC_STOP)
+            job->pgrp.procs.data[i].stat = PROC_RUN;
+
+    if (change) {
+        *jev = (job_event){ .type = JCONTINUED };
+        capture_job_state(job, jev);
+    }
+
+    return change;
 }
 
 void queue_builtin_exit_event(pid_t jid, int status) {

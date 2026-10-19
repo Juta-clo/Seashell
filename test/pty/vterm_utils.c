@@ -1,25 +1,86 @@
 #include <vterm.h>
+#include <regex.h>
 
 #include "vterm_utils.h"
 #include "pty_test.h"
 #include "unity_fixture.h" // IWYU pragma: keep
 
+static char reg_chars[] = {
+    /* leave ']', '-', '}' out cause only valid contexually */
+    '[', '.', '*', '+', '?', '(', ')', '{', '|', '^', '$', '\\'
+};
+
+static char *reg_convert(char *line) {
+    dstr out;
+    dstr_init(&out);
+    dstr_push(&out, '^');
+
+    if (line) {
+        for (char *c = line; *c != '\0'; ++c) {
+            if (*c == '%') {
+                switch (c[1]) {
+                case 'd':
+                    dstrcat(&out, "[0-9]+");
+                    ++c;
+                    continue;
+                case '%':
+                    dstr_push(&out, '%');
+                    ++c;
+                    continue;
+                default:
+                    xtest_fatal("Bad regex in test %s: %s", test->test_name, line);
+                }
+            }
+
+            for (size_t i = 0; i < sizeof(reg_chars); ++i) {
+                if (reg_chars[i] == *c) {
+                    dstr_push(&out, '\\');
+                    break;
+                }
+            }
+
+            dstr_push(&out, *c);
+        }
+    }
+
+    dstrcat(&out, "`*$");
+    return out.c_str;
+}
+
 static void vt_output_cb(const char *bytes, size_t len, void *user) {
     int mfd = *(int *)user;
     if ((size_t) write(mfd, bytes, len) != len)
-        TEST_FAIL_MESSAGE("vterm_output_cb: write: failed/partial");
+        xtest_fatal("vterm_output_cb: write: failed/partial");
 }
 
 bool vt_snap_cmp(vt_snap *exp) {
     assert(exp);
 
+    int rv;
+    char errbuf[BUFSIZ];
     vt_snap snap = vt_get_snap();
+    regex_t reg;
 
     for (int row = 0; row < test->vt.rows; ++row) {
-        if (strcmp(snap.lines.data[row], exp->lines.data[row]) != 0) {
-            vt_free_snap(&snap);
-            return false;
+        rv = regcomp(&reg, exp->lines.data[row], REG_EXTENDED | REG_NOSUB);
+
+        if (rv != 0) {
+            regerror(rv, &reg, errbuf, BUFSIZ);
+            xtest_fatal("regcomp: %s", errbuf);
         }
+
+        rv = regexec(&reg, snap.lines.data[row], 0, NULL, 0);
+
+        if (rv == REG_NOMATCH) {
+            vt_free_snap(&snap);
+            regfree(&reg);
+            return false;
+        } else if (rv != 0) {
+            regerror(rv, &reg, errbuf, BUFSIZ);
+            xtest_fatal("regexec: %s", errbuf);
+        }
+
+        regfree(&reg);
     }
 
     if (exp->crow != snap.crow || exp->ccol != snap.ccol) {
@@ -105,30 +166,20 @@ void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol) {
             xtest_fatal("lines_to_term: Too many terminal lines");
 
     bool lines_done = false;
-    char spacing[VTERM_ROWS_MAX];
-    memset(spacing, '`', VTERM_ROWS_MAX);
 
     for (int i = 0; i < test->vt.rows; ++i) {
-        dstr line;
-        dstr_init(&line);
-
         if (!lines_done && lines[i] == NULL)
             lines_done = true;
 
-        int gap = test->vt.cols;
+        char *s;
 
         if (!lines_done) {
-            if (test->vt.cols < (int)strlen(lines[i])) {
-                xtest_fatal("bad line request, len=%d, cols=%d: [%s]",
-                    (int)hds_len(lines[i]), test->vt.cols, lines[i]);
-            }
-
-            dstrcat(&line, lines[i]);
-            gap -= (int)strlen(lines[i]);
+            s = reg_convert(lines[i]);
+        } else {
+            s = reg_convert(NULL);
         }
 
-        dstrncat(&line, spacing, gap);
-        *da_push(&snap->lines) = line.c_str;
+        *da_push(&snap->lines) = s;
     }
 }
 

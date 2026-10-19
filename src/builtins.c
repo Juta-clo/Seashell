@@ -95,12 +95,6 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    /* Always a race so lets "lie" here. It's this or risking
-     * writing to the terminal with a process that expects to
-     * be the only one that can write to it. Think interactive
-     * programs like vim. */
-    printf("[%d] Continued\n", jid);
-
     /* Save current tty state then apply saved tty state for the
      * job if one was saved (it was a foreground job) */
     job_plan *plan = lookup_plan(jid, NULL);
@@ -123,20 +117,30 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
     }
 
     pid_t pgid = lookup_job_pgrp(jid);
+    if (pgid == -1) {
+        fprintf(stderr, "%s: no such job: %s\n", argv[0], argv[1]);
+        return EXIT_FAILURE;
+    }
+
+    job_event jev;
+    if (set_job_continue(jid, &jev)) {
+        print_job_event(&jev);
+        free_job_event(&jev);
+    }
 
     if (tcsetpgrp(sh_env->tty_fd, pgid) == -1) {
         fprintf(stderr, "%s: tcsetpgrp: %m\n", argv[0]);
         return EXIT_FAILURE;
     }
 
+    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {
+        if (tcsetpgrp(sh_env->tty_fd, getpgid(0)) == -1)
+            xfatal("%s: failed to restore shell fg group", argv[0]);
+
+        return EXIT_FAILURE;
+    }
+
     sh_env->fg_jid = jid;
-
-    /* best effort, must report success when tcsetpgrp succeeds */
-    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH)
-        LOG_ERR("killpg: %m");
-
-    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1)
-        LOG_ERR("nanosleep: %m");
 
     return EXIT_SUCCESS;
 }
@@ -168,10 +172,9 @@ static int run_bg_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    if (nanosleep(&(struct timespec){0, 5000000}, NULL) == -1) {
-        fprintf(stderr, "%s: nanosleep: %m\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    job_event jev;
+    if (set_job_continue(jid, &jev))
+        add_job_event(jev);
 
     return EXIT_SUCCESS;
 }
@@ -226,6 +229,14 @@ static int run_kill_builtin(char **argv, shell_env *sh_env) {
         if (killpg(pgid, sig) == -1 && errno != ESRCH) {
             fprintf(stderr, "%s: killpg failed: %m\n", argv[0]);
             return EXIT_FAILURE;
+        }
+
+        if (sig == SIGCONT) {
+            job_event jev;
+            if (set_job_continue(jid, &jev))
+                add_job_event(jev);
+
+            return EXIT_SUCCESS;
         }
 
     } else {

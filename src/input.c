@@ -955,9 +955,11 @@ char *get_line(void) {
             } else if (pev.key == PRINTTY_UP) {
                 history_next();
                 input_update();
+                continue;
             } else if (pev.key == PRINTTY_DOWN) {
                 history_prev();
                 input_update();
+                continue;
             }
 
             if (input.insert_mode) {
