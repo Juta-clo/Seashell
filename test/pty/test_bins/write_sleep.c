@@ -9,7 +9,7 @@ void sigint_handler(int _) {
     sigint_caught = 1;
 }
 
-int main(int argc, char **argv) {
+int main(void) {
     struct sigaction sa;
     sa.sa_handler = sigint_handler;
     sa.sa_flags = 0;

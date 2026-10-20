@@ -4,16 +4,20 @@ A ~~simple~~ small linux shell for systems programming practice.
 
 ## Goals
 
-- [ ] Line editor (See Ammsiss/Printty)
-- [ ] Configuration file
+- Line editor (See Ammsiss/Printty)
+- Configuration file
+- Pipelines, andor chains, variable expansion, and redirections
+- Basic job control implementation
+- Virtual terminal backed PTY tests
 
-- [x] ~~Pipelines, andor chains, variable expansion, and redirections~~
-- [x] ~~Basic job control implementation~~
+## Maybe
+
+- More shell syntax like substitution and control structures
+- Scripting support
 
 ## Non-goals
 
 - POSIX shell compliance
-- Scripting support
 
 ## License
 

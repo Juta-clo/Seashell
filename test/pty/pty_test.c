@@ -15,6 +15,8 @@
 #include "unity_fixture.h" // IWYU pragma: keep
 #include "tutils.h"
 
+#define TEST_BIN_DIR "./test/pty/test_bins"
+
 typedef enum {
     POLL_MFD,
     POLL_SHELL,
@@ -66,43 +68,36 @@ static void test_write_to_term(const char *str) {
 static int test_pty_poll(int tfd) {
     pollfds[POLL_TFD] = (struct pollfd){ .fd = tfd, .events = POLLIN };
 
-    int rv = -1;
     char *data = NULL;
 
     while (true) {
         if (poll(pollfds, NFDS, -1) == -1)
             xtest_fatal("poll: %m");
 
-        if (pollfds[POLL_TFD].revents & POLLIN) {
-            rv = PTY_POLL_TFD;
-            goto cleanup;
-        }
-
-        if (pollfds[POLL_SHELL].revents & POLLIN) {
-            data = flush_pipe(sh_pipe[0]);
-            add_lines(&test->shlog_lines, data);
-            continue;
-        }
-
-        if (pollfds[POLL_VAL].revents & POLLIN) {
-            data = flush_pipe(val_pipe[0]);
-            add_lines(&test->val_lines, data);
-            continue;
-        }
+        if (pollfds[POLL_TFD].revents & POLLIN)
+            return PTY_POLL_TFD;
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
             data = flush_pty(test->mfd);
             dstrcat(&test->ptydata, data);
             add_lines(&test->raw_lines, data);
             test_write_to_term(data);
-            rv = PTY_POLL_MFD;
-            goto cleanup;
+            free(data);
+            return PTY_POLL_MFD;
+        }
+
+        if (pollfds[POLL_SHELL].revents & POLLIN) {
+            data = flush_pipe(sh_pipe[0]);
+            add_lines(&test->shlog_lines, data);
+            free(data);
+        }
+
+        if (pollfds[POLL_VAL].revents & POLLIN) {
+            data = flush_pipe(val_pipe[0]);
+            add_lines(&test->val_lines, data);
+            free(data);
         }
     }
-
-cleanup:
-    free(data);
-    return rv;
 }
 
 static void test_exec_pgrm(void) {
@@ -246,6 +241,22 @@ void test_harness_init(int argc, const char *const *argv) {
 
     if (mkdir("/tmp/seashell", 0700) == -1 && errno != EEXIST)
         xtest_fatal("mkdir: %m");
+
+    char *path = getenv("PATH");
+    char *new = nullptr;
+
+    if (!path) {
+        hds_append(new, TEST_BIN_DIR);
+    } else {
+        hds_append(new, path);
+        hds_append(new, ":");
+        hds_append(new, TEST_BIN_DIR);
+    }
+
+    if (setenv("PATH", new, 1) == -1)
+        xtest_fatal("setenv: %m");
+
+    hds_free(new);
 }
 
 void test_harness_deinit(void) {

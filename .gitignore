@@ -20,3 +20,7 @@ pty_test
 unit_test
 self_kill
 launch_seashell
+
+test/pty/test_bins/*.d
+test/pty/test_bins/*
+!test/pty/test_bins/*.c
