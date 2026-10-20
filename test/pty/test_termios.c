@@ -113,6 +113,38 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
     assert_termios(changed_tio);
 }
 
+TEST(termios, program_after_fg_builtin_has_correct_termios) {
+    vt_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("fg %1 || cat\n");
+    assert_term(1, 0,
+        PROMPT "fg %%1 || cat"
+    );
+
+    assert_kill("sleep");
+
+    assert_term(2, 0,
+        PROMPT "fg %%1 || cat",
+        "[1] Terminated       sleep 100"
+    );
+
+    assert_pstate("cat", PSTATE_SLEEPING);
+    assert_termios(tio);
+
+    vt_send_str("abc\n");
+    assert_term(4, 0,
+        PROMPT "fg %%1 || cat",
+        "[1] Terminated       sleep 100",
+        "abc",
+        "abc"
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -122,4 +154,5 @@ TEST_GROUP_RUNNER(termios) {
     RUN_TEST_CASE(termios, initial_shell_termios);
     RUN_TEST_CASE(termios, cbreak_mode_restored_after_fg_job);
     RUN_TEST_CASE(termios, stopped_job_termios_saved_and_restored);
+    RUN_TEST_CASE(termios, program_after_fg_builtin_has_correct_termios);
 }

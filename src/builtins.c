@@ -95,9 +95,16 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
+    pid_t pgid = lookup_job_pgrp(jid);
+    if (pgid == -1) {
+        fprintf(stderr, "%s: no such job: %s\n", argv[0], argv[1]);
+        return EXIT_FAILURE;
+    }
+
     /* Save current tty state then apply saved tty state for the
      * job if one was saved (it was a foreground job) */
     job_plan *plan = lookup_plan(jid, NULL);
+    ASSERT(plan);
 
     if (tcgetattr(sh_env->tty_fd, &sh_env->tty_state) == -1) {
         fprintf(stderr, "%s: tcgetattr: %m", argv[0]);
@@ -116,12 +123,6 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
         plan->tty_state_saved = false;
     }
 
-    pid_t pgid = lookup_job_pgrp(jid);
-    if (pgid == -1) {
-        fprintf(stderr, "%s: no such job: %s\n", argv[0], argv[1]);
-        return EXIT_FAILURE;
-    }
-
     if (tcsetpgrp(sh_env->tty_fd, pgid) == -1) {
         fprintf(stderr, "%s: tcsetpgrp: %m\n", argv[0]);
         return EXIT_FAILURE;
@@ -129,7 +130,7 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
 
     job_event jev;
     if (set_job_continue(jid, &jev)) {
-        print_job_event(jev.jid, &jev);
+        print_job_event(jev.jid, &jev, false);
         free_job_event(&jev);
     }
 
@@ -283,8 +284,8 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
 
     args_opt_data jobs_opts[] = {
         [SHOW_PIDS] = {
-            .long_name = "pid",
-            .short_name = 'p',
+            .long_name = "long",
+            .short_name = 'l',
             .has_arg = ARGS_NO_ARG,
         },
         (args_opt_data){0}
@@ -294,54 +295,13 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
 
     da_jevent jevs = get_job_info();
-
     for (size_t i = 0; i < jevs.size; ++i) {
-        job_event *jev = &jevs.data[i];
-        printf("[%d] ", jev->jid);
-
-        switch (jev->stat) {
-        case JOB_RUN:  printf("Running\n"); break;
-        case JOB_EXIT: printf("Exited\n");  break;
-        case JOB_STOP: printf("Stopped\n"); break;
-        }
-
-        for (size_t i = 0; i < jev->pviews.size; ++i) {
-            proc_view *pview = &jev->pviews.data[i];
-
-            printf("   ");
-
-            if (jobs_opts[SHOW_PIDS].found)
-                printf("%d ", pview->pid);
-
-            for (char **arg = pview->argv; *arg != NULL; ++arg)
-                printf("%s ", *arg);
-
-            switch(pview->stat) {
-                case PROC_RUN:
-                    printf("Running\n");
-                    break;
-
-                case PROC_EXIT:
-                    printf("Exited with status %d\n", pview->exit_stat);
-                    break;
-
-                case PROC_SIG:
-                    printf("%s by signal %d\n", strsignal(pview->term_sig),
-                            pview->term_sig);
-                    break;
-
-                case PROC_STOP:
-                    printf("%s by signal %d\n", strsignal(pview->stop_sig),
-                            pview->stop_sig);
-                    break;
-            }
-        }
-
+        print_job_event(jevs.data[i].jid, &jevs.data[i],
+                jobs_opts[SHOW_PIDS].found);
         free_job_event(&jevs.data[i]);
     }
 
     da_free(&jevs);
-
     return EXIT_SUCCESS;
 }
 

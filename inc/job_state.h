@@ -97,7 +97,7 @@ struct job_event {
     da_proc_view pviews;
 };
 
-void print_job_event(pid_t jid, const job_event *jev);
+void print_job_event(pid_t jid, const job_event *jev, bool verbose);
 pid_t request_job_id(pid_t jid);
 pid_t create_job_id(void);
 

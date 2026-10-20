@@ -24,6 +24,7 @@ typedef struct {
     Printty *pt;
     bool need_prompt;
     llog assert_llog;
+    int fg_pending;
 } shell_env;
 
 extern shell_env sh_env;

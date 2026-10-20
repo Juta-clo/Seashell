@@ -328,10 +328,9 @@ TEST(shell, jobs_builtin) {
     );
 
     vt_send_str("jobs\n");
-    assert_term(3, PROMPT_LEN,
+    assert_term(2, PROMPT_LEN,
         PROMPT "jobs",
-        "[1] Running",
-        "   sleep 100 Running",
+        "[1] running          sleep 100",
         PROMPT
     );
 }
@@ -359,7 +358,7 @@ TEST(shell, fg_stopped_bg_job) {
         PROMPT "cat &",
         "[1] %d",
         PROMPT,
-        "[1] Stopped (tty input)   cat",
+        "[1] Stopped (tty input) cat",
         PROMPT
     );
 
@@ -379,10 +378,9 @@ TEST(shell, kill_builtin_works_on_bg_jobs) {
     );
 
     vt_send_str("jobs\n");
-    assert_term_clear(3, PROMPT_LEN,
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "jobs",
-        "[1] Running",
-        "   sleep 100 Running",
+        "[1] running          sleep 100",
         PROMPT
     );
 
@@ -411,7 +409,7 @@ TEST(shell, bg_on_stopped_job_resumes_it) {
     vt_send_str("kill -STOP %1\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "kill -STOP %%1",
-        "[1] Stopped (signal)   sleep 100",
+        "[1] Stopped (signal) sleep 100",
         PROMPT
     );
 
@@ -483,7 +481,7 @@ TEST(shell, fg_process_stopped) {
     vt_send_str("self_kill -STOP\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "self_kill -STOP",
-        "[1] Stopped (signal)   self_kill -STOP",
+        "[1] Stopped (signal) self_kill -STOP",
         PROMPT
     );
 }
@@ -537,7 +535,7 @@ TEST(shell, stopped_process_then_kill_builtin) {
         PROMPT "self_kill -STOP | sleep 100 &",
         "[1] %d",
         PROMPT "kill %%1",
-        "[1] Stopped (signal)   self_kill -STOP |",
+        "[1] Stopped (signal) self_kill -STOP |",
         "    Terminated       sleep 100",
         PROMPT
     );
@@ -554,7 +552,7 @@ TEST(shell, stop_pline_with_plines_left) {
     vt_send_str("kill -STOP %1\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "kill -STOP %%1",
-        "[1] Stopped (signal)   sleep 100",
+        "[1] Stopped (signal) sleep 100",
         PROMPT
     );
 
@@ -778,6 +776,181 @@ TEST(shell, async_andor_with_parent_shell_builtin) {
     );
 }
 
+TEST(shell, fg_resumed_job_stopped_again) {
+    vt_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("kill -STOP %1\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "kill -STOP %%1",
+        "[1] Stopped (signal) sleep 100",
+        PROMPT
+    );
+
+    vt_send_str("fg %1 || echo x\n");
+    assert_term(2, 0,
+        PROMPT "fg %%1 || echo x",
+        "[1] running          sleep 100"
+    );
+
+    verify_pstate("sleep", PSTATE_SLEEPING);
+
+    vt_send_ch('z', VTERM_MOD_CTRL);
+    assert_term_clear(5, PROMPT_LEN,
+        PROMPT "fg %%1 || echo x",
+        "[1] running          sleep 100",
+        "^Z",
+        "[1] Stopped          sleep 100",
+        "x",
+        PROMPT
+    );
+
+    vt_send_str("kill -TERM %1\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "kill -TERM %%1",
+        PROMPT
+    );
+
+    vt_send_str("fg %1\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT "fg %%1",
+        "[1] running          sleep 100",
+        "[1] Terminated       sleep 100",
+        PROMPT
+    );
+}
+
+TEST(shell, fg_builtin_part_of_job_plan) {
+    vt_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("kill -STOP %1\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "kill -STOP %%1",
+        "[1] Stopped (signal) sleep 100",
+        PROMPT
+    );
+
+    vt_send_str("echo x && fg %1 || echo x\n");
+    assert_term(3, 0,
+        PROMPT "echo x && fg %%1 || echo x",
+        "x",
+        "[1] running          sleep 100"
+    );
+
+    verify_pstate("sleep", PSTATE_SLEEPING);
+
+    vt_send_ch('c', VTERM_MOD_CTRL);
+    assert_term(5, PROMPT_LEN,
+        PROMPT "echo x && fg %%1 || echo x",
+        "x",
+        "[1] running          sleep 100",
+        "^C",
+        "x",
+        PROMPT
+    );
+}
+
+TEST(shell, fg_bg_kill_regression) {
+    vt_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("kill -STOP %1\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "kill -STOP %%1",
+        "[1] Stopped (signal) sleep 100",
+        PROMPT
+    );
+
+    vt_send_str("fg %1\n");
+    assert_term(2, 0,
+        PROMPT "fg %%1",
+        "[1] running          sleep 100"
+    );
+
+    assert_pstate("sleep", PSTATE_SLEEPING);
+
+    vt_send_ch('c', VTERM_MOD_CTRL);
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "fg %%1",
+        "[1] running          sleep 100",
+        "^C",
+        PROMPT
+    );
+
+    vt_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("true && kill %1\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "true && kill %%1",
+        PROMPT,
+        "[1] Terminated       sleep 100",
+        PROMPT
+    );
+}
+
+TEST(shell, multiple_fg_builtins_in_andor) {
+    vt_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("kill -STOP %1\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "kill -STOP %%1",
+        "[1] Stopped (signal) sleep 100",
+        PROMPT
+    );
+
+    vt_send_str("cat &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "cat &",
+        "[2] %d",
+        PROMPT,
+        "[2] Stopped (tty input) cat",
+        PROMPT
+    );
+
+    vt_send_str("fg %1 || fg %2 || echo x\n");
+    assert_term(2, 0,
+        PROMPT "fg %%1 || fg %%2 || echo x",
+        "[1] running          sleep 100"
+    );
+
+    assert_kill("sleep");
+    assert_pstate("cat", PSTATE_SLEEPING);
+
+    vt_send_ch('c', VTERM_MOD_CTRL);
+    assert_term(6, PROMPT_LEN,
+        PROMPT "fg %%1 || fg %%2 || echo x",
+        "[1] running          sleep 100",
+        "[1] Terminated       sleep 100",
+        "[2] running          cat",
+        "^C",
+        "x",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -829,4 +1002,8 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, async_andor_with_multi_cmd_pline);
     RUN_TEST_CASE(shell, async_andor_message_after_skipped_commands);
     RUN_TEST_CASE(shell, async_andor_with_parent_shell_builtin);
+    RUN_TEST_CASE(shell, fg_resumed_job_stopped_again);
+    RUN_TEST_CASE(shell, fg_builtin_part_of_job_plan);
+    RUN_TEST_CASE(shell, fg_bg_kill_regression);
+    RUN_TEST_CASE(shell, multiple_fg_builtins_in_andor);
 }

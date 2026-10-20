@@ -137,17 +137,19 @@ static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
         (p1->stat == PROC_STOP && p1->stop_sig == p2->stop_sig));
 }
 
-static char *get_pline_str(const job_event *jev, int off, int argv_off) {
+static char *get_pline_str(const job_event *jev, int off, int argv_off,
+        bool verbose)
+{
     dstr out;
     dstr_init(&out);
 
-    int min_offset = 3;
+    int min_offset = 1;
 
     for (size_t y = 0; y < jev->pviews.size; ++y) {
         proc_view *pview = &jev->pviews.data[y];
         size_t prev_len = out.len;
 
-        if (y == 0 || !same_ev_type(pview, &pview[-1])) {
+        if (verbose || y == 0 || !same_ev_type(pview, &pview[-1])) {
             if (pview->stat == PROC_EXIT) {
                 if (pview->exit_stat == 0)
                     dstr_printf(&out, "done");
@@ -167,6 +169,9 @@ static char *get_pline_str(const job_event *jev, int off, int argv_off) {
             dstr_printf(&out, "%*s", off, "");
         }
 
+        if (verbose)
+            dstr_printf(&out, "%d ", pview->pid);
+
         size_t len = argv_len(pview->argv);
 
         for (size_t i = 0; i < len; ++i) {
@@ -176,7 +181,7 @@ static char *get_pline_str(const job_event *jev, int off, int argv_off) {
         }
 
         if (y != jev->pviews.size - 1) {
-            if (same_ev_type(pview, &pview[1])) {
+            if (!verbose && same_ev_type(pview, &pview[1])) {
                 dstr_printf(&out, " | ");
             } else {
                 dstr_printf(&out, " |\n%*s", off, "");
@@ -200,7 +205,7 @@ static void display_msg(const char *msg) {
     printf("%s\n", msg);
 }
 
-void print_job_event(pid_t jid, const job_event *jev) {
+void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
     sh_env.need_prompt = true;
 
     dstr msg;
@@ -212,7 +217,7 @@ void print_job_event(pid_t jid, const job_event *jev) {
 
     for (size_t i = 0; i < plan->exit_events.size; ++i) {
         job_event *next = &plan->exit_events.data[i];
-        char *s = get_pline_str(next, offset, 21);
+        char *s = get_pline_str(next, offset, 21, verbose);
         dstrcat(&msg, s);
         free(s);
 
@@ -232,7 +237,7 @@ void print_job_event(pid_t jid, const job_event *jev) {
     }
 
     if (jev) {
-        char *s = get_pline_str(jev, offset, 21);
+        char *s = get_pline_str(jev, offset, 21, verbose);
         dstrcat(&msg, s);
         free(s);
     }

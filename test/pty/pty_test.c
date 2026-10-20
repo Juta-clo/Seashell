@@ -434,13 +434,14 @@ bool verify_kill(const char *name) {
 }
 
 bool verify_pstate(const char *name, const char *state) {
-    size_t loops = 100;
     da_pstat pstats;
     bool state_good = false;
     char pstate[4096];
-    int tfd = start_timerfd(1);
 
-    for (size_t i = 0; i < loops; ++i) {
+    int tfd = start_timerfd(1);
+    size_t checks = (memcheck) ? 1000 : 100;
+
+    for (size_t i = 0; i < checks; ++i) {
         if (child_pstat(test->cpid, &pstats) == -1)
             break;
 

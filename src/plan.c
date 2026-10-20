@@ -12,15 +12,16 @@ ps_andor *plan_next(job_plan *plan) {
     return &plan->ast->andors.data[plan->index++];
 }
 
-void add_plan(pid_t jid, ps_ast *ast) {
+job_plan *add_plan(pid_t jid, ps_ast *ast) {
     LOG_INFO("added plan jid=%d", jid);
 
     job_plan *plan = da_push(&plans);
     *plan = (job_plan){0};
 
     plan->jid = jid;
-    plan->index = 1;
     plan->ast = ast;
+
+    return plan;
 }
 
 void remove_plan(size_t index) {

@@ -88,8 +88,22 @@ static int launch_job(ps_pline *pline, bool bg, pid_t jid) {
     if (ex_expand_pline(pline) == -1)
         return -1;
 
-    if (!bg)
+    if (!bg) {
+        if (sh_env.fg_jid == NOFG)
+            printty_stop(sh_env.pt);
+
+        sh_env.fg_jid = jid;
+
         xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);
+
+        job_plan *plan = lookup_plan(jid, NULL);
+        ASSERT(plan);
+
+        if (plan->tty_state_saved) {
+            xtcsetattr(sh_env.tty_fd, TCSANOW, &plan->tty_state);
+            plan->tty_state_saved = false;
+        }
+    }
 
     bool handled = false;
     if (pline->cmds.size == 1 && pline->cmds.data[0].redirs.size == 0 && !bg) {
@@ -106,6 +120,8 @@ static int launch_job(ps_pline *pline, bool bg, pid_t jid) {
             if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE) {
                 LOG_INFO("queued \"%s\" exit event", builtin->name);
                 queue_builtin_exit_event(jid, pline->cmds.data[0].argv, status);
+            } else {
+                sh_env.fg_pending = jid;
             }
 
             handled = true;
@@ -123,20 +139,20 @@ static int launch_job(ps_pline *pline, bool bg, pid_t jid) {
     return 0;
 }
 
-static bool try_run_next_job(const job_event *jev, int how) {
+static bool try_run_next_job(pid_t jid, bool success, int how) {
     bool bg = (how == IN_BG);
     bool execed_pline = false;
 
-    job_plan *plan = lookup_plan(jev->jid, NULL);
+    job_plan *plan = lookup_plan(jid, NULL);
     if (!plan)
         return false;
 
     ps_andor *andor;
     while ((andor = plan_next(plan))) {
-        if (jev->success && andor->op == PS_OR_IF)
+        if (success && andor->op == PS_OR_IF)
             continue;
 
-        if (!jev->success && andor->op == PS_AND_IF)
+        if (!success && andor->op == PS_AND_IF)
             continue;
 
         if (launch_job(&andor->pline, bg, plan->jid) == -1)
@@ -164,6 +180,9 @@ bool fg_event(job_event *jev) {
 }
 
 static void handle_fg_event(job_event *jev) {
+    int jid = jev->jid;
+    bool success = jev->success;
+
     if (jev->type == JEXITED) {
         job_plan *plan = lookup_plan(jev->jid, NULL);
         *da_push(&plan->exit_events) = *jev;
@@ -172,28 +191,30 @@ static void handle_fg_event(job_event *jev) {
 
         if (jev->exit_type == JEXIT_INTR) {
             reclaim_terminal();
-            printf("\n");
-            if (jev->signaled)
-                print_job_event(jev->jid, NULL);
 
-            plan_done(jev->jid);
+            printf("\n");
+
+            if (jev->signaled)
+                print_job_event(jid, NULL, false);
+
         } else {
             if (jev->signaled)
-                print_job_event(jev->jid, NULL);
+                print_job_event(jid, NULL, false);
 
-            if (try_run_next_job(jev, IN_FG))
+            if (try_run_next_job(jid, success, IN_FG))
                 return;
 
             reclaim_terminal();
-            plan_done(jev->jid);
         }
+
+        plan_done(jid);
 
     } else if (jev->type == JSTOPPED) {
         if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
             err_exit("tcsetpgrp");
         sh_env.fg_jid = NOFG;
 
-        job_plan *plan = lookup_plan(jev->jid, NULL);
+        job_plan *plan = lookup_plan(jid, NULL);
         xtcgetattr(sh_env.tty_fd, &plan->tty_state);
         plan->tty_state_saved = true;
 
@@ -203,14 +224,27 @@ static void handle_fg_event(job_event *jev) {
         if (jev->intr_stop)
             printf("\n");
 
-        print_job_event(jev->jid, jev);
+        print_job_event(jid, jev, false);
         free_job_event(jev);
+    }
+
+    if (sh_env.fg_pending) {
+        int pending_jid = sh_env.fg_pending;
+        sh_env.fg_pending = false;
+
+        if (try_run_next_job(pending_jid, success, IN_FG)) {
+            LOG_INFO("continued 'fg' plan (still pending=%d)", sh_env.fg_pending);
+            return;
+        }
+
+        LOG_INFO("'fg' plan done");
+        plan_done(pending_jid);
     }
 }
 
 static void handle_bg_event(job_event *jev) {
     if (jev->type != JEXITED) {
-        print_job_event(jev->jid, jev);
+        print_job_event(jev->jid, jev, false);
         free_job_event(jev);
         return;
     }
@@ -218,10 +252,11 @@ static void handle_bg_event(job_event *jev) {
     job_plan *plan = lookup_plan(jev->jid, NULL);
     *da_push(&plan->exit_events)  = *jev;
 
-    if (jev->exit_type == JEXIT_NORMAL && try_run_next_job(jev, IN_BG))
+    if (jev->exit_type == JEXIT_NORMAL &&
+        try_run_next_job(jev->jid, jev->success, IN_BG))
         return;
 
-    print_job_event(jev->jid, NULL);
+    print_job_event(jev->jid, NULL, false);
     plan_done(jev->jid);
     return;
 }
@@ -291,22 +326,12 @@ int main(int argc, char *const *argv) {
             continue;
         }
 
-        if (ast->andors.size == 0)
-            xfatal("parsed empty ast");
-
-        ps_pline *first_pline = &ast->andors.data[0].pline;
         int jid = create_job_id();
+        job_plan *plan = add_plan(jid, ast);
 
-        if (!ast->bg) {
-            sh_env.fg_jid = jid;
-            printty_stop(sh_env.pt);
-        }
-
-        if (launch_job(first_pline, ast->bg, jid) == -1) {
-            printty_start(sh_env.pt);
-            ps_free(ast);
+        if (launch_job(&plan_next(plan)->pline, ast->bg, jid) == -1) {
+            plan_done(jid);
             sh_env.need_prompt = true;
-            sh_env.fg_jid = NOFG;
             continue;
         }
 
@@ -315,8 +340,6 @@ int main(int argc, char *const *argv) {
             printf("[%d] %d\n", jid , pgid);
             sh_env.need_prompt = true;
         }
-
-        add_plan(jid, ast);
     }
 
     return EXIT_SUCCESS;

@@ -23,7 +23,7 @@ struct job_plan {
 extern da_plan plans;
 
 ps_andor *plan_next(job_plan *plan);
-void add_plan(pid_t jid, ps_ast *ast);
+job_plan *add_plan(pid_t jid, ps_ast *ast);
 void remove_plan(size_t index);
 void plan_done(pid_t jid);
 job_plan *lookup_plan(pid_t jid, size_t *index);

@@ -9,7 +9,7 @@
 
 #include "linc_tools.h"
 #include "proc_view.h"
-#include "pty_test.h"
+#include "tutils.h"
 
 #define PPID "PPid"
 #define NAME "Name"
@@ -23,7 +23,7 @@ static char *stat_val_str(pid_t pid, char *field) {
 
     FILE *stat = fopen(stat_path, "r");
     if (!stat)
-        xtest_fatal("fopen: %m");
+        return NULL;
 
     static char buf[BUF_SIZE];
 
