@@ -3,10 +3,12 @@
 
 #include <termios.h>
 
+#include "job_state.h"
 #include "parser.h"
 
 typedef struct job_plan job_plan;
 DA_TYPE(da_plan, job_plan);
+DA_TYPE(da_int, int);
 
 struct job_plan {
     pid_t jid;
@@ -14,6 +16,8 @@ struct job_plan {
     struct termios tty_state;
     size_t index;
     ps_ast *ast;
+    da_jevent exit_events;
+    da_int exit_event_indexes;
 };
 
 extern da_plan plans;

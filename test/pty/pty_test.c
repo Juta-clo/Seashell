@@ -475,10 +475,10 @@ bool verify_pstate(const char *name, const char *state) {
 bool verify_termios(struct termios exp) {
     struct termios tio;
 
-    int sleep_time = (memcheck) ? 1000 : 100;
+    int checks = (memcheck) ? 1000 : 100;
     int tfd = start_timerfd(1);
 
-    for (int i = 0; i < sleep_time; ++i) {
+    for (int i = 0; i < checks; ++i) {
         if (tcgetattr(test->mfd, &tio) == -1)
             xtest_fatal("tcgetattr: %m");
         if (memcmp(exp.c_cc, tio.c_cc, sizeof(tio.c_cc))            == 0 &&

@@ -36,34 +36,6 @@
 #define OP_NONE 0
 #define OP_DEL  1
 
-#define xprintty_cursor_move(pt, row, col) \
-    do { if (printty_cursor_move(pt, row, col) == PRINTTY_ERR) \
-            xfatal("printty_cursor_move"); } while (false)
-
-#define xprintty_write(pt, uc) \
-    do { if (printty_write(pt, uc) == PRINTTY_ERR) \
-            xfatal("printty_write"); } while (false)
-
-#define xprintty_write_name(pt, name) \
-    do { if (printty_write_name(pt, name) == PRINTTY_ERR) \
-            xfatal("printty_write_name"); } while (false)
-
-#define xprintty_get_cursor_pos(pt, row, col) \
-    do { if (printty_get_cursor_pos(pt, row, col) == PRINTTY_ERR) \
-            xfatal("printty_get_cursor_pos"); } while (false)
-
-#define xprintty_get_term_size(pt, rows, cols) \
-    do { if (printty_get_term_size(pt, rows, cols) == PRINTTY_ERR) \
-            xfatal("printty_get_term_size"); } while (false)
-
-#define xprintty_set_color(pt, fg, bg) \
-    do { if (printty_set_color(pt, fg, bg) == PRINTTY_ERR) \
-            xfatal("printty_set_color"); } while (false)
-
-#define xprintty_cstyle(pt, style) \
-    do { if (printty_cstyle(pt, style) == PRINTTY_ERR) \
-            xfatal("printty_cstyle"); } while (false)
-
 input_editor input = { .off = 0 };
 
 static inline int llen(void) {
@@ -892,16 +864,6 @@ void input_deinit(shell_env *env) {
     }
 
     env->pt = NULL;
-}
-
-void display_job_msg(const char *msg) {
-    int crow, ccol;
-    xprintty_get_cursor_pos(sh_env.pt, &crow, &ccol);
-
-    if (ccol != 0)
-        printf("\n");
-
-    printf("%s\n", msg); /* needs bottom left check */
 }
 
 void drop_line(void) {

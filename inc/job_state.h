@@ -92,15 +92,12 @@ struct job_event {
     bool signaled;
     bool intr_stop;
 
-    /* for display only */
-
-    bool builtin; /* builtins don't have pviews */
     job_stat stat;
     proc_view *last;
     da_proc_view pviews;
 };
 
-void print_job_event(const job_event *jev);
+void print_job_event(pid_t jid, const job_event *jev);
 pid_t request_job_id(pid_t jid);
 pid_t create_job_id(void);
 
@@ -117,7 +114,7 @@ void clear_job_table(void);
 void clear_job_events(void);
 
 pid_t lookup_job_pgrp(pid_t jid);
-void queue_builtin_exit_event(pid_t jid, int status);
+void queue_builtin_exit_event(pid_t jid, char **argv, int status);
 void add_job(pid_t jid, pline_data *pld);
 
 #endif

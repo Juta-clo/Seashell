@@ -26,6 +26,11 @@ void add_plan(pid_t jid, ps_ast *ast) {
 void remove_plan(size_t index) {
     LOG_INFO("removed plan jid=%d", plans.data[index].jid);
 
+    for (size_t i = 0; i < plans.data[index].exit_events.size; ++i)
+        free_job_event(&plans.data[index].exit_events.data[i]);
+    da_free(&plans.data[index].exit_events);
+    da_free(&plans.data[index].exit_event_indexes);
+
     ps_free(plans.data[index].ast);
     free(plans.data[index].ast);
 

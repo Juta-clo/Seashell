@@ -54,12 +54,40 @@ bool is_dir(const char *file);
 size_t argv_len(char **argv);
 void free_charp_arr(da_charp *arr);
 void free_argv(char **argv);
-char **copy_argv(char **argv);
+[[nodiscard]] char **copy_argv(char **argv);
 
 #define xfatal(fmt, ...) \
     do { \
         LOG_ERR(fmt __VA_OPT__(,) __VA_ARGS__); \
         fatal(fmt __VA_OPT__(,) __VA_ARGS__); \
     } while (false)
+
+#define xprintty_cursor_move(pt, row, col) \
+    do { if (printty_cursor_move(pt, row, col) == PRINTTY_ERR) \
+            xfatal("printty_cursor_move"); } while (false)
+
+#define xprintty_write(pt, uc) \
+    do { if (printty_write(pt, uc) == PRINTTY_ERR) \
+            xfatal("printty_write"); } while (false)
+
+#define xprintty_write_name(pt, name) \
+    do { if (printty_write_name(pt, name) == PRINTTY_ERR) \
+            xfatal("printty_write_name"); } while (false)
+
+#define xprintty_get_cursor_pos(pt, row, col) \
+    do { if (printty_get_cursor_pos(pt, row, col) == PRINTTY_ERR) \
+            xfatal("printty_get_cursor_pos"); } while (false)
+
+#define xprintty_get_term_size(pt, rows, cols) \
+    do { if (printty_get_term_size(pt, rows, cols) == PRINTTY_ERR) \
+            xfatal("printty_get_term_size"); } while (false)
+
+#define xprintty_set_color(pt, fg, bg) \
+    do { if (printty_set_color(pt, fg, bg) == PRINTTY_ERR) \
+            xfatal("printty_set_color"); } while (false)
+
+#define xprintty_cstyle(pt, style) \
+    do { if (printty_cstyle(pt, style) == PRINTTY_ERR) \
+            xfatal("printty_cstyle"); } while (false)
 
 #endif

@@ -8,7 +8,6 @@
 
 #include "linc_tools.h"
 #include "map.h"
-#include "parser.h"
 #include "printty.h"
 
 #define NOFG -1
@@ -28,16 +27,6 @@ typedef struct {
 } shell_env;
 
 extern shell_env sh_env;
-
-struct job_plan {
-    pid_t jid;
-    bool tty_state_saved;
-    struct termios tty_state;
-    size_t index;
-    ps_ast *ast;
-};
-
-typedef struct job_plan job_plan;
 
 typedef enum {
     LOGFD,

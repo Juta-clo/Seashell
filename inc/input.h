@@ -61,6 +61,4 @@ int cur_word(const char *line, int start, input_word *word);
 void drop_line(void);
 char *get_line(void);
 
-void display_job_msg(const char *msg);
-
 #endif

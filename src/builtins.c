@@ -122,15 +122,15 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    job_event jev;
-    if (set_job_continue(jid, &jev)) {
-        print_job_event(&jev);
-        free_job_event(&jev);
-    }
-
     if (tcsetpgrp(sh_env->tty_fd, pgid) == -1) {
         fprintf(stderr, "%s: tcsetpgrp: %m\n", argv[0]);
         return EXIT_FAILURE;
+    }
+
+    job_event jev;
+    if (set_job_continue(jid, &jev)) {
+        print_job_event(jev.jid, &jev);
+        free_job_event(&jev);
     }
 
     if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {

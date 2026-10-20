@@ -56,7 +56,6 @@ glob_dir *add_dir(const char *pathname) {
     if (mkdir(pathname, 0700) == -1)
         xtest_fatal("mkdir: %m");
 
-
     glob_dir *dir = dir_next();
     snprintf(dir->pathname, PATH_MAX, "%s", pathname);
     dir->files = (da_charp){0};

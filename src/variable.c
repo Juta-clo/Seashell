@@ -58,18 +58,10 @@ void update_status_variable(map_t *vars, const job_event *jev) {
 
     char exit_stat[64];
 
-    if (jev->builtin) {
-        if (jev->success) {
-            snprintf(exit_stat, 64, "%d", 0);
-        } else
-            snprintf(exit_stat, 64, "%d", 1);
-
-    } else {
-        if (jev->last->stat == PROC_EXIT) {
-            snprintf(exit_stat, 64, "%d", jev->last->exit_stat);
-        } else if (jev->last->stat == PROC_SIG)
-            snprintf(exit_stat, 64, "%d", jev->last->term_sig + 128);
-    }
+    if (jev->last->stat == PROC_EXIT)
+        snprintf(exit_stat, 64, "%d", jev->last->exit_stat);
+    else if (jev->last->stat == PROC_SIG)
+        snprintf(exit_stat, 64, "%d", jev->last->term_sig + 128);
 
     add_var(vars, "?", exit_stat, false);
 }

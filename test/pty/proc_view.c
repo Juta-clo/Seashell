@@ -125,6 +125,8 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
         strcpy(pstat->state, child_state);
     }
 
+    if (fclose(stat) == EOF)
+        xtest_fatal("fclose: %m");
     return 0;
 
 fail:

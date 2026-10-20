@@ -1,5 +1,6 @@
 #include "unity_fixture.h"
 #include "pty_test.h"
+#include "unibilium.h"
 
 TEST_GROUP(input);
 
@@ -56,14 +57,14 @@ TEST(input, line_is_preserved_on_async_job_messages) {
 
     assert_term(2, PROMPT_LEN + 2,
         PROMPT "abc",
-        "[1] Terminated      sleep 100",
+        "[1] Terminated       sleep 100",
         PROMPT "abc"
     );
 
     vt_send_str("def\n");
     assert_term(4, PROMPT_LEN,
         PROMPT "abc",
-        "[1] Terminated      sleep 100",
+        "[1] Terminated       sleep 100",
         PROMPT "abdefc",
         "seashell: command not found: abdefc",
         PROMPT
@@ -403,7 +404,8 @@ TEST(input, yanked_text) {
     vt_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
     vt_send_str("y");
 
-    assert_bytes("\x1b]52;c;WA==\x1b\\");
+    /* Only assert common prefix, it could be BELL or ESC \ */
+    assert_bytes("\x1b]52;c;WA==");
 
     assert_term(0, PROMPT_LEN,
         PROMPT "X"

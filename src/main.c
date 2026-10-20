@@ -105,7 +105,7 @@ static int launch_job(ps_pline *pline, bool bg, pid_t jid) {
              * when the job that was fg'd exits (or stops) */
             if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE) {
                 LOG_INFO("queued \"%s\" exit event", builtin->name);
-                queue_builtin_exit_event(jid, status);
+                queue_builtin_exit_event(jid, pline->cmds.data[0].argv, status);
             }
 
             handled = true;
@@ -142,6 +142,7 @@ static bool try_run_next_job(const job_event *jev, int how) {
         if (launch_job(&andor->pline, bg, plan->jid) == -1)
             return false;
 
+        *da_push(&plan->exit_event_indexes) = plan->index - 1;
         execed_pline = true;
         break;
     }
@@ -162,27 +163,29 @@ bool fg_event(job_event *jev) {
     return sh_env.fg_jid  == jev->jid;
 }
 
-static void handle_fg_event(const job_event *jev) {
+static void handle_fg_event(job_event *jev) {
     if (jev->type == JEXITED) {
+        job_plan *plan = lookup_plan(jev->jid, NULL);
+        *da_push(&plan->exit_events) = *jev;
+
         update_status_variable(&sh_env.vars, jev);
 
         if (jev->exit_type == JEXIT_INTR) {
-            plan_done(jev->jid);
             reclaim_terminal();
             printf("\n");
-
             if (jev->signaled)
-                print_job_event(jev);
+                print_job_event(jev->jid, NULL);
 
+            plan_done(jev->jid);
         } else {
             if (jev->signaled)
-                print_job_event(jev);
+                print_job_event(jev->jid, NULL);
 
             if (try_run_next_job(jev, IN_FG))
                 return;
 
-            plan_done(jev->jid);
             reclaim_terminal();
+            plan_done(jev->jid);
         }
 
     } else if (jev->type == JSTOPPED) {
@@ -200,25 +203,26 @@ static void handle_fg_event(const job_event *jev) {
         if (jev->intr_stop)
             printf("\n");
 
-        print_job_event(jev);
+        print_job_event(jev->jid, jev);
+        free_job_event(jev);
     }
 }
 
 static void handle_bg_event(job_event *jev) {
     if (jev->type != JEXITED) {
-        print_job_event(jev);
+        print_job_event(jev->jid, jev);
+        free_job_event(jev);
         return;
     }
 
-    if (jev->exit_type == JEXIT_NORMAL && try_run_next_job(jev, IN_BG)) {
-        if (jev->signaled)
-            print_job_event(jev);
+    job_plan *plan = lookup_plan(jev->jid, NULL);
+    *da_push(&plan->exit_events)  = *jev;
 
+    if (jev->exit_type == JEXIT_NORMAL && try_run_next_job(jev, IN_BG))
         return;
-    }
 
+    print_job_event(jev->jid, NULL);
     plan_done(jev->jid);
-    print_job_event(jev);
     return;
 }
 
@@ -237,8 +241,6 @@ static void process_signals(void) {
                 handle_fg_event(jev);
             } else
                 handle_bg_event(jev);
-
-            free_job_event(jev);
         }
     }
 

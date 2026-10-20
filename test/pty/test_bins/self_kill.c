@@ -22,10 +22,5 @@ int main(int argc, char **argv) {
     if (strcmp("-TERM", argv[1]) == 0)
         kill(getpid(), SIGTERM);
 
-    char *endptr = argv[1];
-    long exit_stat = strtol(argv[1], &endptr, 10);
-    if (*endptr != '\0')
-        return EXIT_FAILURE;
-
-    return exit_stat;
+    return EXIT_SUCCESS;
 }

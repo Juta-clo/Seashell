@@ -70,7 +70,7 @@ void test_relink(const char *target, const char *link) {
         xtest_fatal("symlink(%s, %s): %m", target, link);
 }
 
-[[nodiscard]] FILE *new_tmp_file(char *path) {
+FILE *new_tmp_file(char *path) {
     int fd = mkstemp(path);
     if (fd == -1)
         xtest_fatal("mkstemp(%s): %m", path);
