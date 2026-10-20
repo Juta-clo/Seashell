@@ -116,5 +116,6 @@ void clear_job_events(void);
 pid_t lookup_job_pgrp(pid_t jid);
 void queue_builtin_exit_event(pid_t jid, char **argv, int status);
 void add_job(pid_t jid, pline_data *pld);
+int launch_job(ps_pline *pline, bool bg, pid_t jid);
 
 #endif

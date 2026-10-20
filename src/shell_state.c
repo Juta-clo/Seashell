@@ -51,6 +51,35 @@ args_opt_data opts[] = {
     (args_opt_data){0}
 };
 
+static void seashell_shutdown(void) {
+    input_deinit(&sh_env);
+
+    for (size_t i = 0; i < get_jctl()->jobs.size; ++i) {
+        jc_job *job = &get_jctl()->jobs.data[i];
+
+        if (getpgrp() == job->pgrp.pgid || job->pgrp.pgid <= 1)
+            xfatal("unexpected pgid %d", job->pgrp.pgid);
+
+        if (kill(-job->pgrp.pgid, SIGHUP) == -1 && errno != ESRCH) {
+            LOG_ERR("kill: %m");
+            err_exit("kill");
+        }
+
+        if (kill(-job->pgrp.pgid, SIGCONT) == -1 && errno != ESRCH) {
+            LOG_ERR("kill: %m");
+            err_exit("kill");
+        }
+    }
+
+    while (get_wstat(&(wait_event){0}) != -1)
+        continue;
+
+    clear_job_events();
+    clear_job_table();
+
+    LOG_INFO("seashell shutting down");
+}
+
 static int open_log_file(const char *log_dir) {
     char log_path[PATH_MAX] = "";
     char link_path[PATH_MAX] = "";
@@ -128,7 +157,12 @@ static void var_setup(shell_env *env) {
     add_var(&sh_env.vars, "?", "0", false);
 }
 
-void env_setup(shell_env *env) {
+void env_setup(shell_env *env, int argc, char *const *argv) {
+    if (args_parse(argc, argv, opts, ARGS_NO_NON_OPTS) == -1)
+        exit(EXIT_FAILURE);
+
+    xatexit(seashell_shutdown);
+
     env->subshell = false;
     env->need_prompt = true;
     env->fg_jid = NOFG;

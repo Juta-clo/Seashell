@@ -16,6 +16,7 @@
 #include "variable.h"
 #include "path_glob.h"
 #include "lexer.h"
+#include "event.h"
 
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
@@ -35,6 +36,48 @@
 
 #define OP_NONE 0
 #define OP_DEL  1
+
+typedef char * hds;
+
+typedef enum {
+    COMP_CMD,
+    COMP_ARG,
+    COMP_REDIR
+} comp_tok;
+
+typedef struct {
+    size_t i;
+    size_t start_i;
+    hds glob;
+} input_comp;
+
+typedef struct {
+    char **lines;
+    char *saved;
+    size_t i;
+} input_hist;
+
+typedef struct {
+    size_t start_i;
+    size_t n;
+} input_del_ctx;
+
+typedef struct {
+    char *line;
+    int start_row;
+    int off;
+    int rows, cols;
+    int insert_mode;
+    int start;
+    input_comp comp;
+    input_hist hist;
+} input_editor;
+
+typedef struct {
+    int start, end;
+} input_word;
+
+extern input_editor input;
 
 input_editor input = { .off = 0 };
 
@@ -104,7 +147,7 @@ static inline int prev_ws(const char *line, int i) {
     return -1;
 }
 
-int next_word(const char *line, int start, input_word *word) {
+static int next_word(const char *line, int start, input_word *word) {
     ASSERT(line && word);
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);
@@ -138,7 +181,7 @@ int next_word(const char *line, int start, input_word *word) {
     return 0;
 }
 
-int prev_word(const char *line, int start, input_word *word) {
+static int prev_word(const char *line, int start, input_word *word) {
     ASSERT(line && word);
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);
@@ -172,7 +215,7 @@ int prev_word(const char *line, int start, input_word *word) {
     return 0;
 }
 
-int cur_word(const char *line, int start, input_word *word) {
+static int cur_word(const char *line, int start, input_word *word) {
     ASSERT(line && word);
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);
@@ -840,6 +883,20 @@ static void history_next(void) {
     LOG_INFO("history_next: input.line = \"%s\"", input.line);
 }
 
+static void input_reset(void) {
+    if (!input.line) {
+        input.off = 0;
+        update_prompt(sh_env.prompt_style);
+    }
+
+    if (sh_env.need_prompt) {
+        sh_env.need_prompt = false;
+        new_start_pos();
+    }
+
+    input_update();
+}
+
 void input_init(shell_env *env) {
     assert(env);
 
@@ -866,25 +923,23 @@ void input_deinit(shell_env *env) {
     env->pt = NULL;
 }
 
-void drop_line(void) {
+void input_drop_line(void) {
     if (input.line) {
         hda_free(input.line);
         input.line = NULL;
     }
 }
 
-char *get_line(void) {
-    if (!input.line) {
-        input.off = 0;
-        update_prompt(sh_env.prompt_style);
+char *input_get_line(void) {
+    while (sh_env.fg_jid != NOFG) {
+        sigsuspend(&sh_env.og_mask);
+        if (errno != EINTR)
+            err_exit("sigsuspend");
+
+        process_signals();
     }
 
-    if (sh_env.need_prompt) {
-        sh_env.need_prompt = false;
-        new_start_pos();
-    }
-
-    input_update();
+    input_reset();
     enter_mode_insert();
 
     while (true) {
@@ -896,16 +951,14 @@ char *get_line(void) {
         } else if (rv == PRINTTY_ERR) {
             xfatal("failed parsing line");
         } else if (rv == PRINTTY_SIG) {
-            return NULL;
-        }
-
-        if (pev.type == PRINTTY_UNICODE) {
+            process_signals();
+            input_reset();
+        } else if (pev.type == PRINTTY_UNICODE) {
             if (input.insert_mode) {
                 insert_mode_feed_unicode(pev.cp, pev.utf8);
             } else {
                 normal_mode_feed_unicode(pev.cp, pev.utf8);
             }
-
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
                 if (line_len() > 0)
@@ -929,12 +982,10 @@ char *get_line(void) {
             } else {
                 normal_mode_feed_key(pev.key);
             }
-
         } else if (pev.type == PRINTTY_RESIZE) {
             LOG_INFO("resize detected");
             update_start_pos();
             input_update();
-
         } else if (pev.type == PRINTTY_PASTE_BEGIN) {
             char *paste_data;
             if (!(paste_data = printty_res_paste(sh_env.pt))) {

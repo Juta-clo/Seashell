@@ -38,6 +38,6 @@ typedef enum {
 extern args_opt_data opts[];
 extern char **environ;
 
-void env_setup(shell_env *env);
+void env_setup(shell_env *env, int argc, char *const *argv);
 
 #endif
