@@ -1,9 +1,11 @@
 #include <vterm.h>
 #include <regex.h>
 
-#include "vterm_utils.h"
-#include "pty_test.h"
 #include "unity_fixture.h" // IWYU pragma: keep
+#include "t_fixture.h" // IWYU pragma: keep
+#include "t_vterm.h"
+#include "t_assert.h"
+#include "t_harness.h"
 
 static char reg_chars[] = {
     /* leave ']', '-', '}' out cause only valid contexually */
@@ -56,6 +58,16 @@ static void vt_output_cb(const char *bytes, size_t len, void *user) {
     int mfd = *(int *)user;
     if ((size_t) write(mfd, bytes, len) != len)
         xtest_fatal("vterm_output_cb: write: failed/partial");
+}
+
+void vt_write(const char *str) {
+    const char *c = str;
+    size_t left = strlen(str);
+    while (left != 0) {
+        size_t n = vterm_input_write(test->vt.vp, c, left);
+        c += n;
+        left -= n;
+    }
 }
 
 bool vt_snap_cmp(vt_snap *exp) {

@@ -3,16 +3,37 @@
 #include <ncurses.h>
 
 #include "unity_fixture.h"
-#include "pty_test.h"
-#include "curses_debug.h"
+#include "t_harness.h"
+#include "t_debug.h"
+
+static bool mute_unity = false;
+static bool skip_nls = false;
+
+void unity_output_cb(char ch) {
+    if (mute_unity)
+        return;
+
+    if (skip_nls) {
+        if (ch == '\n')
+            return;
+        skip_nls = false;
+    }
+
+    putchar(ch);
+}
 
 void run_all(void) {
+    mute_unity = true;
+
     RUN_TEST_GROUP(shell);
     RUN_TEST_GROUP(variable);
     RUN_TEST_GROUP(glob);
     RUN_TEST_GROUP(termios);
     RUN_TEST_GROUP(input);
     RUN_TEST_GROUP(resize);
+
+    mute_unity = false;
+    skip_nls = true;
 }
 
 int main(int argc, const char **argv) {
@@ -23,16 +44,11 @@ int main(int argc, const char **argv) {
     if (ptyh.tests.size == 0)
         exit(EXIT_SUCCESS);
 
-    if (memcheck) {
-        printf("\nValgrind memcheck -- ");
-        if (ptyh.val_errs == 0)
-            printf("\x1b[97;42mCLEAN\x1b[m\n");
-        else
-            printf("\x1b[97;41m%d TESTS DIRTY\x1b[m\n", ptyh.val_errs);
-    }
+    if (memcheck)
+        print_val_sum();
 
-    if ((!verbose && ptyh.fails == 0 && ptyh.val_errs == 0) || !script)
-        exit((ptyh.fails == 0 && ptyh.val_errs == 0) ? 0 : 1);
+    if ((!verbose && ptyh.pass) || script)
+        exit((ptyh.pass) ? EXIT_SUCCESS : EXIT_FAILURE);
 
     start_debug_repl();
 }

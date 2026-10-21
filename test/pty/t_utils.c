@@ -2,10 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "tutils.h"
+#include "t_utils.h"
 #include "linc_tools.h"
-#include "pty_test.h"
-#include "unity_fixture.h" // IWYU pragma: keep
+#include "t_harness.h"
 
 void test_fatal(const char *file, int line, const char *fmt, ...) {
     va_list va;

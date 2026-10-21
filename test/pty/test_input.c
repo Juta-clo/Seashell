@@ -1,5 +1,7 @@
+#include "t_assert.h"
+#include "t_fixture.h"
 #include "unity_fixture.h"
-#include "pty_test.h"
+#include "t_harness.h"
 
 TEST_GROUP(input);
 
@@ -375,10 +377,11 @@ TEST(input, bracketed_paste_that_enters_pager) {
 
     vterm_keyboard_start_paste(test->vt.vp);
     vt_send_str("XXXXXXXXXXXXXXXXXXXXXXX");
+    vterm_keyboard_end_paste(test->vt.vp);
+
     assert_term(1, 0,
         ">..."
     );
-    vterm_keyboard_end_paste(test->vt.vp);
 }
 
 TEST(input, large_bracketed_paste) {

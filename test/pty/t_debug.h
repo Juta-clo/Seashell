@@ -1,5 +1,5 @@
-#ifndef CURSES_WIN_H
-#define CURSES_WIN_H
+#ifndef T_DEBUG_H
+#define T_DEBUG_H
 
 #include <ncurses.h>
 
@@ -32,6 +32,7 @@ typedef enum {
     BWHITE_RED,
     BWHITE_GREEN,
     BWHITE_YELLOW,
+    BWHITE_ORANGE,
     ORANGE_CL,
     MAGENTA_CL,
     CYAN_CL,

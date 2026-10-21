@@ -8,8 +8,8 @@
 #include <dirent.h>
 
 #include "linc_tools.h"
-#include "proc_view.h"
-#include "tutils.h"
+#include "t_pview.h"
+#include "t_utils.h"
 
 #define PPID "PPid"
 #define NAME "Name"

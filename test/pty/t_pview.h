@@ -1,5 +1,5 @@
-#ifndef PROC_VIEW_H
-#define PROC_VIEW_H
+#ifndef T_PVIEW_H
+#define T_PVIEW_H
 
 #include <sys/types.h>
 #include <linux/limits.h>

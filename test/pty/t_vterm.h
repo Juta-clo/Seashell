@@ -1,10 +1,10 @@
-#ifndef VTERM_UTILS_H
-#define VTERM_UTILS_H
+#ifndef T_VTERM_H
+#define T_VTERM_H
 
 #include <vterm.h>
 
 #include "linc_tools.h"
-#include "tutils.h"
+#include "t_utils.h"
 
 DA_TYPE(da_charp, char *);
 
@@ -24,6 +24,7 @@ typedef struct {
 
 DA_TYPE(da_vt_snap, vt_snap);
 
+void vt_write(const char *str);
 bool vt_snap_cmp(vt_snap *exp);
 da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty);
 vt_snap vt_get_snap(void);

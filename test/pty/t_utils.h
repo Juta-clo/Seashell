@@ -1,5 +1,5 @@
-#ifndef TUTILS_H
-#define TUTILS_H
+#ifndef T_UTILS_H
+#define T_UTILS_H
 
 #include <stdio.h>
 #include <vterm.h>

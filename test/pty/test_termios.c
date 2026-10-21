@@ -1,9 +1,27 @@
+#include "t_harness.h" // IWYU pragma: keep
+#include "t_fixture.h"
 #include "unity_fixture.h"
-#include "pty_test.h"
+#include "t_assert.h"
 
 TEST_GROUP(termios);
 
 /************ Fixture ************/
+
+static struct termios tio;
+
+static void init_tio(void) {
+    int mfd, sfd;
+    if (openpty(&mfd, &sfd, NULL, NULL, NULL) == -1)
+        xtest_fatal("openpty: %m");
+
+    if (tcgetattr(sfd, &tio) == -1)
+        xtest_fatal("tcgetattr: %m");
+
+    if (close(mfd) == -1)
+        xtest_fatal("close: %m");
+    if (close(sfd) == -1)
+        xtest_fatal("close: %m");
+}
 
 /* this should mirror printty's cbreak function */
 struct termios printty_cbreak_tio(struct termios orig) {
@@ -32,8 +50,7 @@ TEST_TEAR_DOWN(termios) {
 // NOLINTBEGIN(bugprone-suspicious-missing-comma)
 
 TEST(termios, printty_cbreak_termios_value) {
-    struct termios test_tio = printty_cbreak_tio(tio);
-    assert_termios(test_tio);
+    assert_termios(printty_cbreak_tio(tio));
 }
 
 TEST(termios, initial_shell_termios) {
@@ -150,6 +167,7 @@ TEST(termios, program_after_fg_builtin_has_correct_termios) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(termios) {
+    init_tio();
     RUN_TEST_CASE(termios, printty_cbreak_termios_value);
     RUN_TEST_CASE(termios, initial_shell_termios);
     RUN_TEST_CASE(termios, cbreak_mode_restored_after_fg_job);

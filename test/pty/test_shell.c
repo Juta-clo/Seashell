@@ -5,8 +5,10 @@
 #include <pty.h>
 #include <sys/wait.h>
 
+#include "t_harness.h" // IWYU pragma: keep
+#include "t_fixture.h"
 #include "unity_fixture.h"
-#include "pty_test.h"
+#include "t_assert.h"
 
 TEST_GROUP(shell);
 

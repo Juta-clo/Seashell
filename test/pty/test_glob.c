@@ -1,8 +1,11 @@
 #include <assert.h>
 #include <sys/stat.h>
 
+#include "t_harness.h" // IWYU pragma: keep
+#include "t_assert.h"
+#include "t_vterm.h"
 #include "unity_fixture.h"
-#include "pty_test.h"
+#include "t_fixture.h"
 
 TEST_GROUP(glob);
 
@@ -339,8 +342,11 @@ TEST(glob, redirect_target_glob_non_ambiguous) {
     if (fd == -1)
         xtest_fatal("open: %m");
 
-    TEST_ASSERT_EQUAL_INT(2, read(fd, buf, 2));
-    TEST_ASSERT_EQUAL_STRING_LEN("hi", buf, 2);
+    if (read(fd, buf, 2) != 2)
+        PTY_TEST_FAIL("unexpected read");
+
+    if (strncmp("hi", buf, 2) != 0)
+        PTY_TEST_FAIL("incorrect buffer contents");
 }
 
 TEST(glob, redirect_target_glob_ambiguous) {

@@ -1,5 +1,7 @@
+#include "t_harness.h" // IWYU pragma: keep
+#include "t_fixture.h"
 #include "unity_fixture.h"
-#include "pty_test.h"
+#include "t_assert.h"
 
 TEST_GROUP(variable);
 
@@ -12,7 +14,7 @@ TEST_SETUP(variable) {
 
     home = getenv("HOME");
     if (!home)
-        TEST_FAIL_MESSAGE("could not find HOME env variable\n");
+        PTY_TEST_FAIL("could not find HOME env variable\n");
 
     vt_send_str("set FOO bar\n");
 

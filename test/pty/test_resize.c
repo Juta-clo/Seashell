@@ -1,5 +1,7 @@
+#include "t_assert.h"
+#include "t_fixture.h"
 #include "unity_fixture.h"
-#include "pty_test.h"
+#include "t_harness.h"
 
 TEST_GROUP(resize);
 

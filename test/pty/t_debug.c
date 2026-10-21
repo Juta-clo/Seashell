@@ -5,8 +5,8 @@
 #include <string.h>
 
 #include "linc_tools.h"
-#include "curses_debug.h"
-#include "pty_test.h"
+#include "t_debug.h"
+#include "t_harness.h"
 
 #define NFDS 1
 
@@ -179,6 +179,8 @@ void init_curses(void) {
         curs_err("init_pair");
     if (init_pair(BWHITE_YELLOW, CBRIGHT_WHITE, COLOR_YELLOW) == ERR)
         curs_err("init_pair");
+    if (init_pair(BWHITE_ORANGE, CBRIGHT_WHITE, CORANGE) == ERR)
+        curs_err("init_pair");
     if (init_pair(ORANGE_CL, CORANGE, COLOR_BLACK) == ERR)
         curs_err("init_pair");
     if (init_pair(MAGENTA_CL, COLOR_MAGENTA, COLOR_BLACK) == ERR)
@@ -294,43 +296,37 @@ void render_test_bar(curs_win *test_bar, size_t test_i) {
         return;
 
     pty_test *test = &ptyh.tests.data[test_i];
-    char test_bar_str[BUFSIZ];
+    dstr bar;
     int cp_n;
+
+    dstr_init(&bar);
 
     if (werase(test_bar->winp) == ERR)
         curs_err("werase");
 
-    int n;
+    dstr_printf(&bar, "[%zu/%zu]: %s:", test_i + 1,
+        ptyh.tests.size, test->test_name);
+
+    dstr_printf(&bar, "%s:", test->test_file);
+
+    if (test->fail_line != 0)
+        dstr_printf(&bar, "%d:", test->fail_line);
 
     if (test->test_ok) {
-        n = snprintf(test_bar_str, sizeof(test_bar_str),
-            "[%zu/%zu]: %s:OK", test_i + 1,
-            ptyh.tests.size, test->test_name
-        );
+        dstr_printf(&bar, "OK");
     } else {
-        n = snprintf(test_bar_str, sizeof(test_bar_str),
-            "[%zu/%zu]: %s:FAIL:%s:%d:%s",
-            test_i + 1, ptyh.tests.size,
-            test->test_name, test->test_file,
-            test->fail_line, test->fail_msg.c_str
-        );
+        dstr_printf(&bar, "%s:FAIL", test->fail_msg.c_str);
     }
 
-    if (n < 0)
-        curs_err("snprintf");
-
-    if (n >= (int)sizeof(test_bar_str))
-        n = sizeof(test_bar_str) - 1;
-
-    if (n > test_bar->rect->cols)
-        n = test_bar->rect->cols;
+    int n = bar.len;
 
     if      (!test->test_ok) cp_n = BWHITE_RED;
     else if (test->val_err)  cp_n = BWHITE_YELLOW;
     else                     cp_n = BWHITE_GREEN;
 
-    rnprintf(test_bar->winp, 0, 0, n, COLOR_PAIR(cp_n), "%s", test_bar_str);
+    rnprintf(test_bar->winp, 0, 0, n, COLOR_PAIR(cp_n), "%s", bar.c_str);
     wrefresh(test_bar->winp);
+    dstr_free(&bar);
 }
 
 void render_vterm_snap(curs_win *win, vt_snap *snap) {
@@ -402,6 +398,12 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
             attrs = COLOR_PAIR(GREEN_CL) | A_BOLD;
         else if (strstr(line->c_str, "DIRTY"))
             attrs = COLOR_PAIR(RED_CL) | A_BOLD;
+        else if (strstr(line->c_str, "WARN"))
+            attrs = COLOR_PAIR(BWHITE_YELLOW);
+        else if (strstr(line->c_str, "ERROR"))
+            attrs = COLOR_PAIR(BWHITE_RED);
+        else if (strstr(line->c_str, "INFO"))
+            attrs = COLOR_PAIR(CYAN_CL);
         else if (strstr(line->c_str, "===TEST("))
             attrs = COLOR_PAIR(CYAN_CL);
         else if (strstr(line->c_str, "===DIFF==="))

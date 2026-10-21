@@ -351,7 +351,7 @@ static void update_start_pos(void) {
             rows_from_start, input.start_row);
 
     if (input.start_row < 0) {
-        LOG_WARN("start_row clamped to 0 (was %d)", input.start_row);
+        LOG_INFO("start_row clamped to 0 (was %d)", input.start_row);
         input.start_row = 0;
     }
 
