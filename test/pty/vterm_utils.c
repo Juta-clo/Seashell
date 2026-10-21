@@ -28,7 +28,7 @@ static char *reg_convert(char *line) {
                     ++c;
                     continue;
                 default:
-                    xtest_fatal("Bad regex in test %s: %s", test->test_name, line);
+                    xtest_fatal("%s: Bad regex %s", test->test_name, line);
                 }
             }
 
@@ -92,6 +92,37 @@ bool vt_snap_cmp(vt_snap *exp) {
     return true;
 }
 
+da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty) {
+    regex_t reg;
+    char reg_errbuf[BUFSIZ];
+    da_int out = {0};
+
+    *curs_dirty = exp->crow != act->crow || exp->ccol != act->ccol;
+
+    for (int row = 0; row < test->vt.rows; ++row) {
+        int rv = regcomp(&reg, exp->lines.data[row],
+                REG_EXTENDED | REG_NOSUB);
+
+        if (rv != 0) {
+            regerror(rv, &reg, reg_errbuf, BUFSIZ);
+            xtest_fatal("regcomp: %s", reg_errbuf);
+        }
+
+        rv = regexec(&reg, act->lines.data[row], 0, NULL, 0);
+
+        if (rv == REG_NOMATCH) {
+            regfree(&reg);
+            *da_push(&out) = row;
+        } else if (rv != 0) {
+            regerror(rv, &reg, reg_errbuf, BUFSIZ);
+            xtest_fatal("regexec: %s", reg_errbuf);
+        }
+
+        regfree(&reg);
+    }
+
+    return out;
+}
 
 void vt_free_snap(vt_snap *snap) {
     assert(snap);

@@ -1,5 +1,3 @@
-#include <git2/errors.h>
-#include <git2/patch.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,72 +107,6 @@ void convert_special_chars(char **output_msg) {
 
     free(*output_msg);
     *output_msg = out.c_str;
-}
-
-static int diff_line_cb([[maybe_unused]] const git_diff_delta *delta,
-        [[maybe_unused]] const git_diff_hunk *hunk,
-        const git_diff_line *line, void *payload)
-{
-    dstr *output = payload;
-
-    if (line->origin != GIT_DIFF_LINE_ADDITION &&
-        line->origin != GIT_DIFF_LINE_DELETION &&
-        line->origin != GIT_DIFF_LINE_CONTEXT &&
-        line->origin != GIT_DIFF_LINE_HUNK_HDR)
-    {
-        return 0;
-    }
-
-    if (line->origin != GIT_DIFF_LINE_HUNK_HDR)
-        dstr_printf(output, "%c", line->origin);
-
-    dstrncat(output, line->content, line->content_len);
-
-    return 0;
-}
-
-void get_diff_msg(void) {
-    git_patch *patch = NULL;
-    dstr buf;
-    dstr_init(&buf);
-
-    dstr exp_str;
-    dstr_init(&exp_str);
-    for (size_t i = 0; i < test->vt_exp.lines.size; ++i)
-        dstr_printf(&exp_str, "%s\n", test->vt_exp.lines.data[i]);
-
-    dstr act_str;
-    dstr_init(&act_str);
-    for (size_t i = 0; i < test->vt_act.lines.size; ++i)
-        dstr_printf(&act_str, "%s\n", test->vt_act.lines.data[i]);
-
-    if (git_patch_from_buffers(&patch, exp_str.c_str, exp_str.len,
-            NULL, act_str.c_str, act_str.len, NULL, NULL) != 0) {
-        const git_error *err = git_error_last();
-        if (err) {
-            xtest_fatal("git_patch_from_buffers: %s", err->message);
-        } else
-            xtest_fatal("git_patch_from_buffers: (git_error_last failed)");
-    }
-
-    if (git_patch_print(patch, diff_line_cb, &buf) != 0) {
-        const git_error *err = git_error_last();
-        if (err) {
-            xtest_fatal("git_patch_print: %s", err->message);
-        } else
-            xtest_fatal("git_patch_print: (git_error_last failed)");
-    }
-
-    if (buf.len > 0) {
-        dstr_printf(&test->diff_msg, "--- expected\n+++ actual\n%s", buf.c_str);
-    } else {
-        dstr_printf(&test->diff_msg, "[no diff]\n");
-    }
-
-    git_patch_free(patch);
-    dstr_free(&buf);
-    dstr_free(&exp_str);
-    dstr_free(&act_str);
 }
 
 struct itimerspec ms_to_its(int ms) {

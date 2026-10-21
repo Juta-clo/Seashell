@@ -7,7 +7,6 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <git2.h>
 
 #include "linc_tools.h"
 #include "pty_test.h"
@@ -205,6 +204,41 @@ static void test_shutdown_prgm(void) {
         (tend.tv_nsec - tstart.tv_nsec) / 1e9;
 }
 
+static void get_diff_msg(void) {
+    if (test->vt.rows != test->vt_act.rows ||
+        test->vt.rows != test->vt_exp.rows)
+        xtest_fatal("unexpected row count");
+
+    bool curs_dirty;
+    da_int dirty_lines = vt_ch_dirty(&test->vt_exp, &test->vt_act, &curs_dirty);
+
+    if (curs_dirty) {
+        dstr_printf(&test->diff_msg, "cursor DIRTY\n");
+        dstr_printf(&test->diff_msg, "exp[%d,%d] act[%d,%d]\n",
+                test->vt_exp.crow, test->vt_exp.ccol,
+                test->vt_act.crow, test->vt_act.ccol);
+    } else {
+        dstr_printf(&test->diff_msg, "cursor OK\n");
+    }
+
+    if (dirty_lines.size != 0) {
+        dstr_printf(&test->diff_msg, "vterm state DIRTY\n");
+        dstr_printf(&test->diff_msg, "---expected\n");
+        dstr_printf(&test->diff_msg, "+++actual\n");
+
+        for (size_t i = 0; i < dirty_lines.size; ++i) {
+            int ind = dirty_lines.data[i];
+            char *exp = test->vt_exp.lines.data[ind];
+            char *act = test->vt_act.lines.data[ind];
+
+            dstr_printf(&test->diff_msg, "%d -%s\n", ind, exp);
+            dstr_printf(&test->diff_msg, "%d +%s\n", ind, act);
+        }
+    } else {
+        dstr_printf(&test->diff_msg, "vterm state OK\n");
+    }
+}
+
 void test_harness_init(int argc, const char *const *argv) {
     ptyh = (pty_harness){0};
 
@@ -236,7 +270,6 @@ void test_harness_init(int argc, const char *const *argv) {
     if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
         xtest_fatal("asprintf: %m");
 
-    git_libgit2_init();
     test_open_log_files();
 
     if (mkdir("/tmp/seashell", 0700) == -1 && errno != EEXIST)
@@ -323,15 +356,9 @@ void test_teardown(void) {
                 test->fail_msg.c_str);
 
         test_write("===DIFF===");
-        test_write("cursor: expected[%d,%d] actual[%d,%d]",
-                test->vt_exp.crow, test->vt_exp.ccol,
-                test->vt_act.crow, test->vt_act.ccol);
         test_write("%s", test->diff_msg.c_str);
 
         fprintf(log_file, "===DIFF(` marks empty cell)===\n");
-        fprintf(log_file, "cursor: expected[%d,%d] actual[%d,%d]\n",
-                test->vt_exp.crow, test->vt_exp.ccol,
-                test->vt_act.crow, test->vt_act.ccol);
         fprintf(log_file, "%s", test->diff_msg.c_str);
 
         fprintf(log_file, "===SHELL LOGS===\n");

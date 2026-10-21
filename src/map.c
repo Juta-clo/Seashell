@@ -49,10 +49,8 @@ static int mp_add(map_t *map, void *key, void *value, key_func func) {
 
     if (!lookup_index(map, canon_key, &index)) {
         pair = da_push(&map->pairs);
-
         pair->key = canon_key;
         pair->value = value;
-
     } else {
         free(map->pairs.data[index].value);
         map->pairs.data[index].value = value;

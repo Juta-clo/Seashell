@@ -4,6 +4,7 @@
 #include <vterm.h>
 
 #include "linc_tools.h"
+#include "tutils.h"
 
 DA_TYPE(da_charp, char *);
 
@@ -24,6 +25,7 @@ typedef struct {
 DA_TYPE(da_vt_snap, vt_snap);
 
 bool vt_snap_cmp(vt_snap *exp);
+da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty);
 vt_snap vt_get_snap(void);
 void vt_free_snap(vt_snap *snap);
 void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol);

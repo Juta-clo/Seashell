@@ -18,7 +18,7 @@ CPPFLAGS += -DUNITY_REPEAT_TEST_NAME -D_GNU_SOURCE
 
 DEPFLAGS := -MMD -MP
 
-LDFLAGS := -lncurses -lvterm -lm -lgit2
+LDFLAGS := -lncurses -lvterm -lm
 
 SRCS += $(wildcard $(DEP_DIR)/linc_tools/src/*.c)
 SRCS += $(wildcard $(TEST_DIR)/*.c)

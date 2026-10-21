@@ -24,6 +24,7 @@
     flush_stream(_fd, false)
 
 DA_TYPE(da_dstr, dstr);
+DA_TYPE(da_int, int);
 
 __attribute__ ((format(printf, 3, 4)))
 void test_fatal(const char *file, int line, const char *fmt, ...);
@@ -32,7 +33,6 @@ void test_write(const char *fmt, ...);
 [[nodiscard]] FILE *new_tmp_file(char *path);
 void test_relink(const char *target, const char *link);
 void convert_special_chars(char **output_msg);
-void get_diff_msg(void);
 
 struct itimerspec ms_to_its(int ms);
 void set_timerfd(int tfd, int ms);
