@@ -73,29 +73,23 @@ typedef struct {
     input_hist hist;
 } input_editor;
 
-typedef struct {
-    int start, end;
-} input_word;
-
-extern input_editor input;
-
 input_editor input = { .off = 0 };
 
-static inline int llen(void) {
+static int llen(void) {
     return (int)(hda_size(input.line) - 1);
 }
 
-static inline int line_len(void) {
+static int line_len(void) {
     int rv = (int)(hda_size(input.line) - 1) - input.start;
     assert(rv >= 0);
     return rv;
 }
 
-static inline char *lstart(void) {
+static char *lstart(void) {
     return input.line + input.start;
 }
 
-static inline int next_non_ws(const char *line, int i) {
+static int next_non_ws(const char *line, int i) {
     ASSERT(line);
     ASSERT_GE_INT(i, 0);
 
@@ -108,7 +102,7 @@ static inline int next_non_ws(const char *line, int i) {
     return -1;
 }
 
-static inline int next_ws(const char *line, int i) {
+static int next_ws(const char *line, int i) {
     ASSERT(line);
     ASSERT_GE_INT(i, 0);
 
@@ -121,7 +115,7 @@ static inline int next_ws(const char *line, int i) {
     return -1;
 }
 
-static inline int prev_non_ws(const char *line, int i) {
+static int prev_non_ws(const char *line, int i) {
     ASSERT(line);
     ASSERT_GE_INT(i, 0);
 
@@ -147,7 +141,7 @@ static inline int prev_ws(const char *line, int i) {
     return -1;
 }
 
-static int next_word(const char *line, int start, input_word *word) {
+int next_word(const char *line, int start, input_word *word) {
     ASSERT(line && word);
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);
@@ -181,7 +175,7 @@ static int next_word(const char *line, int start, input_word *word) {
     return 0;
 }
 
-static int prev_word(const char *line, int start, input_word *word) {
+int prev_word(const char *line, int start, input_word *word) {
     ASSERT(line && word);
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);
@@ -215,7 +209,7 @@ static int prev_word(const char *line, int start, input_word *word) {
     return 0;
 }
 
-static int cur_word(const char *line, int start, input_word *word) {
+int cur_word(const char *line, int start, input_word *word) {
     ASSERT(line && word);
     ASSERT(start >= 0);
     ASSERT(start < (int)strlen(line) + 1);

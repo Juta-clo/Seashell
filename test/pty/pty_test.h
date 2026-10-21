@@ -106,7 +106,6 @@ typedef struct pty_harness {
 extern bool verbose;
 extern bool memcheck;
 extern bool script;
-extern bool tmp_dup;
 
 extern pty_harness ptyh;
 extern pty_test *test;

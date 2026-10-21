@@ -27,7 +27,6 @@ typedef enum {
 bool verbose = false;
 bool memcheck = false;
 bool script = true;
-bool tmp_dup = false;
 
 pty_harness ptyh;
 pty_test *test;
@@ -121,14 +120,14 @@ static void test_exec_pgrm(void) {
                 "--enable-debuginfod=no",
                 val_lfd_arg,
 
-            "/home/juta/Projects/Seashell/seashell",
+            "./seashell",
                 "--prompt=simple",
                 shell_lfd_arg,
             NULL
         };
     } else {
         argv = (char *[]){
-            "/home/juta/Projects/Seashell/seashell",
+            "./seashell",
                 "--prompt=simple",
                 shell_lfd_arg,
             NULL
@@ -298,9 +297,6 @@ void test_harness_init(int argc, const char *const *argv) {
                    strcmp("--script", argv[i]) == 0) {
             script = false;
             hds_append(ptyh.cmd_str, "--script");
-        } else if (strcmp("--dup", argv[i]) == 0) {
-            tmp_dup = true;
-            hds_append(ptyh.cmd_str, "--dup");
         } else if (strcmp("-h", argv[i]) == 0) {
             printf("Custom harness flags:\n"
                     "  -m          Memcheck: run under valgrind\n"
@@ -418,15 +414,6 @@ void test_teardown(void) {
         test_write("%s", test->diff_msg.c_str);
 
         log_test();
-
-        if (tmp_dup) {
-            if (system("rm -rf /tmp/seashell/dup/") != 0)
-                xtest_fatal("system(rm)");
-
-            if (system("rsync -a --exclude='.git/' "
-                    ". /tmp/seashell/dup/") == -1)
-                xtest_fatal("system(rsync)");
-        }
     }
 
     vterm_free(test->vt.vp);

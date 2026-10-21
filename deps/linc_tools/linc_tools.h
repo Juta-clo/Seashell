@@ -85,39 +85,57 @@ hda.h
 
 #define hda_push(hda, ...) \
     ({ \
-        hda = _hda_grow(hda, _HDA_EL_SZ(hda), 1); \
-        *hda_last(hda) = (typeof(*(hda)))__VA_ARGS__; \
-        hda_last(hda); \
+        __auto_type _hda_push_ptr = &(hda); \
+        *_hda_push_ptr = _hda_grow(*_hda_push_ptr, \
+                _HDA_EL_SZ(*_hda_push_ptr), 1); \
+        *hda_last(*_hda_push_ptr) = (typeof(*(*_hda_push_ptr)))__VA_ARGS__; \
+        hda_last(*_hda_push_ptr); \
     })
 
 #define hda_insert(hda, index, n, ...) \
-    (hda = _hda_insert_imp( \
-            hda, \
-            (typeof(*hda)[])__VA_ARGS__, \
-            _HDA_EL_SZ(hda), \
-            index, \
-            n \
-    ))
+    ({ \
+        __auto_type _hda_insert_ptr = &(hda); \
+        (*_hda_insert_ptr = _hda_insert_imp( \
+                *_hda_insert_ptr, \
+                (typeof(**_hda_insert_ptr)[])__VA_ARGS__, \
+                _HDA_EL_SZ(*_hda_insert_ptr), \
+                index, \
+                n \
+        )); \
+    })
+
 
 #define hda_insert_buf(hda, index, n, ...) \
-    (hda = _hda_insert_imp( \
-            hda, \
-            (__VA_ARGS__), \
-            _HDA_EL_SZ(hda), \
-            index, \
-            n \
-    ))
+    ({ \
+        __auto_type _hda_insert_ptr = &(hda); \
+        (*_hda_insert_ptr = _hda_insert_imp( \
+                *_hda_insert_ptr, \
+                (__VA_ARGS__), \
+                _HDA_EL_SZ(*_hda_insert_ptr), \
+                index, \
+                n \
+        )); \
+    })
 
 #define hda_delete(hda, index, n) \
-    _hda_delete_imp(hda, _HDA_EL_SZ(hda), index, n)
+    ({ \
+        __auto_type _hda_delete_ptr = &(hda); \
+        _hda_delete_imp(*_hda_delete_ptr, _HDA_EL_SZ(*_hda_delete_ptr), \
+                index, n); \
+    })
 
 #define hda_last(hda) \
-    ((typeof(hda))_hda_last_imp(hda, _HDA_EL_SZ(hda)))
+    ({ \
+        __auto_type _hda_last_ptr = &(hda); \
+        ((typeof(*_hda_last_ptr))_hda_last_imp(*_hda_last_ptr, \
+            _HDA_EL_SZ(*_hda_last_ptr))); \
+    })
 
 #define hda_free(hda) \
     do { \
-        _hda_free_imp(hda); \
-        hda = nullptr; \
+        __auto_type _hda_ptr = &(hda); \
+        _hda_free_imp(*_hda_ptr); \
+        *_hda_ptr = nullptr; \
     } while (false)
 
 static inline size_t *_hda_start(const void *hda) {
@@ -257,22 +275,35 @@ hds.h
 
 
 #define hds_append(hds, s) \
-    (hds = _hds_append_imp(hds, s, strlen(s)))
+    ({ \
+        __auto_type _hds_append_ptr = &(hds); \
+        (*_hds_append_ptr = _hds_append_imp(*_hds_append_ptr, s, strlen(s))); \
+    })
 
 #define hds_append_n(hds, s, n) \
-    (hds = _hds_append_imp(hds, s, n))
+    ({ \
+        __auto_type _hds_append_n_ptr = &(hds); \
+        (*_hds_append_n_ptr = _hds_append_imp(*_hds_append_n_ptr, s, n)); \
+    })
 
-#define hds_append_fmt(hds, fmt, ...) \
-    (hds = _hds_append_fmt_imp(hds, fmt __VA_OPT__(,) __VA_ARGS__))
+#define hds_printf(hds, fmt, ...) \
+    ({ \
+        __auto_type _hds_printf_ptr = &(hds); \
+        (*_hds_printf_ptr = _hds_append_fmt_imp(*_hds_printf_ptr, \
+                fmt __VA_OPT__(,) __VA_ARGS__)); \
+    })
 
 #define hds_copy(hds, s) \
-    (hds = _hds_copy_imp(hds, s, strlen(s)))
+    ({ \
+        __auto_type _hds_copy_ptr = &(hds); \
+        (*_hds_copy_ptr = _hds_copy_imp(*_hds_copy_ptr, s, strlen(s))); \
+    })
 
 #define hds_copy_n(hds, s, n) \
-    (hds = _hds_copy_imp(hds, s, n))
-
-#define hds_copy_fmt(hds, fmt, ...) \
-    (hds = _hds_copy_fmt_imp(hds, fmt __VA_OPT__(,) __VA_ARGS__))
+    ({ \
+        __auto_type _hds_copy_n_ptr = &(hds); \
+        (*_hds_copy_n_ptr = _hds_copy_imp(*_hds_copy_n_ptr, s, n)); \
+    })
 
 static inline size_t hds_len(const void *hds) {
     size_t size = hda_size(hds);
@@ -315,25 +346,6 @@ static inline void *_hds_append_fmt_imp(void *hds, const char *fmt, ...) {
 static inline void *_hds_copy_imp(char *hds, const char *s, size_t n) {
     hda_delete(hds, 0, hda_size(hds));
     hds_append_n(hds, s, n);
-
-    return hds;
-}
-
-__attribute__ ((__format__(printf, 2, 3)))
-static inline void *_hds_copy_fmt_imp(char *hds, const char *fmt, ...) {
-    va_list va;
-    char *s;
-
-    va_start(va, fmt);
-    int n = vasprintf(&s, fmt, va);
-    va_end(va);
-
-    if (n == -1)
-        _LINC_LIB_FATAL("vasprintf: io error");
-
-    hds_copy_n(hds, s, n);
-
-    free(s);
 
     return hds;
 }
