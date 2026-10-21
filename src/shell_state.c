@@ -17,7 +17,7 @@
 #include "utils.h"
 #include "llog_sinks.h"
 
-#define DEFAULT_LOG_DIR "/home/juta/Projects/Seashell/logs/shell/"
+#define DEFAULT_LOG_DIR "/tmp/seashell-logs"
 
 shell_env sh_env = {0};
 
@@ -130,8 +130,14 @@ static void log_setup(int *log_fd) {
     } else if (opts[LOGDIR].found) {
         *log_fd = open_log_file(opts[LOGDIR].val_str);
 
-    } else
+    } else {
+        if (mkdir(DEFAULT_LOG_DIR, 0777) == -1 && errno != EEXIST) {
+            perror("mkdir");
+            exit(EXIT_FAILURE);
+        }
+
         *log_fd = open_log_file(DEFAULT_LOG_DIR);
+    }
 
     sh_env.assert_llog.sink = assert_llog_sink;
 }

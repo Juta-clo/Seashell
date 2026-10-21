@@ -56,7 +56,7 @@ void run_all(void) {
 }
 
 int main(int argc, const char **argv) {
-    if (!(log_file = fopen("./logs/test/unit_test.log", "w+"))) {
+    if (!(log_file = fopen("/tmp/seashell-log.unit", "w+"))) {
         perror("fopen");
         exit(EXIT_FAILURE);
     }
