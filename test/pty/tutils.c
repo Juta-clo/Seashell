@@ -80,11 +80,11 @@ FILE *new_tmp_file(char *path) {
     return f;
 }
 
-void convert_special_chars(char **output_msg) {
+void convert_special_chars(dstr *str_out) {
     dstr out;
     dstr_init(&out);
 
-    for (char *c = *output_msg; *c != '\0'; ++c) {
+    for (char *c = str_out->c_str; *c != '\0'; ++c) {
         switch (*c) {
         case '\n': dstrcat(&out, "\\n"); break;
         case '\t': dstrcat(&out, "\\t"); break;
@@ -105,8 +105,8 @@ void convert_special_chars(char **output_msg) {
         }
     }
 
-    free(*output_msg);
-    *output_msg = out.c_str;
+    dstr_free(str_out);
+    *str_out = out;
 }
 
 struct itimerspec ms_to_its(int ms) {

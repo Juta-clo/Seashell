@@ -23,7 +23,8 @@ typedef enum {
 } gap_names;
 
 typedef enum {
-    BRIGHT_WHITE = 8, /* ncurses uses 0-7 */
+    CBRIGHT_WHITE = 8, /* ncurses uses 0-7 */
+    CORANGE = 9,
 } curs_colors;
 
 typedef enum {
@@ -31,6 +32,11 @@ typedef enum {
     BWHITE_RED,
     BWHITE_GREEN,
     BWHITE_YELLOW,
+    ORANGE_CL,
+    MAGENTA_CL,
+    CYAN_CL,
+    RED_CL,
+    GREEN_CL,
 } color_pairs;
 
 typedef struct {

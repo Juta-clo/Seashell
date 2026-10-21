@@ -32,7 +32,7 @@ void test_fatal(const char *file, int line, const char *fmt, ...);
 void test_write(const char *fmt, ...);
 [[nodiscard]] FILE *new_tmp_file(char *path);
 void test_relink(const char *target, const char *link);
-void convert_special_chars(char **output_msg);
+void convert_special_chars(dstr *str_out);
 
 struct itimerspec ms_to_its(int ms);
 void set_timerfd(int tfd, int ms);

@@ -75,7 +75,8 @@ typedef struct {
     bool test_ok;
     bool val_err;
 
-    dstr ptydata;
+    dstr pty_out_data;
+    dstr pty_in_data;
     dstr fail_msg;
     dstr exit_msg;
     dstr diff_msg;
@@ -99,11 +100,13 @@ typedef struct pty_harness {
     da_pty_test tests;
     int val_errs;
     int fails;
+    char *cmd_str;
 } pty_harness;
 
 extern bool verbose;
 extern bool memcheck;
 extern bool script;
+extern bool tmp_dup;
 
 extern pty_harness ptyh;
 extern pty_test *test;

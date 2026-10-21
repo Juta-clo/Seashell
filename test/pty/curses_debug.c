@@ -169,13 +169,25 @@ void init_curses(void) {
         curs_err("noecho");
     if (use_default_colors() == ERR)
         curs_err("use_default_colors");
-    if (init_color(BRIGHT_WHITE, 984, 945, 780) == ERR)
+    if (init_color(CBRIGHT_WHITE, 984, 945, 780) == ERR)
         curs_err("init_color");
-    if (init_pair(BWHITE_RED, BRIGHT_WHITE, COLOR_RED) == ERR)
+    if (init_color(CORANGE, 996, 502, 98) == ERR)
+        curs_err("init_color");
+    if (init_pair(BWHITE_RED, CBRIGHT_WHITE, COLOR_RED) == ERR)
         curs_err("init_pair");
-    if (init_pair(BWHITE_GREEN, BRIGHT_WHITE, COLOR_GREEN) == ERR)
+    if (init_pair(BWHITE_GREEN, CBRIGHT_WHITE, COLOR_GREEN) == ERR)
         curs_err("init_pair");
-    if (init_pair(BWHITE_YELLOW, BRIGHT_WHITE, COLOR_YELLOW) == ERR)
+    if (init_pair(BWHITE_YELLOW, CBRIGHT_WHITE, COLOR_YELLOW) == ERR)
+        curs_err("init_pair");
+    if (init_pair(ORANGE_CL, CORANGE, COLOR_BLACK) == ERR)
+        curs_err("init_pair");
+    if (init_pair(MAGENTA_CL, COLOR_MAGENTA, COLOR_BLACK) == ERR)
+        curs_err("init_pair");
+    if (init_pair(CYAN_CL, COLOR_CYAN, COLOR_BLACK) == ERR)
+        curs_err("init_pair");
+    if (init_pair(GREEN_CL, COLOR_GREEN, COLOR_BLACK) == ERR)
+        curs_err("init_pair");
+    if (init_pair(RED_CL, COLOR_RED, COLOR_BLACK) == ERR)
         curs_err("init_pair");
 
     /* input */
@@ -384,12 +396,23 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
             continue;
 
         dstr *line = &lines->data[i - wn + offset];
-        rnprintf(win->winp, i, 0, win->rect->cols, 0, "%s", line->c_str);
+        int attrs = 0;
+
+        if (strstr(line->c_str, "CLEAN"))
+            attrs = COLOR_PAIR(GREEN_CL) | A_BOLD;
+        else if (strstr(line->c_str, "DIRTY"))
+            attrs = COLOR_PAIR(RED_CL) | A_BOLD;
+        else if (strstr(line->c_str, "===TEST("))
+            attrs = COLOR_PAIR(CYAN_CL);
+        else if (strstr(line->c_str, "===DIFF==="))
+            attrs = COLOR_PAIR(CYAN_CL);
+
+        rnprintf(win->winp, i, 0, win->rect->cols, attrs, "%s", line->c_str);
         char *p = line->c_str;
 
         while ((int) strlen(p) > win->rect->cols - 1 && i + 1 < win->rect->rows) {
             p += win->rect->cols - 1;
-            rnprintf(win->winp, ++i, 0, win->rect->cols, 0, "%s", p);
+            rnprintf(win->winp, ++i, 0, win->rect->cols, attrs, "%s", p);
             ++wn;
         }
     }

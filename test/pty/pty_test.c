@@ -27,6 +27,7 @@ typedef enum {
 bool verbose = false;
 bool memcheck = false;
 bool script = true;
+bool tmp_dup = false;
 
 pty_harness ptyh;
 pty_test *test;
@@ -35,23 +36,27 @@ struct pollfd pollfds[NFDS];
 struct timespec tstart, tend;
 struct termios tio;
 
-int sh_pipe[2];
-int val_pipe[2];
+static int sh_pipe[2];
+static int val_pipe[2];
 
-FILE *log_file = nullptr;
-FILE *log_raw_file = nullptr;
-char *shell_lfd_arg;
-char *val_lfd_arg;
+static FILE *log_file = nullptr;
+static FILE *log_raw_out = nullptr;
+static FILE *log_raw_in = nullptr;
+static char *shell_lfd_arg;
+static char *val_lfd_arg;
 
 static void test_open_log_files(void) {
-    char log_path[] = "/tmp/shlog-XXXXXX";
-    char log_raw_path[] = "/tmp/shlog-raw-XXXXXX";
+    char log_path[] = "/tmp/seashell/shlog-XXXXXX";
+    char log_raw_out_path[] = "/tmp/seashell/shlog-raw-out-XXXXXX";
+    char log_raw_in_path[] = "/tmp/seashell/shlog-raw-in-XXXXXX";
 
     log_file = new_tmp_file(log_path);
-    log_raw_file = new_tmp_file(log_raw_path);
+    log_raw_out = new_tmp_file(log_raw_out_path);
+    log_raw_in = new_tmp_file(log_raw_in_path);
 
     test_relink(log_path, "/tmp/shlog-latest");
-    test_relink(log_raw_path, "/tmp/shlog-latest.raw");
+    test_relink(log_raw_out_path, "/tmp/shlog-latest.raw.out");
+    test_relink(log_raw_in_path, "/tmp/shlog-latest.raw.in");
 }
 
 static void test_write_to_term(const char *str) {
@@ -78,7 +83,7 @@ static int test_pty_poll(int tfd) {
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
             data = flush_pty(test->mfd);
-            dstrcat(&test->ptydata, data);
+            dstrcat(&test->pty_out_data, data);
             add_lines(&test->raw_lines, data);
             test_write_to_term(data);
             free(data);
@@ -213,16 +218,17 @@ static void get_diff_msg(void) {
     da_int dirty_lines = vt_ch_dirty(&test->vt_exp, &test->vt_act, &curs_dirty);
 
     if (curs_dirty) {
-        dstr_printf(&test->diff_msg, "cursor DIRTY\n");
-        dstr_printf(&test->diff_msg, "exp[%d,%d] act[%d,%d]\n",
-                test->vt_exp.crow, test->vt_exp.ccol,
-                test->vt_act.crow, test->vt_act.ccol);
+        dstr_printf(&test->diff_msg, "CURSOR -- DIRTY\n");
     } else {
-        dstr_printf(&test->diff_msg, "cursor OK\n");
+        dstr_printf(&test->diff_msg, "CURSOR -- CLEAN\n");
     }
 
+    dstr_printf(&test->diff_msg, "expected [%d,%d] actual [%d,%d]\n",
+            test->vt_exp.crow, test->vt_exp.ccol,
+            test->vt_act.crow, test->vt_act.ccol);
+
     if (dirty_lines.size != 0) {
-        dstr_printf(&test->diff_msg, "vterm state DIRTY\n");
+        dstr_printf(&test->diff_msg, "VTERM -- DIRTY\n");
         dstr_printf(&test->diff_msg, "---expected\n");
         dstr_printf(&test->diff_msg, "+++actual\n");
 
@@ -235,20 +241,77 @@ static void get_diff_msg(void) {
             dstr_printf(&test->diff_msg, "%d +%s\n", ind, act);
         }
     } else {
-        dstr_printf(&test->diff_msg, "vterm state OK\n");
+        dstr_printf(&test->diff_msg, "VTERM -- CLEAN\n");
     }
+}
+
+static void log_test(void) {
+    *da_push(&test->snaps) = vt_get_snap();
+
+    fprintf(log_file, "%s\n", ptyh.cmd_str);
+    fprintf(log_file, "%s:FAIL:%s:%d:%s\n",
+            test->test_name, test->test_file, test->fail_line,
+            test->fail_msg.c_str);
+
+    fprintf(log_file, "===DIFF(` marks empty cell)===\n");
+    fprintf(log_file, "%s", test->diff_msg.c_str);
+
+    fprintf(log_file, "===SHELL LOGS===\n");
+    for (size_t i = 0; i < test->shlog_lines.size; ++i) {
+        dstr *line = &test->shlog_lines.data[i];
+        fprintf(log_file, "%s", line->c_str);
+        if (i != test->shlog_lines.size - 1)
+            fprintf(log_file, "\n");
+    }
+
+    fprintf(log_file, "===VALGRIND===\n");
+    if (test->val_lines.size == 0)
+        fprintf(log_file, "[memcheck not used]\n");
+
+    if (!test->val_err) {
+        fprintf(log_file, "CLEAN\n");
+    } else {
+        for (size_t i = 0; i < test->val_lines.size; ++i) {
+            dstr *line = &test->val_lines.data[i];
+            fprintf(log_file, "%s\n", line->c_str);
+        }
+    }
+
+    convert_special_chars(&test->pty_out_data);
+    convert_special_chars(&test->pty_in_data);
+    fprintf(log_raw_out, "%s\n", test->pty_out_data.c_str);
+    fprintf(log_raw_in, "%s\n", test->pty_in_data.c_str);
 }
 
 void test_harness_init(int argc, const char *const *argv) {
     ptyh = (pty_harness){0};
 
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp("-v", argv[i]) == 0) {
+    for (int i = 0; i < argc; ++i) {
+        if (strcmp("-v", argv[i]) == 0 || strcmp("--verbose", argv[i]) == 0) {
             verbose = true;
-        } else if (strcmp("-m", argv[i]) == 0) {
+            hds_append(ptyh.cmd_str, "--verbose");
+        } else if (strcmp("-m", argv[i]) == 0 ||
+                   strcmp("--memcheck", argv[i]) == 0) {
             memcheck = true;
-        } else if (strcmp("-s", argv[i]) == 0)
+            hds_append(ptyh.cmd_str, "--memcheck");
+        } else if (strcmp("-s", argv[i]) == 0 ||
+                   strcmp("--script", argv[i]) == 0) {
             script = false;
+            hds_append(ptyh.cmd_str, "--script");
+        } else if (strcmp("--dup", argv[i]) == 0) {
+            tmp_dup = true;
+            hds_append(ptyh.cmd_str, "--dup");
+        } else if (strcmp("-h", argv[i]) == 0) {
+            printf("Custom harness flags:\n"
+                    "  -m          Memcheck: run under valgrind\n"
+                    "  -v          Verbose: Also enter repl when no tests fail\n"
+                    "  -s          Script: no repl ever\n\n"
+            );
+        } else {
+            hds_append(ptyh.cmd_str, argv[i]);
+        }
+
+        hds_append(ptyh.cmd_str, " ");
     }
 
     da_init(&ptyh.tests);
@@ -270,10 +333,10 @@ void test_harness_init(int argc, const char *const *argv) {
     if (asprintf(&val_lfd_arg, "--log-fd=%d", val_pipe[1]) < 0)
         xtest_fatal("asprintf: %m");
 
-    test_open_log_files();
-
     if (mkdir("/tmp/seashell", 0700) == -1 && errno != EEXIST)
         xtest_fatal("mkdir: %m");
+
+    test_open_log_files();
 
     char *path = getenv("PATH");
     char *new = nullptr;
@@ -295,10 +358,10 @@ void test_harness_init(int argc, const char *const *argv) {
 void test_harness_deinit(void) {
     if (log_file)
         fclose(log_file);
-    if (log_raw_file)
-        fclose(log_raw_file);
-    system("find /tmp/seashell -maxdepth 1 -type f -delete");
-    rmdir("/tmp/seashell");
+    if (log_raw_out)
+        fclose(log_raw_out);
+    if (log_raw_in)
+        fclose(log_raw_in);
 }
 
 void test_setup(void) {
@@ -323,7 +386,8 @@ void test_setup(void) {
     test->test_name = strdup(Unity.CurrentTestName);
     test->test_file = strdup(Unity.TestFile);
 
-    dstr_init(&test->ptydata);
+    dstr_init(&test->pty_out_data);
+    dstr_init(&test->pty_in_data);
     dstr_init(&test->fail_msg);
     dstr_init(&test->exit_msg);
     dstr_init(&test->diff_msg);
@@ -339,48 +403,30 @@ void test_teardown(void) {
     test_shutdown_prgm();
 
     test_write(
-        "===%s===\n\n"
+        "===%s===\n"
         "Test took %lf seconds\n"
-        "Seashell %s\n",
+        "Seashell %s",
         test->test_name,
         test->duration,
         test->exit_msg.c_str
     );
 
     if (!test->test_ok || test->val_err) {
-        *da_push(&test->snaps) = vt_get_snap();
         get_diff_msg();
-
-        fprintf(log_file, "%s:FAIL:%s:%d:%s\n",
-                test->test_name, test->test_file, test->fail_line,
-                test->fail_msg.c_str);
 
         test_write("===DIFF===");
         test_write("%s", test->diff_msg.c_str);
 
-        fprintf(log_file, "===DIFF(` marks empty cell)===\n");
-        fprintf(log_file, "%s", test->diff_msg.c_str);
+        log_test();
 
-        fprintf(log_file, "===SHELL LOGS===\n");
-        for (size_t i = 0; i < test->shlog_lines.size; ++i) {
-            dstr *line = &test->shlog_lines.data[i];
-            fprintf(log_file, "%s", line->c_str);
-            if (i != test->shlog_lines.size - 1)
-                fprintf(log_file, "\n");
+        if (tmp_dup) {
+            if (system("rm -rf /tmp/seashell/dup/") != 0)
+                xtest_fatal("system(rm)");
+
+            if (system("rsync -a --exclude='.git/' "
+                    ". /tmp/seashell/dup/") == -1)
+                xtest_fatal("system(rsync)");
         }
-
-        fprintf(log_file, "===VALGRIND OUTPUT===\n");
-
-        if (test->val_lines.size == 0)
-            fprintf(log_file, "[no data]\n");
-
-        for (size_t i = 0; i < test->val_lines.size; ++i) {
-            dstr *line = &test->val_lines.data[i];
-            fprintf(log_file, "%s\n", line->c_str);
-        }
-
-        convert_special_chars(&test->ptydata.c_str);
-        fprintf(log_raw_file, "%s\n", test->ptydata.c_str);
     }
 
     vterm_free(test->vt.vp);
@@ -402,14 +448,14 @@ void test_resize_term(int row, int col) {
 
 bool verify_bytes(const char *str) {
     int tfd = start_timerfd((memcheck) ? 1000 : 100);
-    size_t start = test->ptydata.len;
+    size_t start = test->pty_out_data.len;
 
     while (test_pty_poll(tfd) != PTY_POLL_TFD) {
-        if (start >= test->ptydata.len)
+        if (start >= test->pty_out_data.len)
             continue;
 
-        for (size_t i = start; i < test->ptydata.len; ++i) {
-            if (strstr(&test->ptydata.c_str[i], str)) {
+        for (size_t i = start; i < test->pty_out_data.len; ++i) {
+            if (strstr(&test->pty_out_data.c_str[i], str)) {
                 if (close(tfd) == -1)
                     xtest_fatal("close: %m");
                 return true;

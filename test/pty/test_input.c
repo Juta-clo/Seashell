@@ -1,6 +1,5 @@
 #include "unity_fixture.h"
 #include "pty_test.h"
-#include "unibilium.h"
 
 TEST_GROUP(input);
 
@@ -9,12 +8,15 @@ TEST_GROUP(input);
 TEST_SETUP(input) {
     test_setup();
 
-    if (system("find /tmp/seashell -maxdepth 1 -type f -delete") != 0)
-        xtest_fatal("system: %m");
+    if (mkdir("/tmp/sh-tmp", 0700) == -1)
+        xtest_fatal("mkdir");
 }
 
 TEST_TEAR_DOWN(input) {
     test_teardown();
+
+    if (system("rm -rf /tmp/sh-tmp") != 0)
+        xtest_fatal("system: %m");
 }
 
 /************ Tests ************/
@@ -49,7 +51,7 @@ TEST(input, line_is_preserved_on_async_job_messages) {
         PROMPT "abc"
     );
 
-    /* by the time the prompt is printed seashell has forked. It
+    /* by the time the prompt is printed sh-tmp has forked. It
      * doesn't matter if it execs or not as we just want the job
      * event which will still be generated if the subshell is killed
      * before it execs */
@@ -117,25 +119,25 @@ TEST(input, tab_completion_with_no_line) {
 }
 
 TEST(input, tab_completion_on_filename_with_whitespace) {
-    close(open("/tmp/seashell/file with spaces", O_RDWR | O_CREAT, 0600));
+    close(open("/tmp/sh-tmp/file with spaces", O_RDWR | O_CREAT, 0600));
 
-    vt_send_str("stat /tmp/seashell/file\t");
-    assert_term(0, PROMPT_LEN + 37,
-        PROMPT "stat /tmp/seashell/file\\ with\\ spaces");
+    vt_send_str("stat /tmp/sh-tmp/file\t");
+    assert_term(0, PROMPT_LEN + 35,
+        PROMPT "stat /tmp/sh-tmp/file\\ with\\ spaces");
 }
 
 TEST(input, tab_completion_cycles_results) {
-    close(open("/tmp/seashell/file1", O_RDWR | O_CREAT, 0600));
-    close(open("/tmp/seashell/foo", O_RDWR | O_CREAT, 0600));
-    close(open("/tmp/seashell/foo bar", O_RDWR | O_CREAT, 0600));
+    close(open("/tmp/sh-tmp/file1", O_RDWR | O_CREAT, 0600));
+    close(open("/tmp/sh-tmp/foo", O_RDWR | O_CREAT, 0600));
+    close(open("/tmp/sh-tmp/foo bar", O_RDWR | O_CREAT, 0600));
 
     char *lines[3] = {
-        PROMPT "stat /tmp/seashell/file1",
-        PROMPT "stat /tmp/seashell/foo",
-        PROMPT "stat /tmp/seashell/foo\\ bar"
+        PROMPT "stat /tmp/sh-tmp/file1",
+        PROMPT "stat /tmp/sh-tmp/foo",
+        PROMPT "stat /tmp/sh-tmp/foo\\ bar"
     };
 
-    vt_send_str("stat /tmp/seashell/f");
+    vt_send_str("stat /tmp/sh-tmp/f");
 
     for (size_t i = 0; i < ARR_LEN(lines) * 2; ++i) {
         char *exp = lines[i % ARR_LEN(lines)];
@@ -146,14 +148,14 @@ TEST(input, tab_completion_cycles_results) {
 }
 
 TEST(input, forward_slash_confirms_completion) {
-    close(open("/tmp/seashell/foo", O_RDWR | O_CREAT, 0600));
+    close(open("/tmp/sh-tmp/foo", O_RDWR | O_CREAT, 0600));
 
-    vt_send_str("stat /tmp/seashell/f\t");
-    assert_term(0, PROMPT_LEN + 22,
-        PROMPT "stat /tmp/seashell/foo");
+    vt_send_str("stat /tmp/sh-tmp/f\t");
+    assert_term(0, PROMPT_LEN + 20,
+        PROMPT "stat /tmp/sh-tmp/foo");
 
     vt_send_str("/ bar");
-    assert_term(0, PROMPT_LEN + 26, PROMPT "stat /tmp/seashell/foo bar");
+    assert_term(0, PROMPT_LEN + 24, PROMPT "stat /tmp/sh-tmp/foo bar");
 }
 
 TEST(input, first_word_after_pipeline_uses_path_completion) {

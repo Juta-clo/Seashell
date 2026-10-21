@@ -48,6 +48,11 @@ static char *reg_convert(char *line) {
 }
 
 static void vt_output_cb(const char *bytes, size_t len, void *user) {
+    if (len == 0 || !bytes || !user)
+        return;
+
+    dstrncat(&test->pty_in_data, bytes, len);
+
     int mfd = *(int *)user;
     if ((size_t) write(mfd, bytes, len) != len)
         xtest_fatal("vterm_output_cb: write: failed/partial");
