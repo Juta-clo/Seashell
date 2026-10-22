@@ -17,8 +17,6 @@
 #include "utils.h"
 #include "llog_sinks.h"
 
-#define DEFAULT_LOG_DIR "/tmp/seashell-logs"
-
 shell_env sh_env = {0};
 
 // XFUNCS SET UP
@@ -31,14 +29,14 @@ XFATAL_DEFAULT(&xf);
 
 args_opt_data opts[] = {
     [LOGFD] = {
-        .long_name = "logfd",
+        .long_name = "log-fd",
         .short_name = 'l',
         .has_arg = ARGS_REQUIRED_ARG,
         .arg_type = ARGS_INT_ARG
     },
-    [LOGDIR] = {
-        .long_name = "logdir",
-        .short_name = 'p',
+    [LOGFILE] = {
+        .long_name = "log-file",
+        .short_name = 'f',
         .has_arg = ARGS_REQUIRED_ARG,
         .arg_type = ARGS_STR_ARG
     },
@@ -80,44 +78,6 @@ static void seashell_shutdown(void) {
     LOG_INFO("seashell shutting down");
 }
 
-static int open_log_file(const char *log_dir) {
-    char log_path[PATH_MAX] = "";
-    char link_path[PATH_MAX] = "";
-
-    strcpy(log_path, log_dir);
-    strcat(log_path, "/log-XXXXXX");
-    int fd = mkstemp(log_path);
-
-    if (fd == -1) {
-        perror("mkstemp");
-        exit(EXIT_FAILURE);
-    }
-
-    strcpy(link_path, log_dir);
-    strcat(link_path, "/latest");
-
-    if (unlink(link_path) == -1 && errno != ENOENT) {
-        perror("unlink");
-        exit(EXIT_FAILURE);
-    }
-
-    char *abs_log_path = realpath(log_path, NULL);
-
-    if (!abs_log_path) {
-        perror("realpath");
-        exit(EXIT_FAILURE);
-    }
-
-    if (symlink(abs_log_path, link_path) == -1) {
-        perror("symlink");
-        exit(EXIT_FAILURE);
-    }
-
-    free(abs_log_path);
-
-    return fd;
-}
-
 static void log_setup(int *log_fd) {
     if (opts[LOGFD].found) {
         if (fcntl(opts[LOGFD].val_int, F_GETFD) == -1) {
@@ -126,17 +86,14 @@ static void log_setup(int *log_fd) {
         }
 
         *log_fd = opts[LOGFD].val_int;
-
-    } else if (opts[LOGDIR].found) {
-        *log_fd = open_log_file(opts[LOGDIR].val_str);
-
-    } else {
-        if (mkdir(DEFAULT_LOG_DIR, 0777) == -1 && errno != EEXIST) {
-            perror("mkdir");
+    } else if (opts[LOGFILE].found) {
+        *log_fd = open(opts[LOGFILE].val_str, O_WRONLY | O_CREAT, 0666);
+        if (*log_fd == -1) {
+            perror("Failed to open log file");
             exit(EXIT_FAILURE);
         }
-
-        *log_fd = open_log_file(DEFAULT_LOG_DIR);
+    } else {
+        *log_fd = -1;
     }
 
     sh_env.assert_llog.sink = assert_llog_sink;

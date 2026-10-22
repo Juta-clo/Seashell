@@ -31,7 +31,7 @@ extern shell_env sh_env;
 
 typedef enum {
     LOGFD,
-    LOGDIR,
+    LOGFILE,
     PROMPT,
 } opt_names;
 

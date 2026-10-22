@@ -9,11 +9,17 @@ void assert_llog_sink(const llog_info *info) {
     dstrcat(&output_msg, info->msg);
     dstrcat(&output_msg, "\n");
 
-    write(sh_env.log_fd, output_msg.c_str, output_msg.len);
+    if (sh_env.log_fd != -1)
+        write(sh_env.log_fd, output_msg.c_str, output_msg.len);
+
+    fprintf(stderr, "seashell: %s\n", output_msg.c_str);
     dstr_free(&output_msg);
 }
 
 void shell_llog_sink(const llog_info *info) {
+    if (sh_env.log_fd == -1)
+        return;
+
     dstr output_msg;
     dstr_init(&output_msg);
 

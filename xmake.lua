@@ -5,7 +5,6 @@ add_rules("plugin.compile_commands.autoupdate", {
 set_toolchains("clang")
 set_toolset("cc", "clang")
 set_toolset("ld", "clang")
-
 set_policy("build.ccache", false)
 
 add_includedirs("inc", "deps/linc_tools")

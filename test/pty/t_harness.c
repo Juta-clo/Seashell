@@ -104,7 +104,7 @@ static void create_exec_argv(void) {
 
     /* append lfd arg */
     char sh_lfd_arg[ARG_MAX];
-    if (snprintf(sh_lfd_arg, ARG_MAX, "--logfd=%d", ptyh.sh_p[1]) < 0)
+    if (snprintf(sh_lfd_arg, ARG_MAX, "--log-fd=%d", ptyh.sh_p[1]) < 0)
         xtest_fatal("snprintf: %m");
     hds_append(*hda_push(ptyh.exec_argv, nullptr), sh_lfd_arg);
 
