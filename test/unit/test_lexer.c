@@ -2,6 +2,7 @@
 #include <time.h>
 #include <stdlib.h>
 
+#include "llog.h"
 #include "unity_fixture.h"
 #include "lexer.h"
 

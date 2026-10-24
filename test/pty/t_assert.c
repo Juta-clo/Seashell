@@ -1,3 +1,6 @@
+#include <signal.h>
+#include <unistd.h>
+
 #include "t_assert.h"
 #include "t_harness.h"
 #include "t_pview.h"

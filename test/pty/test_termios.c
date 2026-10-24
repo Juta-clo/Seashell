@@ -1,3 +1,5 @@
+#include <pty.h>
+
 #include "t_harness.h" // IWYU pragma: keep
 #include "t_fixture.h"
 #include "unity_fixture.h"

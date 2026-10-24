@@ -1,8 +1,9 @@
 #include <string.h>
 #include <assert.h>
 
+#include <linc/xsys.h>
+#include "utils.h"
 #include "job_state.h"
-#include "linc_tools.h"
 #include "variable.h"
 #include "map.h"
 #include "utils.h"

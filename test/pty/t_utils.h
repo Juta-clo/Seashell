@@ -4,7 +4,8 @@
 #include <stdio.h>
 #include <vterm.h>
 
-#include "linc_tools.h"
+#include "darr.h"
+#include "dstr.h"
 
 #define xtest_fatal(fmt, ...) \
     test_fatal(__FILE__, __LINE__, fmt __VA_OPT__(,) __VA_ARGS__)

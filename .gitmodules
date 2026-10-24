@@ -1,3 +1,6 @@
 [submodule "deps/Printty"]
 	path = deps/Printty
-	url = git@github.com:Ammsiss/Printty.git
+	url = git@github_old:Ammsiss/Printty.git
+[submodule "deps/Linc"]
+	path = deps/Linc
+	url = git@github_old:Ammsiss/Linc

@@ -4,13 +4,14 @@
 
 #include "builtins.h"
 #include "expander.h"
-#include "linc_tools.h"
 #include "job_state.h"
 #include "plan.h"
 #include "wait_stat.h"
 #include "utils.h"
 #include "exec_funcs.h"
 #include "shell_state.h"
+
+#include <linc/xsys.h>
 
 static job_table jctl = {0};
 static da_jevent jevs = {0};

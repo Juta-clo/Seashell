@@ -3,9 +3,10 @@
 #include <locale.h>
 #include <ncurses.h>
 #include <string.h>
+#include <unistd.h>
 
-#include "linc_tools.h"
 #include "t_debug.h"
+#include "t_splitty.h"
 #include "t_harness.h"
 
 #define NFDS 1

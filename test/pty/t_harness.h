@@ -5,7 +5,8 @@
 #include <ncurses.h>
 #include <vterm.h>
 
-#include "t_utils.h"
+#include "darr.h"
+#include "dstr.h"
 #include "t_vterm.h"
 
 typedef struct {

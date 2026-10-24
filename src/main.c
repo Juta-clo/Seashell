@@ -7,7 +7,7 @@
 #include <wait.h>
 #include <getopt.h>
 
-#include "linc_tools.h"
+#include <linc/xsys.h>
 #include "parser.h"
 #include "lexer.h"
 #include "input.h"

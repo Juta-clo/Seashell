@@ -4,13 +4,14 @@
 #include <string.h>
 #include <libgen.h>
 
-#include "linc_tools.h"
 #include "parser.h"
 #include "expander.h"
 #include "path_glob.h"
 #include "utils.h"
 #include "variable.h"
 #include "shell_state.h"
+
+#include <linc/xsys.h>
 
 static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
         ex_tok_type type) {

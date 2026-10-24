@@ -1,5 +1,5 @@
+#include <linc/xsys.h>
 #include "path_glob.h"
-#include "linc_tools.h"
 #include "utils.h"
 
 /* qsort */

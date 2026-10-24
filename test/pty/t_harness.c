@@ -1,13 +1,19 @@
 #include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <linux/limits.h>
 #include <ncurses.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/poll.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "linc_tools.h"
+#include <linc/hds.h>
+#include <linc/hda.h>
 #include "t_harness.h"
 #include "t_utils.h"
 
@@ -38,15 +44,15 @@ static void process_args(int argc, const char *const *argv) {
     for (int i = 0; i < argc; ++i) {
         if (strcmp("-v", argv[i]) == 0 || strcmp("--verbose", argv[i]) == 0) {
             verbose = true;
-            hds_append(ptyh.cmd_str, "--verbose");
+            linc_hds_append(ptyh.cmd_str, "--verbose");
         } else if (strcmp("-m", argv[i]) == 0 ||
                    strcmp("--memcheck", argv[i]) == 0) {
             memcheck = true;
-            hds_append(ptyh.cmd_str, "--memcheck");
+            linc_hds_append(ptyh.cmd_str, "--memcheck");
         } else if (strcmp("-s", argv[i]) == 0 ||
                    strcmp("--script", argv[i]) == 0) {
             script = true;
-            hds_append(ptyh.cmd_str, "--script");
+            linc_hds_append(ptyh.cmd_str, "--script");
         } else if (strcmp("-h", argv[i]) == 0) {
             printf("Custom harness flags:\n"
                     "  -m          Memcheck: run under valgrind\n"
@@ -54,10 +60,10 @@ static void process_args(int argc, const char *const *argv) {
                     "  -s          Script: no repl ever\n\n"
             );
         } else {
-            hds_append(ptyh.cmd_str, argv[i]);
+            linc_hds_append(ptyh.cmd_str, argv[i]);
         }
 
-        hds_append(ptyh.cmd_str, " ");
+        linc_hds_append(ptyh.cmd_str, " ");
     }
 }
 
@@ -83,14 +89,14 @@ static void create_exec_argv(void) {
         };
 
         for (char **arg = val_cmd; memcheck && *arg != NULL; ++arg)
-            hds_append(*hda_push(ptyh.exec_argv, nullptr), *arg);
+            linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), *arg);
 
         /* append lfd arg */
 
         char val_lfd_arg[ARG_MAX];
         if (snprintf(val_lfd_arg, ARG_MAX, "--log-fd=%d", ptyh.val_p[1]) < 0)
             xtest_fatal("snprintf: %m");
-        hds_append(*hda_push(ptyh.exec_argv, nullptr), val_lfd_arg);
+        linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), val_lfd_arg);
     }
 
     char *sh_cmd[] = {
@@ -100,15 +106,15 @@ static void create_exec_argv(void) {
     };
 
     for (char **arg = sh_cmd; *arg != NULL; ++arg)
-        hds_append(*hda_push(ptyh.exec_argv, nullptr), *arg);
+        linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), *arg);
 
     /* append lfd arg */
     char sh_lfd_arg[ARG_MAX];
     if (snprintf(sh_lfd_arg, ARG_MAX, "--log-fd=%d", ptyh.sh_p[1]) < 0)
         xtest_fatal("snprintf: %m");
-    hds_append(*hda_push(ptyh.exec_argv, nullptr), sh_lfd_arg);
+    linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), sh_lfd_arg);
 
-    hda_push(ptyh.exec_argv, nullptr);
+    linc_hda_push(ptyh.exec_argv, nullptr);
 }
 
 void test_harness_init(int argc, const char *const *argv) {
@@ -124,17 +130,17 @@ void test_harness_init(int argc, const char *const *argv) {
     char *new = nullptr;
 
     if (!path) {
-        hds_append(new, TEST_BIN_DIR);
+        linc_hds_append(new, TEST_BIN_DIR);
     } else {
-        hds_append(new, path);
-        hds_append(new, ":");
-        hds_append(new, TEST_BIN_DIR);
+        linc_hds_append(new, path);
+        linc_hds_append(new, ":");
+        linc_hds_append(new, TEST_BIN_DIR);
     }
 
     if (setenv("PATH", new, 1) == -1)
         xtest_fatal("setenv: %m");
 
-    hds_free(new);
+    linc_hds_free(new);
 
     /* unibi_from_env uses TERM */
     if (setenv("TERM", "xterm-256color", 1) == -1)

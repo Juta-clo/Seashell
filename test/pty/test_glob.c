@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 
 #include "t_harness.h" // IWYU pragma: keep

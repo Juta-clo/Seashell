@@ -1,6 +1,6 @@
 #include <signal.h>
 
-#include "linc_tools.h"
+#include <linc/xsys.h>
 #include "utils.h"
 #include "sig_funcs.h"
 

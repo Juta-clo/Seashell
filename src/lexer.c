@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "linc_tools.h"
+#include "darr.h"
 #include "lexer.h"
 
 static lx_status status = LX_OK;

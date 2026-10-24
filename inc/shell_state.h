@@ -6,9 +6,10 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include "linc_tools.h"
+#include <linc/args.h>
 #include "map.h"
 #include "printty.h"
+#include "llog.h"
 
 #define NOFG -1
 
@@ -35,7 +36,7 @@ typedef enum {
     PROMPT,
 } opt_names;
 
-extern args_opt_data opts[];
+extern linc_args opts[];
 extern char **environ;
 
 void env_setup(shell_env *env, int argc, char *const *argv);

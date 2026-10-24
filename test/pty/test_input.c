@@ -1,3 +1,6 @@
+#include <fcntl.h>
+#include <sys/stat.h>
+
 #include "t_assert.h"
 #include "t_fixture.h"
 #include "unity_fixture.h"

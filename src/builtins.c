@@ -5,13 +5,14 @@
 #include <errno.h>
 #include <assert.h>
 
-#include "linc_tools.h"
 #include "variable.h"
 #include "shell_state.h"
 #include "job_state.h"
 #include "builtins.h"
 #include "utils.h"
 #include "plan.h"
+
+#include <linc/args.h>
 
 typedef enum {
     SHOW_PIDS,
@@ -282,16 +283,16 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
     if (arg_n == -1)
         return EXIT_FAILURE;
 
-    args_opt_data jobs_opts[] = {
+    linc_args jobs_opts[] = {
         [SHOW_PIDS] = {
             .long_name = "long",
             .short_name = 'l',
-            .has_arg = ARGS_NO_ARG,
+            .has_arg = LINC_ARGS_ARG_NONE,
         },
-        (args_opt_data){0}
+        (linc_args){0}
     };
 
-    if (args_parse(arg_n + 1, argv, jobs_opts, ARGS_NO_NON_OPTS) == -1)
+    if (linc_args_parse(arg_n + 1, argv, jobs_opts, LINC_ARGS_NO_NON_OPTS) == -1)
         return EXIT_FAILURE;
 
     da_jevent jevs = get_job_info();

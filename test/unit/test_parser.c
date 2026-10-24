@@ -1,6 +1,7 @@
 #include "unity_fixture.h"
 #include "parser.h"
 #include "lexer.h"
+#include "llog.h"
 
 TEST_GROUP(parser);
 

@@ -1,5 +1,7 @@
+#include <pty.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <time.h>
 
 #include "t_assert.h"
 #include "unity_fixture.h" // IWYU pragma: keep
@@ -7,7 +9,7 @@
 #include "t_harness.h"
 #include "t_utils.h"
 
-#define INFO_SEP "\x1b[1;38;2;0;180;148m:\x1b[m"
+#define INFO_SEP "\x1b[1;38;2;255;133;54m:\x1b[m"
 
 static struct timespec tstart, tend;
 

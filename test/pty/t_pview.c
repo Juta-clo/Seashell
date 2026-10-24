@@ -7,7 +7,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#include "linc_tools.h"
+#include "darr.h"
 #include "t_pview.h"
 #include "t_utils.h"
 

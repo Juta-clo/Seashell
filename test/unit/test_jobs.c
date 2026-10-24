@@ -6,6 +6,7 @@
 #include "job_state.h"
 #include "exec_funcs.h"
 #include "wait_stat.h"
+#include "llog.h"
 
 TEST_GROUP(jobs);
 

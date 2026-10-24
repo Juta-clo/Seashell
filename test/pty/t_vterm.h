@@ -3,7 +3,7 @@
 
 #include <vterm.h>
 
-#include "linc_tools.h"
+#include "darr.h"
 #include "t_utils.h"
 
 DA_TYPE(da_charp, char *);

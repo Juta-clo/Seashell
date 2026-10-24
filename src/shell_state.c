@@ -8,45 +8,73 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include "linc_tools.h"
+#include <linc.h>
+#include <linc/args.h>
+#include <linc/xsys.h>
 #include "input.h"
 #include "variable.h"
 #include "map.h"
 #include "shell_state.h"
 #include "sig_funcs.h"
 #include "utils.h"
-#include "llog_sinks.h"
+#include "llog.h"
+
+typedef struct {
+    void(*fatal)(const char *, ...);
+} fatal_wrapper;
+
+fatal_wrapper wrapper = { .fatal = fatal };
+
+static void linc_fatal(const linc_fatal_ctx *ctx, void *user) {
+    char err_buf[BUFSIZ];
+
+    if (ctx->type == LINC_FATAL_OOM) {
+        snprintf(err_buf, BUFSIZ, "%s: out of memory", ctx->msg);
+    } else {
+        int n = snprintf(err_buf, BUFSIZ, "%s", ctx->msg);
+
+        if (n > 0 && n < BUFSIZ && ctx->type == LINC_FATAL_SYS)
+            snprintf(err_buf + n, BUFSIZ - n, ": %s", strerror(ctx->saved_errno));
+
+        llog_site_info site = {
+            .file = ctx->site.file,
+            .func = ctx->site.func,
+            .line = ctx->site.line
+        };
+
+        llog_log(llog_default(), LLOG_ERR, &site, "Linc: %s", err_buf);
+    }
+
+    ((fatal_wrapper *)user)->fatal(err_buf);
+}
+
+linc_fatal_target linc_target = {
+    .handler = linc_fatal,
+    .ctx = &wrapper
+};
 
 shell_env sh_env = {0};
 
-// XFUNCS SET UP
-XFATAL_HANDLER(xfatal_func) {
-    LOG_ERR("%s: %s", XSYSNAME, strerror(XERRNO));
-    err_exit("%s", XSYSNAME);
-}
-static xfatal xf = { .handler = xfatal_func };
-XFATAL_DEFAULT(&xf);
-
-args_opt_data opts[] = {
+linc_args opts[] = {
     [LOGFD] = {
         .long_name = "log-fd",
         .short_name = 'l',
-        .has_arg = ARGS_REQUIRED_ARG,
-        .arg_type = ARGS_INT_ARG
+        .has_arg = LINC_ARGS_ARG_REQ,
+        .arg_type = LINC_ARGS_ARG_INT
     },
     [LOGFILE] = {
         .long_name = "log-file",
         .short_name = 'f',
-        .has_arg = ARGS_REQUIRED_ARG,
-        .arg_type = ARGS_STR_ARG
+        .has_arg = LINC_ARGS_ARG_REQ,
+        .arg_type = LINC_ARGS_ARG_STR
     },
     [PROMPT] = {
         .long_name = "prompt",
         .short_name = 'x',
-        .has_arg = ARGS_REQUIRED_ARG,
-        .arg_type = ARGS_STR_ARG
+        .has_arg = LINC_ARGS_ARG_REQ,
+        .arg_type = LINC_ARGS_ARG_STR
     },
-    (args_opt_data){0}
+    (linc_args){0}
 };
 
 static void seashell_shutdown(void) {
@@ -121,7 +149,9 @@ static void var_setup(shell_env *env) {
 }
 
 void env_setup(shell_env *env, int argc, char *const *argv) {
-    if (args_parse(argc, argv, opts, ARGS_NO_NON_OPTS) == -1)
+    linc_fatal_set_target(linc_target);
+
+    if (linc_args_parse(argc, argv, opts, LINC_ARGS_NO_NON_OPTS) == -1)
         exit(EXIT_FAILURE);
 
     xatexit(seashell_shutdown);

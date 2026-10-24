@@ -3,11 +3,13 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
-#include "linc_tools.h"
-#include "utils.h"
 #include "shell_state.h"
+#include "utils.h"
+
+#include <linc/xsys.h>
 
 #define BUF_SIZE 1024
 

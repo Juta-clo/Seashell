@@ -1,5 +1,5 @@
 #include "shell_state.h"
-#include "linc_tools.h"
+#include "llog.h"
 
 void assert_llog_sink(const llog_info *info) {
     dstr output_msg;

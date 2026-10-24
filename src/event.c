@@ -6,6 +6,8 @@
 #include "variable.h"
 #include "job_state.h"
 
+#include <linc/xsys.h>
+
 #define IN_BG 1
 #define IN_FG 2
 

@@ -3,7 +3,7 @@
 
 #include <ncurses.h>
 
-#include "linc_tools.h"
+#include "t_splitty.h"
 
 typedef enum {
     WIN_RAW,
