@@ -1,4 +1,4 @@
-#define SEASHELL_PATH "/home/juta/Projects/Seashell/"
+#include <linux/limits.h>
 
 #include <wait.h>
 #include <stdlib.h>
@@ -36,10 +36,34 @@ int main(void) {
     if (cpid == -1)
         errExit("fork: %m");
 
+    const char *home = getenv("HOME");
+    if (!home)
+        err_exit("getenv: HOME not defined");
+
+    char seashell[PATH_MAX];
+
+    if (snprintf(seashell, PATH_MAX - 1, "%s/Projects/Seashell", home) == -1)
+        err_exit("snprintf");
+
+    if (chdir(seashell) == -1)
+        err_exit("chdir(%s)", seashell);
+
     if (cpid == 0) {
-        execlp("make", "make", "-s", "-C", SEASHELL_PATH, (char *)NULL);
+        if (setenv("XMAKE_COLORTERM", "color8", 1) == -1)
+            err_exit("setenv");
+
+        execlp("xmake", "xmake", (char *)NULL);
         err_exit("execlp");
     }
+
+    const char *path = getenv("PATH");
+    const char *add = "test/pty/test_bins";
+
+    char new_path[PATH_MAX];
+    snprintf(new_path, PATH_MAX - 1, "%s:%s/%s", (path) ? path : "", seashell, add);
+
+    if (setenv("PATH", new_path, 1) == -1)
+        err_exit("setenv");
 
     int wstat;
     if (waitpid(cpid, &wstat, 0) == -1)
@@ -55,7 +79,7 @@ int main(void) {
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
                 "--track-fds=bad", "--modify-fds=high",
-            SEASHELL_PATH "seashell", "--prompt=cwd", (char *)NULL);
+            "./seashell", "--prompt=cwd", (char *)NULL);
 
     errExit("execl: %m");
 }
