@@ -3,6 +3,7 @@
 #include "llog.h"
 #include "unity_fixture.h"
 #include "path_glob.h"
+#include "darr.h"
 
 TEST_GROUP(glob);
 

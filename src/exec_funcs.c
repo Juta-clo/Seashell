@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <assert.h>
 
+#include "darr.h"
 #include "variable.h"
 #include "utils.h"
 #include "builtins.h"

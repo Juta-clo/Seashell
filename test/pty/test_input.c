@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 
@@ -13,7 +14,7 @@ TEST_GROUP(input);
 TEST_SETUP(input) {
     test_setup();
 
-    if (mkdir("/tmp/sh-tmp", 0700) == -1)
+    if (mkdir("/tmp/sh-tmp", 0700) == -1 && errno != EEXIST)
         xtest_fatal("mkdir");
 }
 

@@ -1,4 +1,5 @@
 #include <linc/xsys.h>
+#include "darr.h"
 #include "path_glob.h"
 #include "utils.h"
 

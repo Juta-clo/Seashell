@@ -4,22 +4,24 @@
 #include <string.h>
 #include <libgen.h>
 
+#include <linc/array.h>
+#include <linc/string.h>
+#include <linc/xsys.h>
+
 #include "parser.h"
 #include "expander.h"
 #include "path_glob.h"
 #include "utils.h"
 #include "variable.h"
 #include "shell_state.h"
-#include "darr.h"
-
-#include <linc/xsys.h>
+#include "utils.h"
 
 static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
         ex_tok_type type) {
     if (c == start)
         return false;
 
-    ex_tok *tok = da_push(toks);
+    ex_tok *tok = linc_array_push(toks);
     tok->type = type;
     tok->str = start;
     tok->str_len = c - start;
@@ -28,7 +30,7 @@ static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
 }
 
 static void push_key(da_ex_tok *toks, const char *start, size_t n) {
-    ex_tok *tok = da_push(toks);
+    ex_tok *tok = linc_array_push(toks);
     tok->type = EXT_KEY;
     tok->str = start;
     tok->str_len = n;
@@ -116,11 +118,9 @@ static char *expand_seg(const char *seg, bool *has_glob) {
 static int expand_word(ps_word *word, da_charp *argv, bool redir) {
     assert(redir || argv);
 
-    int rv = -1;
-
-    dstr arg;
-    dstr_init(&arg);
-
+    linc_allo allo = word->segments.allo;
+    linc_string arg = LINC_STRING_INIT;
+    arg.allo = allo;
     bool has_glob = false;
 
     /* initial variable expansion and concatenation */
@@ -131,15 +131,15 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
 
         if (seg->quote == PS_Q_SINGLE) {
             exp_seg = xstrdup(seg->raw);
-            dstrcat(&arg, exp_seg);
+            linc_string_append(&arg, exp_seg);
 
         } else if (seg->quote == PS_Q_NONE) {
             exp_seg = expand_seg(seg->raw, &has_glob);
-            dstrcat(&arg, exp_seg);
+            linc_string_append(&arg, exp_seg);
 
         } else {
             exp_seg = expand_seg(seg->raw, NULL);
-            dstrcat(&arg, exp_seg);
+            linc_string_append(&arg, exp_seg);
         }
 
         free(exp_seg);
@@ -148,64 +148,56 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
     /* globbing */
 
     if (has_glob) {
-        da_charp glob_result;
+        da_charp matches;
 
-        if (glob_pattern(arg.c_str, arg.len, &glob_result) == -1)
-            goto cleanup;
+        if (glob_pattern(arg.cstr, arg.len, &matches) == -1)
+            return -1;
 
-        if (glob_result.size == 0) {
-            err_msg("no matches found: %s", arg.c_str);
-            goto cleanup;
+        if (matches.size == 0) {
+            err_msg("no matches found: %s", arg.cstr);
+            return -1;
         }
 
         if (redir) {
-            if (glob_result.size > 1) {
+            if (matches.size > 1) {
                 err_msg("ambiguous redirect");
-                free_charp_arr(&glob_result);
-                goto cleanup;
-
-            } else {
-                word->arg = xstrdup(glob_result.data[0]);
-                free_charp_arr(&glob_result);
+                free_charp_arr(&matches);
+                return -1;
+            } else if (matches.size == 1) {
+                word->arg = strdup_alloc(matches.data[0], &allo);
+                free_charp_arr(&matches);
             }
 
         } else if (!redir) {
-            word->arg = xstrdup(arg.c_str);
-            for (size_t i = 0; i < glob_result.size; ++i)
-                *da_push(argv) = glob_result.data[i];
+            word->arg = strdup_alloc(arg.cstr, &allo);
 
-            da_free(&glob_result);
+            for (size_t i = 0; i < matches.size; ++i)
+                *linc_array_push(argv) = strdup_alloc(matches.data[i], &allo);
+
+            free_charp_arr(&matches);
         }
 
     } else {
-        word->arg = xstrdup(arg.c_str);
+        word->arg = strdup_alloc(arg.cstr, &allo);
 
         if (!redir)
-            *da_push(argv) = xstrdup(arg.c_str);
+            *linc_array_push(argv) = word->arg;
     }
 
-    rv = 0;
-
-cleanup:
-    dstr_free(&arg);
-    return rv;
+    return 0;
 }
 
 static int create_argv(ps_cmd *cmd) {
-    da_charp argv = {0};
+    da_charp argv = { .allo = cmd->words.allo };
 
     for (size_t i = 0; i < cmd->words.size; ++i)
         if (expand_word(&cmd->words.data[i], &argv, false) == -1)
-            goto fail;
+            return -1;
 
-    *da_push(&argv) = NULL;
+    *linc_array_push(&argv) = NULL;
     cmd->argv = argv.data;
 
     return 0;
-
-fail:
-    free_charp_arr(&argv);
-    return -1;
 }
 
 int ex_expand_pline(const ps_pline *pline) {

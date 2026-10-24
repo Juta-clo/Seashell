@@ -16,7 +16,7 @@ struct ex_tok {
 };
 
 typedef struct ex_tok ex_tok;
-DA_TYPE(da_ex_tok, ex_tok);
+LINC_ARRAY_TYPE(da_ex_tok, ex_tok);
 
 int ex_expand_pline(const ps_pline *pline);
 

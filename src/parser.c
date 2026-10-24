@@ -2,163 +2,35 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "darr.h"
+#include <linc.h>
+#include <linc/array.h>
 #include "parser.h"
+#include "arena.h"
 #include "lexer.h"
+#include "utils.h"
 
 typedef struct {
     ps_pline *cur_pline;
     ps_cmd *cur_cmd;
     lx_tok *cur_tok;
     ps_redir *queued_redir;
-    ps_andor_op cur_andor_op;
+    ps_andor_op andor_op;
+    ps_ast *ast;
 } ps_scanner;
 
-static int init_ps_segment(ps_segment *segment) {
-    assert(segment);
-
-    *segment = (ps_segment){0};
-
-    return 0;
-}
-
-static void free_ps_segment(ps_segment *segment) {
-    free(segment->raw);
-    *segment = (ps_segment){0};
-}
-
-static int init_word(ps_word *word) {
-    assert(word);
-
-    *word = (ps_word){0};
-    da_init(&word->segments);
-
-    return 0;
-}
-
-static void free_word(ps_word *word) {
-    if (!word)
-        return;
-
-    free(word->arg);
-
-    for (size_t i = 0; i < word->segments.size; ++i)
-        free_ps_segment(&word->segments.data[i]);
-    da_free(&word->segments);
-    *word = (ps_word){0};
-}
-
-static int init_redir(ps_redir *redir) {
-    assert(redir);
-
-    *redir = (ps_redir){0};
-    da_init(&redir->target.segments);
-
-    return 0;
-}
-
-static void free_redir(ps_redir *redir) {
-    if (!redir)
-        return;
-
-    free_word(&redir->target);
-    *redir = (ps_redir){0};
-}
-
-static int init_cmd(ps_cmd *cmd) {
-    assert(cmd);
-
-    *cmd = (ps_cmd){0};
-    da_init(&cmd->words);
-    da_init(&cmd->redirs);
-
-    return 0;
-}
-
-static void free_cmd(ps_cmd *cmd) {
-    if (!cmd)
-        return;
-
-    if (cmd->argv) {
-        for (char **arg = cmd->argv; *arg != NULL; ++arg)
-            free(*arg);
-
-        free(cmd->argv);
-    }
-
-    for (size_t i = 0; i < cmd->words.size; ++i)
-        free_word(&cmd->words.data[i]);
-    for (size_t i = 0; i < cmd->redirs.size; ++i)
-        free_redir(&cmd->redirs.data[i]);
-
-    da_free(&cmd->words);
-    da_free(&cmd->redirs);
-
-    *cmd = (ps_cmd){0};
-}
-
-static int init_pline(ps_pline *pline) {
-    assert(pline);
-
-    *pline = (ps_pline){0};
-    da_init(&pline->cmds);
-
-    return 0;
-}
-
-static void free_pline(ps_pline *pline) {
-    if (!pline)
-        return;
-
-    for (size_t i = 0; i < pline->cmds.size; ++i)
-        free_cmd(&pline->cmds.data[i]);
-    da_free(&pline->cmds);
-
-    *pline = (ps_pline){0};
-}
-
-static int init_andor(ps_andor *andor) {
-    assert(andor);
-
-    *andor = (ps_andor){0};
-    if (init_pline(&andor->pline) == -1)
-        return -1;
-
-    return 0;
-}
-
-static void free_andor(ps_andor *andor) {
-    if (!andor)
-        return;
-
-    free_pline(&andor->pline);
-
-    *andor = (ps_andor){0};
-}
-
-static int init_job(ps_ast *ast) {
-    assert(ast);
-
-    *ast = (ps_ast){0};
-    da_init(&ast->andors);
-
-    return 0;
-}
-
-static int cpy_word(ps_word *dst, lx_tok *src) {
+static void cpy_word(ps_word *dst, lx_tok *src, ps_scanner *scanner) {
     assert(dst);
     assert(dst->segments.size == 0);
 
     for (size_t i = 0; i < src->parts.size; ++i) {
         lx_part *src_part = &src->parts.data[i];
-
-        ps_segment *dst_segment = da_push_init(&dst->segments, init_ps_segment);
-
         size_t n = strlen(src_part->raw) + 1;
 
-        dst_segment->raw = malloc(n);
-        if (!dst_segment->raw)
-            return -1;
+        ps_segment *dst_segment = linc_array_push(&dst->segments);
+
+        *dst_segment = (ps_segment){
+            .raw = scanner->ast->allo.alloc(n, scanner->ast->allo.ctx),
+        };
 
         memcpy(dst_segment->raw, src_part->raw, n);
 
@@ -168,56 +40,17 @@ static int cpy_word(ps_word *dst, lx_tok *src) {
             case LX_Q_NONE:   dst_segment->quote = PS_Q_NONE;   break;
         }
     }
-
-    return 0;
-}
-
-static int add_andor(da_andor *andors, ps_andor_op op,
-        ps_scanner *scanner) {
-    assert(andors);
-
-    ps_andor *andor = da_push_init(andors, init_andor);
-
-    andor->op = op;
-
-    scanner->cur_pline = &andor->pline;
-
-    return 0;
-}
-
-static int ensure_pline(da_andor *andors, ps_andor_op op,
-        ps_scanner *scanner) {
-    if (!scanner->cur_pline)
-        if (add_andor(andors, op, scanner) == -1)
-            return -1;
-
-    return 0;
-}
-
-static int add_cmd(da_cmd *cmds, ps_scanner *scanner) {
-    assert(scanner);
-
-    ps_cmd *cmd = da_push_init(cmds, init_cmd);
-
-    scanner->cur_cmd = cmd;
-
-    return 0;
-}
-
-static int ensure_cmd(ps_pline *pline, ps_scanner *scanner) {
-    if (!scanner->cur_cmd)
-        if (add_cmd(&pline->cmds, scanner) == -1)
-            return -1;
-
-    return 0;
 }
 
 static int queue_redir(lx_kind kind, int append, ps_scanner *scanner) {
     assert(scanner);
 
-    ps_redir *redir = da_push_init(&scanner->cur_cmd->redirs, init_redir);
+    ps_redir *redir = linc_array_push(&scanner->cur_cmd->redirs);
 
-    redir->append = append;
+    *redir = (ps_redir){
+        .append = append,
+        .target.segments.allo = scanner->ast->allo
+    };
 
     switch (kind) {
     case LX_TOK_RDR_IN:  redir->io_num = 0; break;
@@ -231,76 +64,109 @@ static int queue_redir(lx_kind kind, int append, ps_scanner *scanner) {
     return 0;
 }
 
+static void add_cmd(da_cmd *cmds, ps_scanner *scanner) {
+    assert(scanner);
+
+    ps_cmd *cmd = linc_array_push(cmds);
+
+    *cmd = (ps_cmd){
+        .words.allo = scanner->ast->allo,
+        .redirs.allo = scanner->ast->allo
+    };
+
+    scanner->cur_cmd = cmd;
+}
+
+static void add_andor(da_andor *andors, ps_andor_op op,
+        ps_scanner *scanner) {
+    assert(andors);
+
+    ps_andor *andor = linc_array_push(andors);
+
+    *andor = (ps_andor){
+        .op = op,
+        .pline.cmds.allo = scanner->ast->allo
+    };
+
+    scanner->cur_pline = &andor->pline;
+}
+
 void ps_free(ps_ast *ast) {
-    if (!ast)
+    if (!ast || !ast->allo.ctx)
         return;
 
-    for (size_t i = 0; i < ast->andors.size; ++i)
-        free_andor(&ast->andors.data[i]);
-    da_free(&ast->andors);
+    arena_destroy(ast->allo.ctx);
 
     *ast = (ps_ast){0};
 }
 
 int ps_parse(da_tok *tokens, ps_ast *ast) {
+    ASSERT(tokens && ast);
+
     if (!tokens || !ast)
         return -1;
 
     if (tokens->size == 0)
         return -1;
 
-    if (init_job(ast) == -1)
-        goto fail;
+    linc_allo allo = {
+        .alloc = arena_alloc,
+        .free = arena_free,
+        .ctx = arena_create()
+    };
 
-    ps_scanner scanner = {0};
-    scanner.cur_tok = &tokens->data[0];
-    scanner.cur_andor_op = PS_NO_IF;
+    *ast = (ps_ast){ .allo = allo, .andors.allo = allo };
+
+    ps_scanner scanner = {
+        .cur_tok = &tokens->data[0],
+        .andor_op = PS_NO_IF,
+        .ast = ast
+    };
 
     for (size_t i = 0; i < tokens->size; ++i, ++scanner.cur_tok) {
-        if (!scanner.cur_pline || !scanner.cur_cmd || scanner.queued_redir) {
+        if (!scanner.cur_pline || !scanner.cur_cmd || scanner.queued_redir)
             if (scanner.cur_tok->kind != LX_TOK_WORD)
                 goto fail;
-        }
 
         switch (scanner.cur_tok->kind) {
         case LX_TOK_WORD: {
             if (scanner.queued_redir) {
-                if (cpy_word(&scanner.queued_redir->target, scanner.cur_tok) == -1)
-                    goto fail;
+                cpy_word(
+                    &scanner.queued_redir->target,
+                    scanner.cur_tok,
+                    &scanner
+                );
+
                 scanner.queued_redir = NULL;
                 continue;
             }
 
-            ensure_pline(&ast->andors, scanner.cur_andor_op, &scanner);
-            ensure_cmd(scanner.cur_pline, &scanner);
+            if (!scanner.cur_pline)
+                add_andor(&ast->andors, scanner.andor_op, &scanner);
 
-            ps_word *word = da_push_init(&scanner.cur_cmd->words, init_word);
+            if (!scanner.cur_cmd)
+                add_cmd(&scanner.cur_pline->cmds, &scanner);
 
-            if (init_word(word) == -1)
-                goto fail;
-
-            if (cpy_word(word, scanner.cur_tok) == -1)
-                goto fail;
+            scanner.cur_cmd->words.allo = scanner.ast->allo;
+            ps_word *word = linc_array_push(&scanner.cur_cmd->words);
+            *word = (ps_word){ .segments.allo = scanner.ast->allo };
+            cpy_word(word, scanner.cur_tok, &scanner);
 
             break;
         }
-
         case LX_TOK_PIPE:
             scanner.cur_cmd = NULL;
             break;
-
         case LX_TOK_AND_IF:
             scanner.cur_cmd = NULL;
             scanner.cur_pline = NULL;
-            scanner.cur_andor_op = PS_AND_IF;
+            scanner.andor_op = PS_AND_IF;
             break;
-
         case LX_TOK_OR_IF:
             scanner.cur_cmd = NULL;
             scanner.cur_pline = NULL;
-            scanner.cur_andor_op = PS_OR_IF;
+            scanner.andor_op = PS_OR_IF;
             break;
-
         case LX_TOK_BG: {
             if (i != tokens->size - 1)
                 goto fail;
@@ -308,7 +174,6 @@ int ps_parse(da_tok *tokens, ps_ast *ast) {
             ast->bg = true;
             break;
         }
-
         case LX_TOK_RDR_IN:
         case LX_TOK_RDR_OUT:
         case LX_TOK_RDR_ERR:

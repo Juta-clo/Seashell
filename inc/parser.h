@@ -3,8 +3,8 @@
 
 #include <stddef.h>
 
+#include <linc/array.h>
 #include "lexer.h"
-#include "darr.h"
 
 typedef enum {
     PS_AND_IF,
@@ -24,7 +24,7 @@ struct ps_segment {
 };
 
 typedef struct ps_segment ps_segment;
-DA_TYPE(da_segment, ps_segment);
+LINC_ARRAY_TYPE(da_segment, ps_segment);
 
 struct ps_word {
     da_segment segments;
@@ -32,7 +32,7 @@ struct ps_word {
 };
 
 typedef struct ps_word ps_word;
-DA_TYPE(da_word, ps_word);
+LINC_ARRAY_TYPE(da_word, ps_word);
 
 struct ps_redir {
     ps_word target;
@@ -41,7 +41,7 @@ struct ps_redir {
 };
 
 typedef struct ps_redir ps_redir;
-DA_TYPE(da_redir, ps_redir);
+LINC_ARRAY_TYPE(da_redir, ps_redir);
 
 struct ps_cmd {
     da_word words;
@@ -50,7 +50,7 @@ struct ps_cmd {
 };
 
 typedef struct ps_cmd ps_cmd;
-DA_TYPE(da_cmd, ps_cmd);
+LINC_ARRAY_TYPE(da_cmd, ps_cmd);
 
 struct ps_pline {
     da_cmd cmds;
@@ -64,11 +64,12 @@ struct ps_andor {
 };
 
 typedef struct ps_andor ps_andor;
-DA_TYPE(da_andor, ps_andor);
+LINC_ARRAY_TYPE(da_andor, ps_andor);
 
 struct ps_ast {
     da_andor andors;
     bool bg;
+    linc_allo allo;
 };
 
 typedef struct ps_ast ps_ast;

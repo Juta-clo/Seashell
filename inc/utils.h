@@ -4,8 +4,8 @@
 #include <stdnoreturn.h>
 #include <linc.h>
 
+#include <linc/array.h>
 #include "llog.h"
-#include "darr.h"
 
 #define UTIL_PFFORMAT(x, y) __attribute__ ((__format__(printf, (x), (y))))
 #define UTIL_NORETURN __attribute__ ((__noreturn__))
@@ -47,7 +47,7 @@ void errno_msg(const char *fmt, ...);
 UTIL_PFFORMAT(1, 2) UTIL_NORETURN
 void usage_err(const char *fmt, ...);
 
-DA_TYPE(da_charp, char *);
+LINC_ARRAY_TYPE(da_charp, char *);
 
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
@@ -57,6 +57,8 @@ size_t argv_len(char **argv);
 void free_charp_arr(da_charp *arr);
 void free_argv(char **argv);
 [[nodiscard]] char **copy_argv(char **argv);
+
+char *strdup_alloc(const char *str, linc_allo *allo);
 
 #define xfatal(fmt, ...) \
     do { \

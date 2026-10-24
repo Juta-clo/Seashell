@@ -194,3 +194,13 @@ char **copy_argv(char **argv) {
 
     return out;
 }
+
+char *strdup_alloc(const char *str, linc_allo *allo) {
+    ASSERT(str && allo);
+
+    size_t n = strlen(str) + 1;
+    char *out = allo->alloc(n, allo->ctx);
+    memcpy(out, str, n);
+
+    return out;
+}

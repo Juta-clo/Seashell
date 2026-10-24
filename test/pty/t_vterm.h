@@ -3,6 +3,7 @@
 
 #include <vterm.h>
 
+#include <linc/array.h>
 #include "darr.h"
 #include "t_utils.h"
 

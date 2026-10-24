@@ -3,6 +3,7 @@
 
 #include "arena.h"
 #include "utils.h"
+#include "darr.h"
 
 #define ARENA_BLOCK_SIZE 8192
 
