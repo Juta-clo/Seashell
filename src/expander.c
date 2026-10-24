@@ -90,9 +90,8 @@ static void  ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
     try_push_tok(toks, start, c, type);
 }
 
-static char *expand_seg(const char *seg, bool *has_glob) {
-    dstr out;
-    dstr_init(&out);
+static linc_string expand_seg(const char *seg, bool *has_glob) {
+    linc_string out = LINC_STRING_INIT;
 
     da_ex_tok toks;
     ex_tokenize(seg, &toks, has_glob);
@@ -102,17 +101,17 @@ static char *expand_seg(const char *seg, bool *has_glob) {
         if (tok->type == EXT_KEY) {
             sh_var *var = lookup_var_n(&sh_env.vars, tok->str, tok->str_len);
             if (var)
-                dstrcat(&out, var->value);
+                linc_string_append(&out, var->value);
 
         } else if (tok->type == EXT_REG) {
-            dstrncat(&out, tok->str, tok->str_len);
+            linc_string_append_n(&out, tok->str, tok->str_len);
 
         } else
             xfatal("unexpected ex_tok type");
     }
 
-    da_free(&toks);
-    return out.c_str;
+    linc_array_free(&toks);
+    return out;
 }
 
 static int expand_word(ps_word *word, da_charp *argv, bool redir) {
@@ -127,22 +126,21 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
 
     for (size_t i = 0; i < word->segments.size; ++i) {
         ps_segment *seg = &word->segments.data[i];
-        char *exp_seg;
+        linc_string exp_seg = LINC_STRING_INIT;
 
         if (seg->quote == PS_Q_SINGLE) {
-            exp_seg = xstrdup(seg->raw);
-            linc_string_append(&arg, exp_seg);
+            linc_string_append(&arg, seg->raw);
 
         } else if (seg->quote == PS_Q_NONE) {
             exp_seg = expand_seg(seg->raw, &has_glob);
-            linc_string_append(&arg, exp_seg);
+            linc_string_append(&arg, exp_seg.cstr);
 
         } else {
             exp_seg = expand_seg(seg->raw, NULL);
-            linc_string_append(&arg, exp_seg);
+            linc_string_append(&arg, exp_seg.cstr);
         }
 
-        free(exp_seg);
+        linc_string_free(&exp_seg);
     }
 
     /* globbing */

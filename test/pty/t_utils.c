@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/timerfd.h>
@@ -7,8 +8,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+#include <linc/array.h>
 #include "t_utils.h"
-#include "darr.h"
 #include "t_harness.h"
 
 void test_fatal(const char *file, int line, const char *fmt, ...) {
@@ -34,18 +35,18 @@ void add_lines(da_dstr *lines, const char *str) {
         return;
 
     if (lines->size == 0) {
-        dstr *line = da_push(lines);
-        dstr_init(line);
+        linc_string *line = linc_array_push(lines);
+        *line = LINC_STRING_INIT;
     }
 
     for (const char *c = str; *c != '\0'; ++c) {
         if (*c == '\n') {
-            dstr *line = da_push(lines);
-            dstr_init(line);
+            linc_string *line = linc_array_push(lines);
+            *line = LINC_STRING_INIT;
             continue;
         }
 
-        dstr_push(&lines->data[lines->size - 1], *c);
+        linc_string_push(&lines->data[lines->size - 1], *c);
     }
 }
 
@@ -84,32 +85,31 @@ FILE *new_tmp_file(char *path) {
     return f;
 }
 
-void convert_special_chars(dstr *str_out) {
-    dstr out;
-    dstr_init(&out);
+void convert_special_chars(linc_string *str_out) {
+    linc_string out = LINC_STRING_INIT;
 
-    for (char *c = str_out->c_str; *c != '\0'; ++c) {
+    for (char *c = str_out->cstr; *c != '\0'; ++c) {
         switch (*c) {
-        case '\n': dstrcat(&out, "\\n"); break;
-        case '\t': dstrcat(&out, "\\t"); break;
-        case '\r': dstrcat(&out, "\\r"); break;
-        case '\b': dstrcat(&out, "\\b"); break;
-        case '\a': dstrcat(&out, "\\a"); break;
-        case '\f': dstrcat(&out, "\\f"); break;
-        case '\v': dstrcat(&out, "\\v"); break;
+        case '\n': linc_string_append(&out, "\\n"); break;
+        case '\t': linc_string_append(&out, "\\t"); break;
+        case '\r': linc_string_append(&out, "\\r"); break;
+        case '\b': linc_string_append(&out, "\\b"); break;
+        case '\a': linc_string_append(&out, "\\a"); break;
+        case '\f': linc_string_append(&out, "\\f"); break;
+        case '\v': linc_string_append(&out, "\\v"); break;
         default:
             if (*c < 0x20) { /* fallback to caret notation */
-                dstr_push(&out, '^');
-                dstr_push(&out, *c + '@');
+                linc_string_push(&out, '^');
+                linc_string_push(&out, *c + '@');
             } else if (*c == 0x7F) { /*DEL*/
-                dstr_push(&out, *c);
+                linc_string_push(&out, *c);
             } else {
-                dstr_push(&out, *c);
+                linc_string_push(&out, *c);
             }
         }
     }
 
-    dstr_free(str_out);
+    linc_string_free(str_out);
     *str_out = out;
 }
 

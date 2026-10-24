@@ -1,6 +1,6 @@
 #include <assert.h>
 
-#include "llog.h"
+#include <linc/log.h>
 #include "unity_fixture.h"
 #include "input.h"
 
@@ -68,7 +68,6 @@ TEST(input, cur_word_when_there_is_none) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(input) {
-    LOG_INFO(""); LOG_INFO("STARTING TEST MODULE: INPUT"); LOG_INFO("");
     RUN_TEST_CASE(input, next_word_on_non_ws);
     RUN_TEST_CASE(input, next_word_on_ws);
     RUN_TEST_CASE(input, next_word_when_there_is_none);

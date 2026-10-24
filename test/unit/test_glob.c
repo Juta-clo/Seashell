@@ -1,9 +1,8 @@
 #include <assert.h>
 
-#include "llog.h"
 #include "unity_fixture.h"
 #include "path_glob.h"
-#include "darr.h"
+#include <linc/array.h>
 
 TEST_GROUP(glob);
 
@@ -19,7 +18,7 @@ TEST_TEAR_DOWN(glob) {
     for (size_t i = 0; i < matches.size; ++i)
         free(matches.data[i]);
 
-    da_free(&matches);
+    linc_array_free(&matches);
 }
 
 /************ Tests ************/
@@ -57,7 +56,6 @@ TEST(glob, prefix_suffix_match) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(glob) {
-    LOG_INFO(""); LOG_INFO("STARTING TEST MODULE: GLOB"); LOG_INFO("");
     RUN_TEST_CASE(glob, relative_glob);
     RUN_TEST_CASE(glob, absolute_glob);
     RUN_TEST_CASE(glob, no_matches_with_exact_match_pattern);

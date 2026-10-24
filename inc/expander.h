@@ -1,8 +1,8 @@
 #ifndef EXPANDER_H
 #define EXPANDER_H
 
+#include <linc/array.h>
 #include "parser.h"
-#include "darr.h"
 
 typedef enum {
     EXT_REG,

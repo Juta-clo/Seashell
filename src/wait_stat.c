@@ -6,7 +6,6 @@
 
 #include "utils.h"
 #include "wait_stat.h"
-#include "llog.h"
 
 char *get_wstat_str(pid_t pid, int wstat) {
     static char buf[4096];

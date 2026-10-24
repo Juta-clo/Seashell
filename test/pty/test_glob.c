@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#include <linc/array.h>
 #include "t_harness.h" // IWYU pragma: keep
 #include "t_assert.h"
 #include "t_vterm.h"
@@ -26,25 +27,23 @@ typedef struct {
 } glob_dir;
 
 static void add_file(const char *path) {
-    dstr full_path;
-    dstr_init(&full_path);
+    linc_string full_path = LINC_STRING_INIT;
 
-    dstrcat(&full_path, "touch ");
-    dstrcat(&full_path, GLOB_DIR);
-    dstrcat(&full_path, path);
-    xsystem(full_path.c_str);
-    dstr_free(&full_path);
+    linc_string_append(&full_path, "touch ");
+    linc_string_append(&full_path, GLOB_DIR);
+    linc_string_append(&full_path, path);
+    xsystem(full_path.cstr);
+    linc_string_free(&full_path);
 }
 
 static void add_dir(const char *path) {
-    dstr full_path;
-    dstr_init(&full_path);
+    linc_string full_path = LINC_STRING_INIT;
 
-    dstrcat(&full_path, "mkdir -p ");
-    dstrcat(&full_path, GLOB_DIR);
-    dstrcat(&full_path, path);
-    xsystem(full_path.c_str);
-    dstr_free(&full_path);
+    linc_string_append(&full_path, "mkdir -p ");
+    linc_string_append(&full_path, GLOB_DIR);
+    linc_string_append(&full_path, path);
+    xsystem(full_path.cstr);
+    linc_string_free(&full_path);
 }
 
 TEST_SETUP(glob) {

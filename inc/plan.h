@@ -7,8 +7,8 @@
 #include "parser.h"
 
 typedef struct job_plan job_plan;
-DA_TYPE(da_plan, job_plan);
-DA_TYPE(da_int, int);
+LINC_ARRAY_TYPE(da_plan, job_plan);
+LINC_ARRAY_TYPE(da_int, int);
 
 struct job_plan {
     pid_t jid;

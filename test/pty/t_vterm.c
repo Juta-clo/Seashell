@@ -1,6 +1,9 @@
+#include <assert.h>
 #include <vterm.h>
 #include <regex.h>
 
+#include <linc/array.h>
+#include "linc/xsys.h"
 #include "unity_fixture.h" // IWYU pragma: keep
 #include "t_fixture.h" // IWYU pragma: keep
 #include "t_vterm.h"
@@ -12,21 +15,20 @@ static char reg_chars[] = {
     '[', '.', '*', '+', '?', '(', ')', '{', '|', '^', '$', '\\'
 };
 
-static char *reg_convert(char *line) {
-    dstr out;
-    dstr_init(&out);
-    dstr_push(&out, '^');
+static linc_string reg_convert(char *line) {
+    linc_string out = LINC_STRING_INIT;
+    linc_string_push(&out, '^');
 
     if (line) {
         for (char *c = line; *c != '\0'; ++c) {
             if (*c == '%') {
                 switch (c[1]) {
                 case 'd':
-                    dstrcat(&out, "[0-9]+");
+                    linc_string_append(&out, "[0-9]+");
                     ++c;
                     continue;
                 case '%':
-                    dstr_push(&out, '%');
+                    linc_string_push(&out, '%');
                     ++c;
                     continue;
                 default:
@@ -36,24 +38,24 @@ static char *reg_convert(char *line) {
 
             for (size_t i = 0; i < sizeof(reg_chars); ++i) {
                 if (reg_chars[i] == *c) {
-                    dstr_push(&out, '\\');
+                    linc_string_push(&out, '\\');
                     break;
                 }
             }
 
-            dstr_push(&out, *c);
+            linc_string_push(&out, *c);
         }
     }
 
-    dstrcat(&out, "`*$");
-    return out.c_str;
+    linc_string_append(&out, "`*$");
+    return out;
 }
 
 static void vt_output_cb(const char *bytes, size_t len, void *user) {
     if (len == 0 || !bytes || !user)
         return;
 
-    dstrncat(&test->pty_in_data, bytes, len);
+    linc_string_append_n(&test->pty_in_data, bytes, len);
 
     int mfd = *(int *)user;
     if ((size_t) write(mfd, bytes, len) != len)
@@ -129,7 +131,7 @@ da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty) {
 
         if (rv == REG_NOMATCH) {
             regfree(&reg);
-            *da_push(&out) = row;
+            *linc_array_push(&out) = row;
         } else if (rv != 0) {
             regerror(rv, &reg, reg_errbuf, BUFSIZ);
             xtest_fatal("regexec: %s", reg_errbuf);
@@ -147,7 +149,7 @@ void vt_free_snap(vt_snap *snap) {
     for (size_t i = 0; i < snap->lines.size; ++i)
         free(snap->lines.data[i]);
 
-    da_free(&snap->lines);
+    linc_array_free(&snap->lines);
     *snap = (vt_snap){0};
 }
 
@@ -163,7 +165,7 @@ vt_snap vt_get_snap(void) {
     snap.ccol = curs_pos.col;
 
     for (int row = 0; row < test->vt.rows; ++row) {
-        char **line = da_push(&snap.lines);
+        char **line = linc_array_push(&snap.lines);
         *line = calloc(1, test->vt.cols + 1);
         if (!line)
             xtest_fatal("calloc: %m");
@@ -219,7 +221,7 @@ void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol) {
         if (!lines_done && lines[i] == NULL)
             lines_done = true;
 
-        char *s;
+        linc_string s;
 
         if (!lines_done) {
             s = reg_convert(lines[i]);
@@ -227,7 +229,8 @@ void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol) {
             s = reg_convert(NULL);
         }
 
-        *da_push(&snap->lines) = s;
+        *linc_array_push(&snap->lines) = xstrdup(s.cstr);
+        linc_string_free(&s);
     }
 }
 

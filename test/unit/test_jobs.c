@@ -6,7 +6,6 @@
 #include "job_state.h"
 #include "exec_funcs.h"
 #include "wait_stat.h"
-#include "llog.h"
 
 TEST_GROUP(jobs);
 
@@ -207,7 +206,7 @@ void validate_job_events(da_jevent *exp) {
 
 void add_one_proc_job(pid_t jid, pid_t pid) {
     pline_data pdata = { .pgid = pid };
-    *da_push(&pdata.procs) = PPROC(pid);
+    *linc_array_push(&pdata.procs) = PPROC(pid);
 
     add_job(jid, &pdata);
     validate_job_table(&TABLE(JRUN_1P(jid, pid)), get_jctl());
@@ -216,8 +215,8 @@ void add_one_proc_job(pid_t jid, pid_t pid) {
 
 void add_two_proc_job(pid_t jid, pid_t pid) {
     pline_data pdata = { .pgid = pid };
-    *da_push(&pdata.procs) = PPROC(pid);
-    *da_push(&pdata.procs) = PPROC(pid + 1);
+    *linc_array_push(&pdata.procs) = PPROC(pid);
+    *linc_array_push(&pdata.procs) = PPROC(pid + 1);
 
     add_job(jid, &pdata);
     validate_job_table(&TABLE(JRUN_2P(jid, pid)), get_jctl());
@@ -294,7 +293,6 @@ TEST(jobs, two_proc_job_cont) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(jobs) {
-    LOG_INFO(""); LOG_INFO("STARTING TEST MODULE: JOBS"); LOG_INFO("");
     RUN_TEST_CASE(jobs, continue_running_job);
     RUN_TEST_CASE(jobs, one_proc_job_exit);
     RUN_TEST_CASE(jobs, one_proc_job_stop);

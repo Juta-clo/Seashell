@@ -12,6 +12,7 @@ test_*
 !test_bins/
 shell-debug
 log*
+!log_sinks.c
 !log.h
 !log.c
 job_mon

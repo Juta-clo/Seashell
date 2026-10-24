@@ -7,7 +7,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#include "darr.h"
+#include <linc/array.h>
 #include "t_pview.h"
 #include "t_utils.h"
 
@@ -110,7 +110,7 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
         if (start == endptr)
             break;
 
-        ps_pstat *pstat = da_push(pstats);
+        ps_pstat *pstat = linc_array_push(pstats);
 
         pstat->pid = child_pid;
 

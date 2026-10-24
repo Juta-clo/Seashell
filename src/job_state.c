@@ -12,21 +12,17 @@
 #include "shell_state.h"
 
 #include <linc/xsys.h>
+#include <linc/array.h>
+#include <linc/string.h>
 
 static job_table jctl = {0};
 static da_jevent jevs = {0};
-
-static void init_job(jc_job *job) {
-    *job = (jc_job){0};
-
-    da_init(&job->pgrp.procs);
-}
 
 static void free_job(jc_job *job) {
     for (size_t i = 0; i < job->pgrp.procs.size; ++i)
         free_argv(job->pgrp.procs.data[i].argv);
 
-    da_free(&job->pgrp.procs);
+    linc_array_free(&job->pgrp.procs);
     *job = (jc_job){0};
 }
 
@@ -102,7 +98,7 @@ static size_t get_job_index(pid_t jid) {
 static void remove_job (pid_t jid) {
     size_t i = get_job_index(jid);
     free_job(&jctl.jobs.data[i]);
-    da_delete(&jctl.jobs, i);
+    linc_array_delete(&jctl.jobs, i);
 }
 
 static bool job_inter_stopped(jc_job *job) {
@@ -140,12 +136,10 @@ static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
         (p1->stat == PROC_STOP && p1->stop_sig == p2->stop_sig));
 }
 
-static char *get_pline_str(const job_event *jev, int off, int argv_off,
+static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
         bool verbose)
 {
-    dstr out;
-    dstr_init(&out);
-
+    linc_string out = LINC_STRING_INIT;
     int min_offset = 1;
 
     for (size_t y = 0; y < jev->pviews.size; ++y) {
@@ -155,44 +149,44 @@ static char *get_pline_str(const job_event *jev, int off, int argv_off,
         if (verbose || y == 0 || !same_ev_type(pview, &pview[-1])) {
             if (pview->stat == PROC_EXIT) {
                 if (pview->exit_stat == 0)
-                    dstr_printf(&out, "done");
+                    linc_string_appendf(&out, "done");
                 else
-                    dstr_printf(&out, "exit %d", pview->exit_stat);
+                    linc_string_appendf(&out, "exit %d", pview->exit_stat);
             } else if (pview->stat == PROC_RUN) {
-                dstrcat(&out, "running");
+                linc_string_append(&out, "running");
             } else if (pview->stat == PROC_SIG) {
-                dstr_printf(&out, "%s", strsignal(pview->term_sig));
+                linc_string_appendf(&out, "%s", strsignal(pview->term_sig));
             } else if (pview->stat == PROC_STOP) {
-                dstr_printf(&out, "%s", strsignal(pview->stop_sig));
+                linc_string_appendf(&out, "%s", strsignal(pview->stop_sig));
             } else
                 argv_off -= 1;
 
             int len = off + (out.len - prev_len);
             int off = MAX(argv_off - len, min_offset);
-            dstr_printf(&out, "%*s", off, "");
+            linc_string_appendf(&out, "%*s", off, "");
         }
 
         if (verbose)
-            dstr_printf(&out, "%d ", pview->pid);
+            linc_string_appendf(&out, "%d ", pview->pid);
 
         size_t len = argv_len(pview->argv);
 
         for (size_t i = 0; i < len; ++i) {
-            dstrcat(&out, pview->argv[i]);
+            linc_string_append(&out, pview->argv[i]);
             if (i != len - 1)
-                dstrcat(&out, " ");
+                linc_string_append(&out, " ");
         }
 
         if (y != jev->pviews.size - 1) {
             if (!verbose && same_ev_type(pview, &pview[1])) {
-                dstr_printf(&out, " | ");
+                linc_string_appendf(&out, " | ");
             } else {
-                dstr_printf(&out, " |\n%*s", off, "");
+                linc_string_appendf(&out, " |\n%*s", off, "");
             }
         }
     }
 
-    return out.c_str;
+    return out;
 }
 
 static void display_msg(const char *msg) {
@@ -211,44 +205,43 @@ static void display_msg(const char *msg) {
 void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
     sh_env.need_prompt = true;
 
-    dstr msg;
-    dstr_init(&msg);
-    dstr_printf(&msg, "[%d] ", jid);
+    linc_string msg = LINC_STRING_INIT;
+    linc_string_appendf(&msg, "[%d] ", jid);
 
     job_plan *plan = lookup_plan(jid, NULL);
     int offset = msg.len;
 
     for (size_t i = 0; i < plan->exit_events.size; ++i) {
         job_event *next = &plan->exit_events.data[i];
-        char *s = get_pline_str(next, offset, 21, verbose);
-        dstrcat(&msg, s);
-        free(s);
+        linc_string s = get_pline_str(next, offset, 21, verbose);
+        linc_string_append(&msg, s.cstr);
+        linc_string_free(&s);
 
         if (i != plan->exit_events.size - 1 || jev) {
             size_t index = plan->exit_event_indexes.data[i];
 
             if (plan->ast->andors.data[index].op == PS_AND_IF) {
-                dstrcat(&msg, " &&");
+                linc_string_append(&msg, " &&");
             } else if (plan->ast->andors.data[index].op == PS_OR_IF) {
-                dstrcat(&msg, " ||");
+                linc_string_append(&msg, " ||");
             } else {
                 ASSERT(false && "should not be possible");
             }
 
-            dstr_printf(&msg, "\n%*s", offset, "");
+            linc_string_appendf(&msg, "\n%*s", offset, "");
         }
     }
 
     if (jev) {
-        char *s = get_pline_str(jev, offset, 21, verbose);
-        dstrcat(&msg, s);
-        free(s);
+        linc_string s = get_pline_str(jev, offset, 21, verbose);
+        linc_string_append(&msg, s.cstr);
+        linc_string_free(&s);
     }
 
-    display_msg(msg.c_str);
-    LOG_INFO("%s", msg.c_str);
+    display_msg(msg.cstr);
+    LOG_INFO("%s", msg.cstr);
 
-    dstr_free(&msg);
+    linc_string_free(&msg);
 }
 
 pid_t create_job_id(void) {
@@ -273,7 +266,7 @@ pid_t create_job_id(void) {
 void free_job_event(job_event *jev) {
     for (size_t i = 0; i < jev->pviews.size; ++i)
         free_argv(jev->pviews.data[i].argv);
-    da_free(&jev->pviews);
+    linc_array_free(&jev->pviews);
 }
 
 void clear_job_table(void) {
@@ -282,7 +275,7 @@ void clear_job_table(void) {
         free_job(&jctl.jobs.data[i]);
     }
 
-    da_free(&jctl.jobs);
+    linc_array_free(&jctl.jobs);
 }
 
 void clear_job_events(void) {
@@ -290,7 +283,7 @@ void clear_job_events(void) {
     while ((jev = pop_job_event()))
         free_job_event(jev);
 
-    da_free(&jevs);
+    linc_array_free(&jevs);
 }
 
 job_table *get_jctl(void) {
@@ -313,21 +306,21 @@ job_event *pop_job_event(void) {
 
     jev = jevs.data[0];
 
-    da_delete(&jevs, 0);
+    linc_array_delete(&jevs, 0);
 
     return &jev;
 }
 
 void add_job_event(job_event jev) {
-    *da_push(&jevs) = jev;
+    *linc_array_push(&jevs) = jev;
 }
 
 void capture_job_state(jc_job *job, job_event *jev) {
-    da_init(&jev->pviews);
+    jev->pviews = (da_proc_view){0};
 
     for (size_t i = 0; i < job->pgrp.procs.size; ++i) {
         jc_proc *proc = &job->pgrp.procs.data[i];
-        proc_view *pview = da_push(&jev->pviews);
+        proc_view *pview = linc_array_push(&jev->pviews);
 
         pview->pid = proc->pid;
         pview->stat = proc->stat;
@@ -344,19 +337,18 @@ void capture_job_state(jc_job *job, job_event *jev) {
 }
 
 da_jevent get_job_info(void) {
-    da_jevent jevs;
-    da_init(&jevs);
+    da_jevent jevs = {0};
 
     for (size_t i = 0; i < jctl.jobs.size; ++i) {
         jc_job *job = &jctl.jobs.data[i];
 
-        job_event *jev = da_push(&jevs);
+        job_event *jev = linc_array_push(&jevs);
         *jev = (job_event){
             .jid = job->jid,
-            .type = JINFO
+            .type = JINFO,
+            .pviews = {0}
         };
 
-        da_init(&jev->pviews);
         capture_job_state(job, jev);
     }
 
@@ -364,7 +356,7 @@ da_jevent get_job_info(void) {
 }
 
 void push_continue_event(jc_job *job) {
-    job_event *jev = da_push(&jevs);
+    job_event *jev = linc_array_push(&jevs);
     *jev = (job_event){0};
 
     jev->type = JCONTINUED;
@@ -373,7 +365,7 @@ void push_continue_event(jc_job *job) {
 }
 
 void push_stop_event(jc_job *job) {
-    job_event *jev = da_push(&jevs);
+    job_event *jev = linc_array_push(&jevs);
     *jev = (job_event){0};
 
     jev->type = JSTOPPED;
@@ -383,7 +375,7 @@ void push_stop_event(jc_job *job) {
 }
 
 void push_exit_event(jc_job *job) {
-    job_event *jev = da_push(&jevs);
+    job_event *jev = linc_array_push(&jevs);
     *jev = (job_event){0};
 
     jev->type = JEXITED;
@@ -460,7 +452,7 @@ void queue_builtin_exit_event(pid_t jid, char **argv, int status) {
         .exit_type = JEXIT_NORMAL,
     };
 
-    proc_view* pview = da_push(&jev.pviews);
+    proc_view* pview = linc_array_push(&jev.pviews);
     *pview = (proc_view){
         .stat = PROC_EXIT,
         .exit_stat = status
@@ -479,16 +471,15 @@ void add_job(pid_t jid, pline_data *pld) {
     if (pld->procs.size == 0)
         xfatal("empty pline proc array");
 
-    jc_job *job = da_push(&jctl.jobs);
-
-    init_job(job);
+    jc_job *job = linc_array_push(&jctl.jobs);
+    *job = (jc_job){0};
 
     job->jid = jid;
     job->stat = JOB_RUN;
     job->pgrp.pgid = pld->pgid;
 
     for (size_t i = 0; i < pld->procs.size; ++i) {
-        jc_proc *proc = da_push(&job->pgrp.procs);
+        jc_proc *proc = linc_array_push(&job->pgrp.procs);
         pline_proc *pproc = &pld->procs.data[i];
 
         proc->pid = pproc->pid;
@@ -499,7 +490,7 @@ void add_job(pid_t jid, pline_data *pld) {
             job->last = proc;
     }
 
-    da_free(&pld->procs);
+    linc_array_free(&pld->procs);
 }
 
 int launch_job(ps_pline *pline, bool bg, pid_t jid) {

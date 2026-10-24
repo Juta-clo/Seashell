@@ -3,7 +3,7 @@
 
 #include <sys/wait.h>
 
-#include "darr.h"
+#include <linc/array.h>
 
 typedef enum {
     PEXITED,
@@ -24,7 +24,7 @@ struct wait_event {
 };
 
 typedef struct wait_event wait_event;
-DA_TYPE(da_wevent, wait_event);
+LINC_ARRAY_TYPE(da_wevent, wait_event);
 
 char *get_wstat_str(pid_t pid, int wstat);
 int get_wstat(wait_event *wev);

@@ -136,9 +136,7 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
     }
 
     if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {
-        if (tcsetpgrp(sh_env->tty_fd, getpgid(0)) == -1)
-            xfatal("%s: failed to restore shell fg group", argv[0]);
-
+        tcsetpgrp(sh_env->tty_fd, getpgid(0));
         return EXIT_FAILURE;
     }
 
@@ -302,7 +300,7 @@ static int run_jobs_builtin(char **argv, shell_env *sh_env) {
         free_job_event(&jevs.data[i]);
     }
 
-    da_free(&jevs);
+    linc_array_free(&jevs);
     return EXIT_SUCCESS;
 }
 

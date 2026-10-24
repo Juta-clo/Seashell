@@ -7,6 +7,7 @@
 #include "job_state.h"
 
 #include <linc/xsys.h>
+#include <linc/array.h>
 
 #define IN_BG 1
 #define IN_FG 2
@@ -30,7 +31,7 @@ static bool try_run_next_job(pid_t jid, bool success, int how) {
         if (launch_job(&andor->pline, bg, plan->jid) == -1)
             return false;
 
-        *da_push(&plan->exit_event_indexes) = plan->index - 1;
+        *linc_array_push(&plan->exit_event_indexes) = plan->index - 1;
         execed_pline = true;
         break;
     }
@@ -57,7 +58,7 @@ static void handle_fg_event(job_event *jev) {
 
     if (jev->type == JEXITED) {
         job_plan *plan = lookup_plan(jev->jid, NULL);
-        *da_push(&plan->exit_events) = *jev;
+        *linc_array_push(&plan->exit_events) = *jev;
 
         update_status_variable(&sh_env.vars, jev);
 
@@ -122,7 +123,7 @@ static void handle_bg_event(job_event *jev) {
     }
 
     job_plan *plan = lookup_plan(jev->jid, NULL);
-    *da_push(&plan->exit_events)  = *jev;
+    *linc_array_push(&plan->exit_events)  = *jev;
 
     if (jev->exit_type == JEXIT_NORMAL &&
         try_run_next_job(jev->jid, jev->success, IN_BG))

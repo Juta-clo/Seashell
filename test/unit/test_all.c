@@ -1,15 +1,15 @@
 #include <unistd.h>
 
+#include <linc/log.h>
 #include "unity_fixture.h"
 #include "shell_state.h"
-#include "llog.h"
 
 static FILE *log_file;
 
-void assert_llog_sink(const llog_info *info) {
+static void unit_assert_sink(const linc_log_ctx *ctx, void *_) {
     char log_buf[BUFSIZ];
 
-    int n = snprintf(log_buf, BUFSIZ, "ASSERT: %s\n", info->msg);
+    int n = snprintf(log_buf, BUFSIZ, "ASSERT: %s\n", ctx->msg);
 
     if (n < 0)
         return;
@@ -22,17 +22,13 @@ void assert_llog_sink(const llog_info *info) {
     fprintf(stderr, "\x1b[41m%s\x1b[m", log_buf);
 }
 
-void shell_llog_sink(const llog_info *info) {
-    char *lvl_str;
-    switch (info->log_level) {
-    case LLOG_INFO: lvl_str = "INFO"; break;
-    case LLOG_WARN: lvl_str = "WARN"; break;
-    case LLOG_ERR:  lvl_str = "ERROR"; break;
-    }
-
+static void unit_shell_sink(const linc_log_ctx *ctx, void *_) {
     char log_buf[BUFSIZ];
 
-    int n = snprintf(log_buf, BUFSIZ, "%s: %s\n", lvl_str, info->msg);
+    int n = snprintf(log_buf, BUFSIZ, "%s: %s\n",
+        linc_log_level_str(ctx->level),
+        ctx->msg
+    );
 
     if (n < 0)
         return;
@@ -45,16 +41,20 @@ void shell_llog_sink(const llog_info *info) {
     fprintf(log_file, "%s", log_buf);
 }
 
-llog unit_llog = { .sink = shell_llog_sink };
-llog unit_assert_llog = { .sink = assert_llog_sink };
-
-LLOG_DEFAULT(&unit_llog);
+linc_log unit_shell_log = { .sink = unit_shell_sink };
+linc_log unit_assert_log = { .sink = unit_assert_sink };
 
 void run_all(void) {
+    fprintf(log_file, "--Starting test group: lexer--\n");
+    LINC_LOG_INFO("hi");
     RUN_TEST_GROUP(lexer);
+    fprintf(log_file, "\n--Starting test group: parser--\n");
     RUN_TEST_GROUP(parser);
+    fprintf(log_file, "\n--Starting test group: jobs--\n");
     RUN_TEST_GROUP(jobs);
+    fprintf(log_file, "\n--Starting test group: input--\n");
     RUN_TEST_GROUP(input);
+    fprintf(log_file, "\n--Starting test group: glob--\n");
     RUN_TEST_GROUP(glob);
 }
 
@@ -64,7 +64,8 @@ int main(int argc, const char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    sh_env.assert_llog = unit_assert_llog;
+    sh_env.shell_log = unit_shell_log;
+    sh_env.assert_log = unit_assert_log;
 
     return UnityMain(argc, argv, run_all);
 }

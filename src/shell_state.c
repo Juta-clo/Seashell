@@ -17,7 +17,6 @@
 #include "shell_state.h"
 #include "sig_funcs.h"
 #include "utils.h"
-#include "llog.h"
 
 typedef struct {
     void(*fatal)(const char *, ...);
@@ -33,16 +32,28 @@ static void linc_fatal(const linc_fatal_ctx *ctx, void *user) {
     } else {
         int n = snprintf(err_buf, BUFSIZ, "%s", ctx->msg);
 
-        if (n > 0 && n < BUFSIZ && ctx->type == LINC_FATAL_SYS)
-            snprintf(err_buf + n, BUFSIZ - n, ": %s", strerror(ctx->saved_errno));
+        if (n > 0 && n < BUFSIZ && ctx->type == LINC_FATAL_SYS) {
+            snprintf(
+                err_buf + n,
+                BUFSIZ - n,
+                ": %s",
+                strerror(ctx->saved_errno)
+            );
+        }
 
-        llog_site_info site = {
+        linc_site site = {
             .file = ctx->site.file,
             .func = ctx->site.func,
             .line = ctx->site.line
         };
 
-        llog_log(llog_default(), LLOG_ERR, &site, "Linc: %s", err_buf);
+        linc_log_write(
+            sh_env.shell_log,
+            LINC_LOG_ERROR,
+            site,
+            "Linc: %s",
+            err_buf
+        );
     }
 
     ((fatal_wrapper *)user)->fatal(err_buf);
@@ -124,7 +135,10 @@ static void log_setup(int *log_fd) {
         *log_fd = -1;
     }
 
-    sh_env.assert_llog.sink = assert_llog_sink;
+    sh_env.shell_log = (linc_log){ .sink = shell_log_sink };
+    sh_env.assert_log = (linc_log){ .sink = assert_log_sink };
+
+    linc_log_set_default(sh_env.shell_log);
 }
 
 static void var_setup(shell_env *env) {

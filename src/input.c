@@ -1,3 +1,5 @@
+#include "linc/string.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <linux/limits.h>
@@ -618,25 +620,24 @@ static void get_path_entries(da_charp *pents) {
         xfatal("unexpected strtok return value");
 
     do {
-        *da_push(pents) = xstrdup(tok);
+        *linc_array_push(pents) = xstrdup(tok);
     } while ((tok = strtok(NULL, ":")));
 
     free(path_str);
 }
 
-static void escape_spaces(char **str) {
-    dstr out;
-    dstr_init(&out);
+static void escape_spaces(linc_string *str) {
+    linc_string out = LINC_STRING_INIT;
 
-    for (char *c = *str; *c != '\0'; ++c) {
+    for (char *c = str->cstr; *c != '\0'; ++c) {
         if (*c == ' ') {
-            dstrcat(&out, "\\ ");
+            linc_string_append(&out, "\\ ");
         } else
-            dstrncat(&out, c, 1);
+            linc_string_append_n(&out, c, 1);
     }
 
-    free(*str);
-    *str = out.c_str;
+    linc_string_free(str);
+    *str = out;
 }
 
 static void insert_mode_feed_key(PrinttyInputKey key) {
@@ -732,22 +733,21 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
             bool append_slash = is_dir(matches.data[i]);
             char *bn = basename(matches.data[i]);
 
-            dstr result;
-            dstr_init(&result);
+            linc_string result = LINC_STRING_INIT;
 
             if (path_pre)
-                dstr_printf(&result, "%s/", glob_dirname);
+                linc_string_appendf(&result, "%s/", glob_dirname);
 
-            dstrcat(&result, bn);
+            linc_string_append(&result, bn);
 
             if (append_slash)
-                dstrcat(&result, "/");
+                linc_string_append(&result, "/");
 
             free(matches.data[i]);
             free(glob_copy);
 
-            escape_spaces(&result.c_str);
-            matches.data[i] = result.c_str;
+            escape_spaces(&result);
+            matches.data[i] = result.cstr;
         }
 
         input_move(input.comp.start_i);

@@ -20,48 +20,48 @@ static void get_diff_msg(void) {
     da_int dirty_lines = vt_ch_dirty(&test->vt_exp, &test->vt_act, &curs_dirty);
 
     if (curs_dirty) {
-        dstr_printf(&test->diff_msg, "CURSOR -- DIRTY\n");
+        linc_string_appendf(&test->diff_msg, "CURSOR -- DIRTY\n");
     } else {
-        dstr_printf(&test->diff_msg, "CURSOR -- CLEAN\n");
+        linc_string_appendf(&test->diff_msg, "CURSOR -- CLEAN\n");
     }
 
-    dstr_printf(&test->diff_msg, "expected [%d,%d] actual [%d,%d]\n",
+    linc_string_appendf(&test->diff_msg, "expected [%d,%d] actual [%d,%d]\n",
             test->vt_exp.crow, test->vt_exp.ccol,
             test->vt_act.crow, test->vt_act.ccol);
 
     if (dirty_lines.size != 0) {
-        dstr_printf(&test->diff_msg, "VTERM -- DIRTY\n");
-        dstr_printf(&test->diff_msg, "---expected\n");
-        dstr_printf(&test->diff_msg, "+++actual\n");
+        linc_string_appendf(&test->diff_msg, "VTERM -- DIRTY\n");
+        linc_string_appendf(&test->diff_msg, "---expected\n");
+        linc_string_appendf(&test->diff_msg, "+++actual\n");
 
         for (size_t i = 0; i < dirty_lines.size; ++i) {
             int ind = dirty_lines.data[i];
             char *exp = test->vt_exp.lines.data[ind];
             char *act = test->vt_act.lines.data[ind];
 
-            dstr_printf(&test->diff_msg, "%d -%s\n", ind, exp);
-            dstr_printf(&test->diff_msg, "%d +%s\n", ind, act);
+            linc_string_appendf(&test->diff_msg, "%d -%s\n", ind, exp);
+            linc_string_appendf(&test->diff_msg, "%d +%s\n", ind, act);
         }
     } else {
-        dstr_printf(&test->diff_msg, "VTERM -- CLEAN\n");
+        linc_string_appendf(&test->diff_msg, "VTERM -- CLEAN\n");
     }
 }
 
 static void log_test(void) {
-    *da_push(&test->snaps) = vt_get_snap();
+    *linc_array_push(&test->snaps) = vt_get_snap();
 
     fprintf(ptyh.log_file, "%s\n", ptyh.cmd_str);
     fprintf(ptyh.log_file, "%s:FAIL:%s:%d:%s\n",
             test->test_name, test->test_file, test->fail_line,
-            test->fail_msg.c_str);
+            test->fail_msg.cstr);
 
     fprintf(ptyh.log_file, "===DIFF(` marks empty cell)===\n");
-    fprintf(ptyh.log_file, "%s", test->diff_msg.c_str);
+    fprintf(ptyh.log_file, "%s", test->diff_msg.cstr);
 
     fprintf(ptyh.log_file, "===SHELL LOGS===\n");
     for (size_t i = 0; i < test->shlog_lines.size; ++i) {
-        dstr *line = &test->shlog_lines.data[i];
-        fprintf(ptyh.log_file, "%s", line->c_str);
+        linc_string *line = &test->shlog_lines.data[i];
+        fprintf(ptyh.log_file, "%s", line->cstr);
         if (i != test->shlog_lines.size - 1)
             fprintf(ptyh.log_file, "\n");
     }
@@ -74,15 +74,15 @@ static void log_test(void) {
         fprintf(ptyh.log_file, "CLEAN\n");
     } else {
         for (size_t i = 0; i < test->val_lines.size; ++i) {
-            dstr *line = &test->val_lines.data[i];
-            fprintf(ptyh.log_file, "%s\n", line->c_str);
+            linc_string *line = &test->val_lines.data[i];
+            fprintf(ptyh.log_file, "%s\n", line->cstr);
         }
     }
 
     convert_special_chars(&test->pty_out_data);
     convert_special_chars(&test->pty_in_data);
-    fprintf(ptyh.log_raw_out, "%s\n", test->pty_out_data.c_str);
-    fprintf(ptyh.log_raw_in, "%s\n", test->pty_in_data.c_str);
+    fprintf(ptyh.log_raw_out, "%s\n", test->pty_out_data.cstr);
+    fprintf(ptyh.log_raw_in, "%s\n", test->pty_in_data.cstr);
 }
 
 #define INFO_SEP "\x1b[1;38;2;255;133;54m:\x1b[m"
@@ -105,7 +105,7 @@ static void print_test_fail(void) {
         if (test->fail_line != 0)
             printf("%d:", test->fail_line);
 
-        printf("%s:FAIL\n", test->fail_msg.c_str);
+        printf("%s:FAIL\n", test->fail_msg.cstr);
     } else {
         printf("%s" INFO_SEP "%s" INFO_SEP,
                 test->test_name, test->test_file);
@@ -113,7 +113,7 @@ static void print_test_fail(void) {
         if (test->fail_line != 0)
             printf("\x1b[1;38;2;50;200;150m%d\x1b[m" INFO_SEP, test->fail_line);
 
-        printf("%s" INFO_SEP "\x1b[97;41mFAIL\x1b[m\n", test->fail_msg.c_str);
+        printf("%s" INFO_SEP "\x1b[97;41mFAIL\x1b[m\n", test->fail_msg.cstr);
     }
 }
 
@@ -161,11 +161,12 @@ static void test_shutdown_prgm(void) {
             test_push_err("valgrind error(s)");
         }
 
-        dstr_printf(&test->exit_msg, "Exited with status %d", exit_status);
+        linc_string_appendf(&test->exit_msg, "Exited with status %d",
+                exit_status);
     } else if (WIFSIGNALED(stat)) {
         Unity.CurrentTestFailed = true;
         int term_sig = WTERMSIG(stat);
-        dstr_printf(&test->exit_msg, "Terminated by signal %d (%s)",
+        linc_string_appendf(&test->exit_msg, "Terminated by signal %d (%s)",
                 term_sig, strsignal(term_sig));
         test_push_err("Unexpected termination: %d (%s)",
                 term_sig, strsignal(term_sig));
@@ -173,11 +174,11 @@ static void test_shutdown_prgm(void) {
         xtest_fatal("Unexpected wstat");
     }
 
-    add_lines(&test->shlog_lines, test->shell_data.c_str);
-    add_lines(&test->val_lines, test->val_data.c_str);
+    add_lines(&test->shlog_lines, test->shell_data.cstr);
+    add_lines(&test->val_lines, test->val_data.cstr);
 
     for (size_t i = 0; i < test->shlog_lines.size; ++i) {
-        char *line = test->shlog_lines.data[i].c_str;
+        char *line = test->shlog_lines.data[i].cstr;
         if (strncmp("ERROR", line, 5) == 0 ||
             strncmp("WARN", line, 4) == 0) {
             Unity.CurrentTestFailed = true;
@@ -207,14 +208,14 @@ void test_push_err(const char *fmt, ...) {
     va_end(va);
 
     if (test->fail_msg.len > 0)
-        dstrcat(&test->fail_msg, " && ");
+        linc_string_append(&test->fail_msg, " && ");
 
-    dstrcat(&test->fail_msg, msg);
+    linc_string_append(&test->fail_msg, msg);
     free(msg);
 }
 
 void test_setup(void) {
-    test = da_push(&ptyh.tests);
+    test = linc_array_push(&ptyh.tests);
     *test = (pty_test){0};
 
     struct winsize ws = { .ws_row = 15, .ws_col = 60 };
@@ -235,14 +236,14 @@ void test_setup(void) {
     test->test_name = strdup(Unity.CurrentTestName);
     test->test_file = strdup(Unity.TestFile);
 
-    dstr_init(&test->pty_out_data);
-    dstr_init(&test->pty_in_data);
-    dstr_init(&test->shell_data);
-    dstr_init(&test->val_data);
+    test->pty_out_data = LINC_STRING_INIT;
+    test->pty_in_data = LINC_STRING_INIT;
+    test->shell_data = LINC_STRING_INIT;
+    test->val_data = LINC_STRING_INIT;
 
-    dstr_init(&test->fail_msg);
-    dstr_init(&test->exit_msg);
-    dstr_init(&test->diff_msg);
+    test->fail_msg = LINC_STRING_INIT;
+    test->exit_msg = LINC_STRING_INIT;
+    test->diff_msg = LINC_STRING_INIT;
 
     if (clock_gettime(CLOCK_MONOTONIC, &tstart) == -1)
         xtest_fatal("clock_gettime");
@@ -260,7 +261,7 @@ void test_teardown(void) {
         "Seashell %s",
         test->test_name,
         test->duration,
-        test->exit_msg.c_str
+        test->exit_msg.cstr
     );
 
     if (!test->test_ok || test->val_err) {
@@ -269,7 +270,7 @@ void test_teardown(void) {
         if (test->diff_snaps) {
             get_diff_msg();
             test_write("===DIFF===");
-            test_write("%s", test->diff_msg.c_str);
+            test_write("%s", test->diff_msg.cstr);
         }
 
         log_test();

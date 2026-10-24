@@ -1,7 +1,7 @@
 #include <assert.h>
 
 #include "plan.h"
-#include "llog.h"
+#include "utils.h"
 
 da_plan plans = {0};
 
@@ -15,7 +15,7 @@ ps_andor *plan_next(job_plan *plan) {
 job_plan *add_plan(pid_t jid, ps_ast *ast) {
     LOG_INFO("added plan jid=%d", jid);
 
-    job_plan *plan = da_push(&plans);
+    job_plan *plan = linc_array_push(&plans);
     *plan = (job_plan){0};
 
     plan->jid = jid;
@@ -29,13 +29,13 @@ void remove_plan(size_t index) {
 
     for (size_t i = 0; i < plans.data[index].exit_events.size; ++i)
         free_job_event(&plans.data[index].exit_events.data[i]);
-    da_free(&plans.data[index].exit_events);
-    da_free(&plans.data[index].exit_event_indexes);
+    linc_array_free(&plans.data[index].exit_events);
+    linc_array_free(&plans.data[index].exit_event_indexes);
 
     ps_free(plans.data[index].ast);
     free(plans.data[index].ast);
 
-    da_delete(&plans, index);
+    linc_array_delete(&plans, index);
 }
 
 void plan_done(pid_t jid) {

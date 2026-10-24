@@ -1,5 +1,6 @@
+#include <errno.h>
 #include <linc/xsys.h>
-#include "darr.h"
+#include <linc/array.h>
 #include "path_glob.h"
 #include "utils.h"
 
@@ -14,7 +15,7 @@ static void get_path_components(char *str, da_charp *comps) {
         xfatal("unexpected strtok return value");
 
     do {
-        *da_push(comps) = tok;
+        *linc_array_push(comps) = tok;
     } while ((tok = strtok(NULL, "/")));
 }
 
@@ -57,7 +58,7 @@ static da_charp get_substrs(const char *comp, size_t *pre_n, size_t *suf_n,
             return sub_strings;
         }
 
-        *da_push(&sub_strings) = xstrndup(&comp[i - n], n);
+        *linc_array_push(&sub_strings) = xstrndup(&comp[i - n], n);
 
         if (comp[++i] == '\0') {
             *suf_n = 0;
@@ -139,7 +140,7 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
             if (dirs && !(dirent->d_type == DT_DIR || is_prev_dirent))
                 continue;
 
-            char **dent = da_push(dents);
+            char **dent = linc_array_push(dents);
             *dent = xmalloc(strlen(path) + strlen(dirent->d_name) + 2);
 
             if (strcmp(path, "/") == 0)
@@ -155,7 +156,7 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
 
     for (size_t i = 0; i < og_dent_size; ++i) {
         free(dents->data[0]);
-        da_delete(dents, 0);
+        linc_array_delete(dents, 0);
     }
 
     LOG_INFO("dents updated; new size %ld", dents->size);
@@ -176,7 +177,7 @@ static void filter_dents(const char *glob, da_charp *dents) {
             !substrs_ok(base_name, &substrs, pre_n, suf_n))
         {
             free(dents->data[i]);
-            da_delete(dents, i--);
+            linc_array_delete(dents, i--);
         }
 
         free(dent_cpy);
@@ -202,17 +203,17 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
     get_path_components(glob_text, &comps);
 
     if (glob[0] == '/') {
-        *da_push(&dents) = xstrdup("/");
+        *linc_array_push(&dents) = xstrdup("/");
 
     } else {
         if (strcmp(".", comps.data[0]) == 0 ||
             strcmp("..", comps.data[0]) == 0)
         {
-            *da_push(&dents) = xstrdup(comps.data[0]);
-            da_delete(&comps, 0);
+            *linc_array_push(&dents) = xstrdup(comps.data[0]);
+            linc_array_delete(&comps, 0);
 
         } else {
-            *da_push(&dents) = xstrdup(".");
+            *linc_array_push(&dents) = xstrdup(".");
         }
     }
 
@@ -233,7 +234,7 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
             qsort(dents.data, dents.size, sizeof(char *), cmp_match);
 
             for (size_t dent_i = 0; dent_i < dents.size; ++dent_i)
-                *da_push(matches) = xstrdup(dents.data[dent_i]);
+                *linc_array_push(matches) = xstrdup(dents.data[dent_i]);
         }
     }
 
@@ -242,7 +243,7 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
 cleanup:
     free(glob_text);
     free_charp_arr(&dents);
-    da_free(&comps);
+    linc_array_free(&comps);
 
     return rv;
 }

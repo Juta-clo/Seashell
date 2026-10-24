@@ -7,9 +7,9 @@
 #include <unistd.h>
 
 #include <linc/args.h>
+#include <linc/log.h>
 #include "map.h"
 #include "printty.h"
-#include "llog.h"
 
 #define NOFG -1
 
@@ -24,7 +24,8 @@ typedef struct {
     struct termios tty_state;
     Printty *pt;
     bool need_prompt;
-    llog assert_llog;
+    linc_log shell_log;
+    linc_log assert_log;
     int fg_pending;
 } shell_env;
 
@@ -40,5 +41,8 @@ extern linc_args opts[];
 extern char **environ;
 
 void env_setup(shell_env *env, int argc, char *const *argv);
+
+void assert_log_sink(const linc_log_ctx *ctx, void *user_ctx);
+void shell_log_sink(const linc_log_ctx *ctx, void *user_ctx);
 
 #endif

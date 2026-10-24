@@ -1,6 +1,8 @@
+#include <assert.h>
 #include <signal.h>
 #include <unistd.h>
 
+#include <linc/array.h>
 #include "t_assert.h"
 #include "t_harness.h"
 #include "t_pview.h"
@@ -15,7 +17,7 @@ bool verify_bytes(const char *str) {
             continue;
 
         for (size_t i = start; i < test->pty_out_data.len; ++i) {
-            if (strstr(&test->pty_out_data.c_str[i], str)) {
+            if (strstr(&test->pty_out_data.cstr[i], str)) {
                 if (close(tfd) == -1)
                     xtest_fatal("close: %m");
                 return true;
@@ -44,7 +46,7 @@ bool verify_kill(const char *name) {
                 if (kill(pstats.data[y].pid, SIGTERM) == -1)
                     xtest_fatal("kill: %m");
 
-                da_free(&pstats);
+                linc_array_free(&pstats);
 
                 return true;
             }
@@ -53,7 +55,7 @@ bool verify_kill(const char *name) {
         test_pump_ms(1);
     }
 
-    da_free(&pstats);
+    linc_array_free(&pstats);
     return false;
 }
 
@@ -79,7 +81,7 @@ bool verify_pstate(const char *name, const char *state) {
             }
         }
 
-        da_free(&pstats);
+        linc_array_free(&pstats);
 
         if (state_good)
             break;

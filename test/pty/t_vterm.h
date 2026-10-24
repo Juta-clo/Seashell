@@ -4,10 +4,9 @@
 #include <vterm.h>
 
 #include <linc/array.h>
-#include "darr.h"
 #include "t_utils.h"
 
-DA_TYPE(da_charp, char *);
+LINC_ARRAY_TYPE(da_charp, char *);
 
 typedef struct {
     VTerm *vp;
@@ -23,7 +22,7 @@ typedef struct {
     int rows, cols;
 } vt_snap;
 
-DA_TYPE(da_vt_snap, vt_snap);
+LINC_ARRAY_TYPE(da_vt_snap, vt_snap);
 
 void vt_write(const char *str);
 bool vt_snap_cmp(vt_snap *exp);

@@ -3,11 +3,10 @@
 
 #include "arena.h"
 #include "utils.h"
-#include "darr.h"
 
 #define ARENA_BLOCK_SIZE 8192
 
-DA_TYPE(blocks, void *);
+LINC_ARRAY_TYPE(blocks, void *);
 
 struct Arena {
     blocks blocks;
@@ -25,7 +24,7 @@ void arena_destroy(Arena *arena) {
     for (size_t i = 0; i < arena->block_n; ++i)
         free(arena->blocks.data[i]);
 
-    da_free(&arena->blocks);
+    linc_array_free(&arena->blocks);
     free(arena);
 }
 
@@ -34,7 +33,7 @@ void *arena_alloc(size_t size, void *ctx) {
     Arena *arena = ctx;
 
     void *p = xmalloc(size);
-    *da_push(&arena->blocks) = p;
+    *linc_array_push(&arena->blocks) = p;
 
     arena->block_n++;
 

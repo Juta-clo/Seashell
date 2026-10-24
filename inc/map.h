@@ -1,7 +1,7 @@
 #ifndef MAP_H
 #define MAP_H
 
-#include "darr.h"
+#include <linc/array.h>
 
 struct mpair {
     void *key;
@@ -9,7 +9,7 @@ struct mpair {
 };
 
 typedef struct mpair mpair;
-DA_TYPE(da_mpair, mpair);
+LINC_ARRAY_TYPE(da_mpair, mpair);
 
 struct map_t {
     da_mpair pairs;

@@ -297,26 +297,24 @@ void render_test_bar(curs_win *test_bar, size_t test_i) {
         return;
 
     pty_test *test = &ptyh.tests.data[test_i];
-    dstr bar;
+    linc_string bar = LINC_STRING_INIT;
     int cp_n;
-
-    dstr_init(&bar);
 
     if (werase(test_bar->winp) == ERR)
         curs_err("werase");
 
-    dstr_printf(&bar, "[%zu/%zu]: %s:", test_i + 1,
+    linc_string_appendf(&bar, "[%zu/%zu]: %s:", test_i + 1,
         ptyh.tests.size, test->test_name);
 
-    dstr_printf(&bar, "%s:", test->test_file);
+    linc_string_appendf(&bar, "%s:", test->test_file);
 
     if (test->fail_line != 0)
-        dstr_printf(&bar, "%d:", test->fail_line);
+        linc_string_appendf(&bar, "%d:", test->fail_line);
 
     if (test->test_ok) {
-        dstr_printf(&bar, "OK");
+        linc_string_appendf(&bar, "OK");
     } else {
-        dstr_printf(&bar, "%s:FAIL", test->fail_msg.c_str);
+        linc_string_appendf(&bar, "%s:FAIL", test->fail_msg.cstr);
     }
 
     int n = bar.len;
@@ -325,9 +323,9 @@ void render_test_bar(curs_win *test_bar, size_t test_i) {
     else if (test->val_err)  cp_n = BWHITE_YELLOW;
     else                     cp_n = BWHITE_GREEN;
 
-    rnprintf(test_bar->winp, 0, 0, n, COLOR_PAIR(cp_n), "%s", bar.c_str);
+    rnprintf(test_bar->winp, 0, 0, n, COLOR_PAIR(cp_n), "%s", bar.cstr);
     wrefresh(test_bar->winp);
-    dstr_free(&bar);
+    linc_string_free(&bar);
 }
 
 void render_vterm_snap(curs_win *win, vt_snap *snap) {
@@ -392,24 +390,24 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
         if (i - wn + offset < 0)
             continue;
 
-        dstr *line = &lines->data[i - wn + offset];
+        linc_string *line = &lines->data[i - wn + offset];
         int attrs = 0;
 
-        if (strstr(line->c_str, "CLEAN"))
+        if (strstr(line->cstr, "CLEAN"))
             attrs = COLOR_PAIR(GREEN_CL) | A_BOLD;
-        else if (strstr(line->c_str, "DIRTY"))
+        else if (strstr(line->cstr, "DIRTY"))
             attrs = COLOR_PAIR(RED_CL) | A_BOLD;
-        else if (strstr(line->c_str, "WARN"))
+        else if (strstr(line->cstr, "WARN"))
             attrs = COLOR_PAIR(BWHITE_YELLOW);
-        else if (strstr(line->c_str, "ERROR"))
+        else if (strstr(line->cstr, "ERROR"))
             attrs = COLOR_PAIR(BWHITE_RED);
-        else if (strstr(line->c_str, "===TEST("))
+        else if (strstr(line->cstr, "===TEST("))
             attrs = COLOR_PAIR(CYAN_CL);
-        else if (strstr(line->c_str, "===DIFF==="))
+        else if (strstr(line->cstr, "===DIFF==="))
             attrs = COLOR_PAIR(CYAN_CL);
 
-        rnprintf(win->winp, i, 0, win->rect->cols, attrs, "%s", line->c_str);
-        char *p = line->c_str;
+        rnprintf(win->winp, i, 0, win->rect->cols, attrs, "%s", line->cstr);
+        char *p = line->cstr;
 
         while ((int) strlen(p) > win->rect->cols - 1 && i + 1 < win->rect->rows) {
             p += win->rect->cols - 1;

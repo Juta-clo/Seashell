@@ -5,8 +5,8 @@
 #include <ncurses.h>
 #include <vterm.h>
 
-#include "darr.h"
-#include "dstr.h"
+#include <linc/array.h>
+#include <linc/string.h>
 #include "t_vterm.h"
 
 typedef struct {
@@ -18,14 +18,14 @@ typedef struct {
     bool val_err;
     bool diff_snaps;
 
-    dstr pty_out_data;
-    dstr pty_in_data;
-    dstr shell_data;
-    dstr val_data;
+    linc_string pty_out_data;
+    linc_string pty_in_data;
+    linc_string shell_data;
+    linc_string val_data;
 
-    dstr fail_msg;
-    dstr exit_msg;
-    dstr diff_msg;
+    linc_string fail_msg;
+    linc_string exit_msg;
+    linc_string diff_msg;
 
     vt_vterm vt;
     vt_snap vt_exp, vt_act;
@@ -40,7 +40,7 @@ typedef struct {
     da_dstr test_lines;
 } pty_test;
 
-DA_TYPE(da_pty_test, pty_test);
+LINC_ARRAY_TYPE(da_pty_test, pty_test);
 
 typedef struct {
     da_pty_test tests;

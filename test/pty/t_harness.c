@@ -202,7 +202,7 @@ int test_poll(int tfd) {
 
         if (pollfds[POLL_MFD].revents & POLLIN) {
             char *data = flush_pty(test->mfd);
-            dstrcat(&test->pty_out_data, data);
+            linc_string_append(&test->pty_out_data, data);
             vt_write(data);
             free(data);
             return 0;
@@ -210,13 +210,13 @@ int test_poll(int tfd) {
 
         if (pollfds[POLL_SH].revents & POLLIN) {
             char *data = flush_pipe(ptyh.sh_p[0]);
-            dstrcat(&test->shell_data, data);
+            linc_string_append(&test->shell_data, data);
             free(data);
         }
 
         if (pollfds[POLL_VAL].revents & POLLIN) {
             char *data = flush_pipe(ptyh.val_p[0]);
-            dstrcat(&test->val_data, data);
+            linc_string_append(&test->val_data, data);
             free(data);
         }
     }
@@ -225,16 +225,16 @@ int test_poll(int tfd) {
 void test_pump_ms(int ms) {
     if (ms == 0) {
         char *data = flush_pty(test->mfd);
-        dstrcat(&test->pty_out_data, data);
+        linc_string_append(&test->pty_out_data, data);
         vt_write(data);
         free(data);
 
         data = flush_pipe(ptyh.sh_p[0]);
-        dstrcat(&test->shell_data, data);
+        linc_string_append(&test->shell_data, data);
         free(data);
 
         data = flush_pipe(ptyh.val_p[0]);
-        dstrcat(&test->val_data, data);
+        linc_string_append(&test->val_data, data);
         free(data);
 
         return;

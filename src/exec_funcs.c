@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <assert.h>
 
-#include "darr.h"
+#include <linc/array.h>
 #include "variable.h"
 #include "utils.h"
 #include "builtins.h"
@@ -67,11 +67,6 @@ void child_redir_setup(da_redir *redirs) {
     }
 }
 
-void init_pline_data(pline_data *pld) {
-    *pld = (pline_data){0};
-    da_init(&pld->procs);
-}
-
 pline_data exec_pline(const ps_pline *pline, bool bg) {
     if (!pline)
         assert(pline);
@@ -80,7 +75,6 @@ pline_data exec_pline(const ps_pline *pline, bool bg) {
     int prev_rfd;
 
     pline_data pld = {0};
-    init_pline_data(&pld);
 
     for (size_t i = 0; i < pline->cmds.size; ++i) {
         ps_cmd *cur_cmd = &pline->cmds.data[i];
@@ -146,7 +140,7 @@ pline_data exec_pline(const ps_pline *pline, bool bg) {
             xclose(next_pipe[1]);
         }
 
-        pline_proc *pproc = da_push(&pld.procs);
+        pline_proc *pproc = linc_array_push(&pld.procs);
         pproc->pid = cpid;
         pproc->argv = copy_argv(cur_cmd->argv);
     }

@@ -5,7 +5,8 @@
 #include <linc.h>
 
 #include <linc/array.h>
-#include "llog.h"
+#include "linc/log.h" // IWYU pragma: export
+#include "shell_state.h" // IWYU pragma: export
 
 #define UTIL_PFFORMAT(x, y) __attribute__ ((__format__(printf, (x), (y))))
 #define UTIL_NORETURN __attribute__ ((__noreturn__))
@@ -93,5 +94,23 @@ char *strdup_alloc(const char *str, linc_allo *allo);
 #define xprintty_cstyle(pt, style) \
     do { if (printty_cstyle(pt, style) == PRINTTY_ERR) \
             xfatal("printty_cstyle"); } while (false)
+
+#define LOG_INFO(...) \
+    linc_log_write(sh_env.shell_log, LINC_LOG_INFO, LINC_SITE, __VA_ARGS__)
+
+#define LOG_WARN(...) \
+    linc_log_write(sh_env.shell_log, LINC_LOG_WARN, LINC_SITE, __VA_ARGS__)
+
+#define LOG_ERR(...) \
+    linc_log_write(sh_env.shell_log, LINC_LOG_ERROR, LINC_SITE, __VA_ARGS__)
+
+#define LLOG_INFO(_llog, ...) \
+    linc_log_write(_llog, LLOG_INFO, LINC_SITE, __VA_ARGS__)
+
+#define LLOG_WARN(_llog, ...) \
+    linc_log_write(_llog, LLOG_WARN, LINC_SITE, __VA_ARGS__)
+
+#define LLOG_ERR(_llog, ...) \
+    linc_log_write(_llog, LLOG_ERR, LINC_SITE, __VA_ARGS__)
 
 #endif

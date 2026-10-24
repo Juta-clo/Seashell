@@ -1,6 +1,8 @@
 #ifndef JOB_STATE_H
 #define JOB_STATE_H
 
+#include <linc/array.h>
+
 #include "exec_funcs.h"
 #include "wait_stat.h"
 
@@ -36,11 +38,11 @@ typedef struct job_table job_table;
 typedef struct job_event job_event;
 typedef struct proc_view proc_view;
 
-DA_TYPE(da_proc, jc_proc);
-DA_TYPE(da_pgrp, jc_pgrp);
-DA_TYPE(da_job, jc_job);
-DA_TYPE(da_jevent, job_event);
-DA_TYPE(da_proc_view, proc_view);
+LINC_ARRAY_TYPE(da_proc, jc_proc);
+LINC_ARRAY_TYPE(da_pgrp, jc_pgrp);
+LINC_ARRAY_TYPE(da_job, jc_job);
+LINC_ARRAY_TYPE(da_jevent, job_event);
+LINC_ARRAY_TYPE(da_proc_view, proc_view);
 
 struct jc_proc {
     pid_t pid;

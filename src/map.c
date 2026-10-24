@@ -1,17 +1,13 @@
 #include <assert.h>
 #include <string.h>
 
+#include <linc/array.h>
 #include "map.h"
 
 typedef void *(* key_func)(map_t *, const void *);
 
 int mp_init(map_t *map, size_t key_size) {
-    *map = (map_t){0};
-
-    da_init(&map->pairs);
-
-    map->key_size = key_size;
-
+    *map = (map_t){ .key_size = key_size };
     return 0;
 }
 
@@ -21,7 +17,7 @@ void mp_free(map_t *map) {
         free(map->pairs.data[i].value);
     }
 
-    da_free(&map->pairs);
+    linc_array_free(&map->pairs);
 
     *map = (map_t){0};
 }
@@ -48,7 +44,7 @@ static int mp_add(map_t *map, void *key, void *value, key_func func) {
     size_t index;
 
     if (!lookup_index(map, canon_key, &index)) {
-        pair = da_push(&map->pairs);
+        pair = linc_array_push(&map->pairs);
         pair->key = canon_key;
         pair->value = value;
     } else {
@@ -96,7 +92,7 @@ static int mp_delete(map_t *map, void *key, key_func func) {
     free(map->pairs.data[index].value);
     free(map->pairs.data[index].key);
 
-    da_delete(&map->pairs, index);
+    linc_array_delete(&map->pairs, index);
 
     free(canon_key);
     return 0;

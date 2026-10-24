@@ -9,6 +9,8 @@
 #include "shell_state.h"
 #include "utils.h"
 
+#include <linc/array.h>
+#include <linc/string.h>
 #include <linc/xsys.h>
 
 #define BUF_SIZE 1024
@@ -44,7 +46,7 @@ void err_assert_eq_int(int a, int b, const char *p1, const char *p2,
         const char *file, int line)
 {
     if (a != b) {
-        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
                 "%s:%d [%s == %s] failed: %s = %d, %s = %d",
                 file, line, p1, p2, p1, a, p2, b);
 
@@ -59,7 +61,7 @@ void err_assert_not_eq_int(int a, int b, const char *p1, const char *p2,
         const char *file, int line)
 {
     if (a == b) {
-        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
                 "%s:%d [%s != %s] failed: %s = %d, %s = %d",
                 file, line, p1, p2, p1, a, p2, b);
 
@@ -74,7 +76,7 @@ void err_assert_g_int(int a, int b, const char *p1, const char *p2,
         const char *file, int line)
 {
     if (a <= b) {
-        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
                 "%s:%d [%s > %s] failed: %s = %d, %s = %d",
                 file, line, p1, p2, p1, a, p2, b);
 
@@ -89,7 +91,7 @@ void err_assert_ge_int(int a, int b, const char *p1, const char *p2,
         const char *file, int line)
 {
     if (a < b) {
-        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
                 "%s:%d [%s >= %s] failed: %s = %d, %s = %d",
                 file, line, p1, p2, p1, a, p2, b);
 
@@ -102,7 +104,7 @@ void err_assert_ge_int(int a, int b, const char *p1, const char *p2,
 
 void err_assert(bool b, const char *text, const char *file, int line) {
     if (!b) {
-        llog_log(&sh_env.assert_llog, LLOG_ERR, &LLOG_SITE,
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
                 "%s:%d [%s] failed",
                 file, line, text);
 
@@ -165,7 +167,7 @@ void free_charp_arr(da_charp *arr) {
     for (size_t i = 0; i < arr->size; ++i)
         free(arr->data[i]);
 
-    da_free(arr);
+    linc_array_free(arr);
 
     *arr = (da_charp){0};
 }
