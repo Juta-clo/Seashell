@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "lexer.h"
+#include "darr.h"
 
 typedef enum {
     PS_AND_IF,

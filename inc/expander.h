@@ -2,6 +2,7 @@
 #define EXPANDER_H
 
 #include "parser.h"
+#include "darr.h"
 
 typedef enum {
     EXT_REG,

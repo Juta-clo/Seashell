@@ -9,8 +9,6 @@
 #include "t_harness.h"
 #include "t_utils.h"
 
-#define INFO_SEP "\x1b[1;38;2;255;133;54m:\x1b[m"
-
 static struct timespec tstart, tend;
 
 static void get_diff_msg(void) {
@@ -87,6 +85,8 @@ static void log_test(void) {
     fprintf(ptyh.log_raw_in, "%s\n", test->pty_in_data.c_str);
 }
 
+#define INFO_SEP "\x1b[1;38;2;255;133;54m:\x1b[m"
+
 static void print_test_pass(void) {
     if (script) {
         printf("%s:%s:PASS\n",
@@ -111,7 +111,7 @@ static void print_test_fail(void) {
                 test->test_name, test->test_file);
 
         if (test->fail_line != 0)
-            printf("\x1b[35m%d\x1b[m" INFO_SEP, test->fail_line);
+            printf("\x1b[1;38;2;50;200;150m%d\x1b[m" INFO_SEP, test->fail_line);
 
         printf("%s" INFO_SEP "\x1b[97;41mFAIL\x1b[m\n", test->fail_msg.c_str);
     }

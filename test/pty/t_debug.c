@@ -403,8 +403,6 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
             attrs = COLOR_PAIR(BWHITE_YELLOW);
         else if (strstr(line->c_str, "ERROR"))
             attrs = COLOR_PAIR(BWHITE_RED);
-        else if (strstr(line->c_str, "INFO"))
-            attrs = COLOR_PAIR(CYAN_CL);
         else if (strstr(line->c_str, "===TEST("))
             attrs = COLOR_PAIR(CYAN_CL);
         else if (strstr(line->c_str, "===DIFF==="))

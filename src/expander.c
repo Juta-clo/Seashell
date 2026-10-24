@@ -10,6 +10,7 @@
 #include "utils.h"
 #include "variable.h"
 #include "shell_state.h"
+#include "darr.h"
 
 #include <linc/xsys.h>
 

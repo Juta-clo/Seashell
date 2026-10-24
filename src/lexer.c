@@ -3,8 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "darr.h"
+#include <linc/array.h>
 #include "lexer.h"
+#include "arena.h"
 
 static lx_status status = LX_OK;
 
@@ -15,6 +16,7 @@ typedef struct {
     const char *part_start;
     const char *cur_char;
     const char *cmd;
+    linc_allo allo;
 } lx_scanner;
 
 char *lx_errstr(lx_status stat) {
@@ -26,37 +28,6 @@ char *lx_errstr(lx_status stat) {
     case LX_OK:            return "success";
     default:               return "???";
     }
-}
-
-static int init_part(lx_part *part) {
-    assert(part);
-
-    *part = (lx_part){0};
-
-    return 0;
-}
-
-static void free_part(lx_part *part) {
-    free(part->raw);
-    *part = (lx_part){0};
-}
-
-static int init_tok(lx_tok *tok) {
-    assert(tok);
-
-    *tok = (lx_tok){0};
-    da_init(&tok->parts);
-
-    return 0;
-}
-
-static void free_tok(lx_tok *tok) {
-    for (size_t i = 0; i < tok->parts.size; ++i) {
-        lx_part *part = &tok->parts.data[i];
-        free_part(part);
-    }
-    da_free(&tok->parts);
-    *tok = (lx_tok){0};
 }
 
 static lx_kind get_kind(const char *cur_char) {
@@ -113,9 +84,8 @@ static int add_tok(da_tok *tokens, lx_kind kind, lx_scanner *scanner) {
     assert(scanner);
     assert(!scanner->cur_tok);
 
-    lx_tok *tok = da_push_init(tokens, init_tok);
-
-    tok->kind = kind;
+    lx_tok *tok = linc_array_push(tokens);
+    *tok = (lx_tok){ .kind = kind, .parts.allo = scanner->allo };
 
     scanner->cur_tok = tok;
     return 0;
@@ -125,6 +95,7 @@ static int ensure_tok(da_tok *tokens, lx_kind kind, lx_scanner *scanner) {
     if (!scanner->cur_tok)
         if (add_tok(tokens, kind, scanner) == -1)
             return -1;
+
     return 0;
 }
 
@@ -138,9 +109,8 @@ static int add_part(lx_scanner *scanner, lx_quote quote) {
     assert(scanner->cur_tok);
     assert(!scanner->part_start);
 
-    lx_part *part = da_push_init(&scanner->cur_tok->parts, init_part);
-
-    part->quote = quote;
+    lx_part *part = linc_array_push(&scanner->cur_tok->parts);
+    *part = (lx_part){ .quote = quote };
 
     scanner->part_start = scanner->cur_char;
     return 0;
@@ -169,7 +139,7 @@ static int end_part(lx_scanner *scanner) {
     for (const char *c = scanner->part_start; c != scanner->cur_char; ++c)
         ++len;
 
-    part->raw = malloc(len + 1);
+    part->raw = scanner->allo.alloc(len + 1, scanner->allo.ctx);
     if (!part->raw) {
         status = LX_ERRMEM;
         return -1;
@@ -193,7 +163,7 @@ static int clear_empty_part(lx_scanner *scanner) {
     da_part *parts = &scanner->cur_tok->parts;
     lx_part *part = &parts->data[parts->size - 1];
 
-    part->raw = malloc(1);
+    part->raw = scanner->allo.alloc(1, scanner->allo.ctx);
     if (!part->raw) {
         status = LX_ERRMEM;
         return -1;
@@ -311,11 +281,12 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
 }
 
 void lx_free(da_tok *tokens) {
-    for (size_t i = 0; i < tokens->size; ++i) {
-        lx_tok *tok = &tokens->data[i];
-        free_tok(tok);
-    }
-    da_free(tokens);
+    if (!tokens || !tokens->allo.ctx)
+        return;
+
+    arena_destroy(tokens->allo.ctx);
+
+    *tokens = (da_tok){0};
 }
 
 int lx_tokenize(const char *cmd, da_tok *tokens) {
@@ -328,9 +299,19 @@ int lx_tokenize(const char *cmd, da_tok *tokens) {
     if (cmd_len <= 0)
         return LX_ERRINPUT;
 
-    da_init(tokens);
+    lx_scanner scanner = {
+        .mode = LX_M_NORMAL,
+        .prev_mode = LX_M_NORMAL,
+        .cur_char = cmd,
+        .cmd = cmd,
+        .allo = (linc_allo) {
+            .alloc = arena_alloc,
+            .free = arena_free,
+            .ctx = arena_create()
+        }
+    };
 
-    lx_scanner scanner = { LX_M_NORMAL, LX_M_NORMAL, NULL, NULL, cmd, cmd };
+    *tokens = (da_tok){ .allo = scanner.allo };
 
     for (; *scanner.cur_char != '\0'; ++scanner.cur_char) {
         switch (scanner.mode) {
@@ -354,11 +335,9 @@ int lx_tokenize(const char *cmd, da_tok *tokens) {
         goto fail;
     }
 
-    if (tokens->size == 0)
-        da_free(tokens);
-
     if (clear_part(&scanner) == -1)
         goto fail;
+
     end_tok(&scanner);
 
     return status;

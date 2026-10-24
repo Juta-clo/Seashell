@@ -1,6 +1,7 @@
 #include <unistd.h>
 
 #include "unity_fixture.h"
+#include "shell_state.h"
 #include "llog.h"
 
 static FILE *log_file;
@@ -18,7 +19,7 @@ void assert_llog_sink(const llog_info *info) {
         log_buf[BUFSIZ - 1] = '\0';
     }
 
-    fprintf(log_file, "%s", log_buf);
+    fprintf(stderr, "\x1b[41m%s\x1b[m", log_buf);
 }
 
 void shell_llog_sink(const llog_info *info) {
@@ -45,6 +46,8 @@ void shell_llog_sink(const llog_info *info) {
 }
 
 llog unit_llog = { .sink = shell_llog_sink };
+llog unit_assert_llog = { .sink = assert_llog_sink };
+
 LLOG_DEFAULT(&unit_llog);
 
 void run_all(void) {
@@ -60,6 +63,8 @@ int main(int argc, const char **argv) {
         perror("fopen");
         exit(EXIT_FAILURE);
     }
+
+    sh_env.assert_llog = unit_assert_llog;
 
     return UnityMain(argc, argv, run_all);
 }

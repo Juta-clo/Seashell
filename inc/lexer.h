@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "darr.h"
+#include <linc/array.h>
 
 typedef enum {
     LX_TOK_PIPE,
@@ -45,7 +45,7 @@ struct lx_part {
 };
 
 typedef struct lx_part lx_part;
-DA_TYPE(da_part, lx_part);
+LINC_ARRAY_TYPE(da_part, lx_part);
 
 struct lx_tok {
     lx_kind kind;
@@ -53,7 +53,7 @@ struct lx_tok {
 };
 
 typedef struct lx_tok lx_tok;
-DA_TYPE(da_tok, lx_tok);
+LINC_ARRAY_TYPE(da_tok, lx_tok);
 
 char *lx_errstr(lx_status stat);
 void lx_free(da_tok *tokens);
