@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,10 +12,11 @@
 #include "parser.h"
 #include "lexer.h"
 #include "input.h"
-#include "shell_state.h"
+#include "shell.h"
 #include "utils.h"
 #include "job_state.h"
 #include "plan.h"
+#include "event.h"
 
 static ps_ast *line_to_ast(char *line) {
     if (strcmp("", line) == 0) {
@@ -47,28 +49,35 @@ static ps_ast *line_to_ast(char *line) {
 int main(int argc, char *const *argv) {
     env_setup(&sh_env, argc, argv);
 
-    while (true) {
-        char *line = input_get_line();
-        ps_ast *ast = line_to_ast(line);
+    char *line;
+    ps_ast *ast;
 
-        if (!ast) {
-            sh_env.need_prompt = true;
+    while (true) {
+        process_signals();
+
+        if (sh_env.fg_jid != NOFG) {
+            sigsuspend(&sh_env.og_mask);
+            if (errno != EINTR)
+                err_exit("sigsuspend");
+
             continue;
+        } else {
+            if (!(line = input_get_line()))
+                continue;
         }
+
+        if (!(ast = line_to_ast(line)))
+            continue;
 
         int jid = create_job_id();
         job_plan *plan = add_plan(jid, ast);
 
         if (launch_job(&plan_next(plan)->pline, ast->bg, jid) == -1) {
             plan_done(jid);
-            sh_env.need_prompt = true;
             continue;
         }
 
-        if (ast->bg) {
-            pid_t pgid = lookup_job_pgrp(jid);
-            printf("[%d] %d\n", jid , pgid);
-            sh_env.need_prompt = true;
-        }
+        if (ast->bg)
+            printf("[%d] %d\n", jid , lookup_job_pgrp(jid));
     }
 }

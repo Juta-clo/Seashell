@@ -8,6 +8,7 @@
 #include <dirent.h>
 
 #include <linc/array.h>
+#include <linc/xsys.h>
 #include "t_pview.h"
 #include "t_utils.h"
 
@@ -75,6 +76,7 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
     assert(pstats);
     *pstats = (da_pstat){0};
 
+    ps_pstat *pstat = nullptr;
     char child_path[PATH_MAX];
     snprintf(child_path, PATH_MAX, "/proc/%d/task/%d/children", pid, pid);
 
@@ -85,15 +87,8 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
     static char buf[BUF_SIZE];
 
     if (!fgets(buf, BUF_SIZE - 1, stat)) {
-        if (feof(stat)) {
-        /* file exists but empty means no children */
-            fclose(stat);
-            return 0;
-        }
-
-        if (ferror(stat) && errno == ESRCH)
-        /* /proc file gone; proc exited */
-            goto fail;
+        if (feof(stat) || (ferror(stat) && errno == ESRCH))
+            goto cleanup;
 
         xtest_fatal("fgets: %m");
     }
@@ -110,27 +105,31 @@ int child_pstat(pid_t pid, da_pstat *pstats) {
         if (start == endptr)
             break;
 
-        ps_pstat *pstat = linc_array_push(pstats);
-
+        pstat = xmalloc(sizeof(ps_pstat));
         pstat->pid = child_pid;
 
         char *child_name = stat_val_str(child_pid, NAME);
         if (!child_name)
-            goto fail;
+            goto cleanup;
+
         strcpy(pstat->name, child_name);
 
         char *child_state = stat_val_str(child_pid, STATE);
         if (!child_state)
-            goto fail;
+            goto cleanup;
+
         strcpy(pstat->state, child_state);
+
+        *linc_array_push(pstats) = *pstat;
+        free(pstat);
+        pstat = nullptr;
     }
 
+cleanup:
     if (fclose(stat) == EOF)
         xtest_fatal("fclose: %m");
-    return 0;
 
-fail:
-    if (fclose(stat) == EOF)
-        xtest_fatal("fclose: %m");
-    return -1;
+    free(pstat);
+
+    return 0;
 }

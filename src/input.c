@@ -1,5 +1,4 @@
 #include "linc/string.h"
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <linux/limits.h>
@@ -11,13 +10,12 @@
 #undef basename
 
 #include "input.h"
-#include "shell_state.h"
+#include "shell.h"
 #include "utils.h"
 #include "printty.h"
 #include "variable.h"
 #include "path_glob.h"
 #include "lexer.h"
-#include "event.h"
 
 #include <linc/xsys.h>
 #include <linc/hda.h>
@@ -717,7 +715,8 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
             free_charp_arr(&pents);
         } else if (tok == COMP_ARG || tok == COMP_REDIR) {
             if (matches.size == 0)
-                glob_pattern(input.comp.glob, linc_hds_len(input.comp.glob), &matches);
+                glob_pattern(input.comp.glob,
+                        linc_hds_len(input.comp.glob), &matches);
 
             LOG_INFO("File glob: %s", input.comp.glob);
         }
@@ -880,20 +879,6 @@ static void history_next(void) {
     LOG_INFO("history_next: input.line = \"%s\"", input.line);
 }
 
-static void input_reset(void) {
-    if (!input.line) {
-        input.off = 0;
-        update_prompt(sh_env.prompt_style);
-    }
-
-    if (sh_env.need_prompt) {
-        sh_env.need_prompt = false;
-        new_start_pos();
-    }
-
-    input_update();
-}
-
 void input_init(shell_env *env) {
     assert(env);
 
@@ -928,16 +913,18 @@ void input_drop_line(void) {
 }
 
 char *input_get_line(void) {
-    while (sh_env.fg_jid != NOFG) {
-        sigsuspend(&sh_env.og_mask);
-        if (errno != EINTR)
-            err_exit("sigsuspend");
-
-        process_signals();
+    if (!input.line) {
+        input.off = 0;
+        update_prompt(sh_env.prompt_style);
     }
 
-    input_reset();
-    enter_mode_insert();
+    if (sh_env.need_prompt) {
+        sh_env.need_prompt = false;
+        new_start_pos();
+        enter_mode_insert();
+    }
+
+    input_update();
 
     while (true) {
         PrinttyEvent pev;
@@ -948,8 +935,7 @@ char *input_get_line(void) {
         } else if (rv == PRINTTY_ERR) {
             xfatal("failed parsing line");
         } else if (rv == PRINTTY_SIG) {
-            process_signals();
-            input_reset();
+            return NULL;
         } else if (pev.type == PRINTTY_UNICODE) {
             if (input.insert_mode) {
                 insert_mode_feed_unicode(pev.cp, pev.utf8);
@@ -996,5 +982,7 @@ char *input_get_line(void) {
     }
 
     LOG_INFO("parsed line: %s", input.line);
+
+    sh_env.need_prompt = true;
     return lstart();
 }

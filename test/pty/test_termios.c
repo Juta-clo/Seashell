@@ -145,7 +145,7 @@ TEST(termios, program_after_fg_builtin_has_correct_termios) {
         PROMPT "fg %%1 || cat"
     );
 
-    assert_kill("sleep");
+    assert_kill(SIGTERM, "sleep");
 
     assert_term(2, 0,
         PROMPT "fg %%1 || cat",

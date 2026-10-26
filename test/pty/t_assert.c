@@ -9,7 +9,7 @@
 #include "t_utils.h"
 
 bool verify_bytes(const char *str) {
-    int tfd = start_timerfd((memcheck) ? 1000 : 100);
+    int tfd = start_timerfd(100);
     size_t start = test->pty_out_data.len;
 
     while (test_poll(tfd) != -1) {
@@ -27,14 +27,14 @@ bool verify_bytes(const char *str) {
 
     if (close(tfd) == -1)
         xtest_fatal("close: %m");
+
     return false;
 }
 
-bool verify_kill(const char *name) {
+bool verify_kill(int sig, const char *name) {
     da_pstat pstats;
-    size_t loops = 100;
 
-    for (size_t i = 0; i < loops; ++i) {
+    for (size_t i = 0; i < 100; ++i) {
         if (child_pstat(test->cpid, &pstats) == -1)
             xtest_fatal("child_pstat");
 
@@ -43,7 +43,7 @@ bool verify_kill(const char *name) {
                 if (test->cpid == pstats.data[y].pid)
                     xtest_fatal("kill_child: trying to kill seashell");
 
-                if (kill(pstats.data[y].pid, SIGTERM) == -1)
+                if (kill(pstats.data[y].pid, sig) == -1)
                     xtest_fatal("kill: %m");
 
                 linc_array_free(&pstats);
@@ -64,11 +64,8 @@ bool verify_pstate(const char *name, const char *state) {
     bool state_good = false;
     char pstate[4096];
 
-    size_t checks = (memcheck) ? 1000 : 100;
-
-    for (size_t i = 0; i < checks; ++i) {
-        if (child_pstat(test->cpid, &pstats) == -1)
-            break;
+    for (size_t i = 0; i < 100; ++i) {
+        child_pstat(test->cpid, &pstats);
 
         for (size_t y = 0; y < pstats.size; ++y) {
             if (strcmp(name, pstats.data[y].name) == 0) {
@@ -76,6 +73,7 @@ bool verify_pstate(const char *name, const char *state) {
 
                 if (strncmp(state, pstate, 1) == 0) {
                     state_good = true;
+                    linc_array_free(&pstats);
                     break;
                 }
             }
@@ -95,9 +93,7 @@ bool verify_pstate(const char *name, const char *state) {
 bool verify_termios(struct termios exp) {
     struct termios tio;
 
-    int checks = (memcheck) ? 1000 : 100;
-
-    for (int i = 0; i < checks; ++i) {
+    for (int i = 0; i < 100; ++i) {
         if (tcgetattr(test->mfd, &tio) == -1)
             xtest_fatal("tcgetattr: %m");
         if (memcmp(exp.c_cc, tio.c_cc, sizeof(tio.c_cc))            == 0 &&
@@ -124,7 +120,7 @@ bool verify_term(char **lines, int crow, int ccol) {
         return true;
     }
 
-    int tfd = start_timerfd((memcheck) ? 1000 : 100);
+    int tfd = start_timerfd(100);
 
     while (test_poll(tfd) != -1) {
         bool same = vt_snap_cmp(&test->vt_exp);

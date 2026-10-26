@@ -61,7 +61,7 @@ TEST(input, line_is_preserved_on_async_job_messages) {
      * doesn't matter if it execs or not as we just want the job
      * event which will still be generated if the subshell is killed
      * before it execs */
-    assert_kill("sleep");
+    assert_kill(SIGTERM, "sleep");
 
     assert_term(2, PROMPT_LEN + 2,
         PROMPT "abc",
@@ -73,24 +73,6 @@ TEST(input, line_is_preserved_on_async_job_messages) {
     assert_term(4, PROMPT_LEN,
         PROMPT "abc",
         "[1] Terminated       sleep 100",
-        PROMPT "abdefc",
-        "seashell: command not found: abdefc",
-        PROMPT
-    );
-}
-
-TEST(input, sigchld_with_no_prompt_redraw) {
-    vt_send_str("abc");
-    assert_term(0, PROMPT_LEN + 3,
-        PROMPT "abc"
-    );
-
-    if (kill(test->cpid, SIGCHLD) == -1)
-        xtest_fatal("kill: %m");
-
-    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    vt_send_str("def\n");
-    assert_term(2, PROMPT_LEN,
         PROMPT "abdefc",
         "seashell: command not found: abdefc",
         PROMPT
@@ -421,6 +403,43 @@ TEST(input, yanked_text) {
     );
 }
 
+TEST(input, sigchld_with_no_prompt_redraw) {
+    vt_send_str("abc");
+    assert_term(0, PROMPT_LEN + 3,
+        PROMPT "abc"
+    );
+
+    if (kill(test->cpid, SIGCHLD) == -1)
+        xtest_fatal("kill: %m");
+
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_str("def\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "abdefc",
+        "seashell: command not found: abdefc",
+        PROMPT
+    );
+}
+
+TEST(input, sigchld_does_not_reset_editing_mode) {
+    vt_send_str("xy");
+    vt_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
+    vt_send_str("hx");
+    assert_term(0, PROMPT_LEN,
+        PROMPT "y"
+    );
+
+    if (kill(test->cpid, SIGCHLD) == -1)
+        PTY_TEST_FAIL("kill: %m");
+
+    test_pump_ms(1);
+
+    vt_send_str("x");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -428,7 +447,6 @@ TEST(input, yanked_text) {
 TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, sigint_discards_line);
     RUN_TEST_CASE(input, line_is_preserved_on_async_job_messages);
-    RUN_TEST_CASE(input, sigchld_with_no_prompt_redraw);
     RUN_TEST_CASE(input, normal_mode_deletion_on_last_character);
     RUN_TEST_CASE(input, tab_completion_with_no_line);
     RUN_TEST_CASE(input, tab_completion_on_filename_with_whitespace);
@@ -447,4 +465,6 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, bracketed_paste_that_enters_pager);
     RUN_TEST_CASE(input, large_bracketed_paste);
     RUN_TEST_CASE(input, yanked_text);
+    RUN_TEST_CASE(input, sigchld_with_no_prompt_redraw);
+    RUN_TEST_CASE(input, sigchld_does_not_reset_editing_mode);
 }

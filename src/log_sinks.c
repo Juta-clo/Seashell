@@ -1,7 +1,7 @@
 #include <linc/string.h>
 #include <linc/log.h>
 
-#include "shell_state.h"
+#include "shell.h"
 
 void assert_log_sink(const linc_log_ctx *ctx, void *_) {
     linc_string output_msg = LINC_STRING_INIT;

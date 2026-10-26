@@ -6,6 +6,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <lua.h>
+#include <lualib.h>
 #include <linc/args.h>
 #include <linc/log.h>
 #include "map.h"
@@ -27,6 +29,7 @@ typedef struct {
     linc_log shell_log;
     linc_log assert_log;
     int fg_pending;
+    lua_State *L;
 } shell_env;
 
 extern shell_env sh_env;

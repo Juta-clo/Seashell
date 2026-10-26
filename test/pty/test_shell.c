@@ -61,7 +61,7 @@ TEST(shell, prompt_after_bg_job_done) {
         PROMPT "x"
     );
 
-    assert_kill("sleep");
+    assert_kill(SIGTERM, "sleep");
 
     assert_term(2, PROMPT_LEN + 1,
         PROMPT "x",
@@ -170,7 +170,7 @@ TEST(shell, bg_job_done_with_fg_job) {
         "x"
     );
 
-    assert_kill("sleep");
+    assert_kill(SIGTERM, "sleep");
 
     assert_term(3, 0,
         PROMPT "write_sleep",
@@ -615,7 +615,7 @@ TEST(shell, job_id_creation_after_unordered) {
         PROMPT
     );
 
-    assert_kill("sleep");
+    assert_kill(SIGTERM, "sleep");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT,
         "[1] Terminated       sleep 100",
@@ -938,7 +938,7 @@ TEST(shell, multiple_fg_builtins_in_andor) {
         "[1] running          sleep 100"
     );
 
-    assert_kill("sleep");
+    assert_kill(SIGTERM, "sleep");
     assert_pstate("cat", PSTATE_SLEEPING);
 
     vt_send_ch('c', VTERM_MOD_CTRL);

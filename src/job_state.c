@@ -9,7 +9,7 @@
 #include "wait_stat.h"
 #include "utils.h"
 #include "exec_funcs.h"
-#include "shell_state.h"
+#include "shell.h"
 
 #include <linc/xsys.h>
 #include <linc/array.h>

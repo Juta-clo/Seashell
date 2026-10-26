@@ -6,7 +6,7 @@
 
 #include <linc/array.h>
 #include "linc/log.h" // IWYU pragma: export
-#include "shell_state.h" // IWYU pragma: export
+#include "shell.h" // IWYU pragma: export
 
 #define UTIL_PFFORMAT(x, y) __attribute__ ((__format__(printf, (x), (y))))
 #define UTIL_NORETURN __attribute__ ((__noreturn__))

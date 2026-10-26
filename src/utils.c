@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "shell_state.h"
+#include "shell.h"
 #include "utils.h"
 
 #include <linc/array.h>

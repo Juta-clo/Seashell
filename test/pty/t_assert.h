@@ -43,10 +43,10 @@
             PTY_TEST_FAIL("verify_bytes: failed to find " #str); \
     } while (false)
 
-#define assert_kill(name) \
+#define assert_kill(_sig, _name) \
     do { \
-        if (!verify_kill(name)) \
-            PTY_TEST_FAIL("verify_kill: failed to kill " #name); \
+        if (!verify_kill(_sig, _name)) \
+            PTY_TEST_FAIL("verify_kill: failed to kill " #_name); \
     } while (false)
 
 #define assert_pstate(name, state) \
@@ -62,7 +62,7 @@
     } while (false)
 
 bool verify_bytes(const char *str);
-bool verify_kill(const char *name);
+bool verify_kill(int sig, const char *name);
 bool verify_pstate(const char *name, const char *state);
 bool verify_termios(struct termios exp);
 bool verify_term(char **lines, int crow, int ccol);

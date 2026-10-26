@@ -6,7 +6,7 @@
 #include <assert.h>
 
 #include "variable.h"
-#include "shell_state.h"
+#include "shell.h"
 #include "job_state.h"
 #include "builtins.h"
 #include "utils.h"

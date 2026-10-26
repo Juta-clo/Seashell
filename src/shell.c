@@ -14,9 +14,10 @@
 #include "input.h"
 #include "variable.h"
 #include "map.h"
-#include "shell_state.h"
+#include "shell.h"
 #include "sig_funcs.h"
 #include "utils.h"
+#include "config.h"
 
 typedef struct {
     void(*fatal)(const char *, ...);
@@ -193,6 +194,7 @@ void env_setup(shell_env *env, int argc, char *const *argv) {
     log_setup(&env->log_fd);
     sig_setup(&env->og_mask);
     var_setup(env);
+    config_init(env);
     input_init(env);
 
     LOG_INFO("seashell PID(%d)", getpid());
