@@ -13,7 +13,7 @@
 #include "path_glob.h"
 #include "utils.h"
 #include "variable.h"
-#include "shell.h"
+#include "state.h"
 #include "utils.h"
 
 static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,

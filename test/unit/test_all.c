@@ -2,7 +2,7 @@
 
 #include <linc/log.h>
 #include "unity_fixture.h"
-#include "shell.h"
+#include "state.h"
 
 static FILE *log_file;
 

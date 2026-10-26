@@ -6,12 +6,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "shell.h"
-#include "utils.h"
-
 #include <linc/array.h>
 #include <linc/string.h>
 #include <linc/xsys.h>
+
+#include "state.h"
+#include "utils.h"
 
 #define BUF_SIZE 1024
 

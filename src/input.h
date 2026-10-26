@@ -1,7 +1,7 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include "shell.h"
+#include "state.h"
 
 #define PROMPT_SIMPLE 1
 #define PROMPT_CWD 2

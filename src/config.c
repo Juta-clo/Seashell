@@ -4,45 +4,61 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
-#include "shell.h"
+#include <linc/xsys.h>
+#include "state.h"
 #include "config.h"
 #include "utils.h"
 #include "input.h"
 
-int config_create(void) {
-    char c;
-    char *line[2];
+#define CONFIG_PROMPT \
+    "Config file not found. Create one at '~/seashell.lua' (y/N): "
 
-    printf("config.lua not found. Would you like to create one? (y/n): ");
-    // getline(&p, 2, 
-}
-
-int config_open(void) {
+FILE *config_file_open(void) {
     const char *home = getenv("HOME");
     if (!home)
-        return -1;
+        return NULL;
 
     int fd;
     char path[PATH_MAX];
     int n = snprintf(path, PATH_MAX - 1,
-            "%s/.config/seashell/config.lua", home);
+            "%s/config.lua", home);
 
     if (n < 0 || n >= PATH_MAX - 1)
-        return -1;
+        return NULL;
 
     if ((fd = open(path, O_RDONLY)) == -1) {
         if (errno != ENOENT)
-            return -1;
+            return NULL;
 
-        config_create();
+        char *line = input_get_line(/*CONFIG_PROMPT*/);
+
+        if (strcmp(line, "y") == 0) {
+            xopen(path, O_RDONLY | O_CREAT | O_EXCL, 0700);
+        }
+
+        return NULL;
     }
+
+    FILE *config = fdopen(fd, "r");
+    if (!config)
+        return NULL;
+
+    return config;
 }
 
 void config_init(shell_env *_) {
     // env->L = luaL_newstate();
-    // if (env->L)
+    // if (!env->L)
     //     xfatal("luaL_newstate");
     //
     //  luaL_openlibs(env->L);
-    //  config_open();
+    //
+    // FILE *config;
+    //
+    // if (!(config = config_file_open())) {
+    //     lua_close(env->L);
+    //     return;
+    // }
+
+    /* USE CONFIG */
 }

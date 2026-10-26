@@ -1,7 +1,7 @@
 #ifndef BUILTINS_H
 #define BUILTINS_H
 
-#include "shell.h"
+#include "state.h"
 
 #define BUILTIN_COUNT 10
 

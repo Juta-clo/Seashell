@@ -1,6 +1,6 @@
 #include "input.h"
 #include "plan.h"
-#include "shell.h"
+#include "state.h"
 #include "sig_funcs.h"
 #include "utils.h"
 #include "variable.h"

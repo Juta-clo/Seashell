@@ -10,7 +10,7 @@
 #undef basename
 
 #include "input.h"
-#include "shell.h"
+#include "state.h"
 #include "utils.h"
 #include "printty.h"
 #include "variable.h"
