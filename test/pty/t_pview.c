@@ -54,13 +54,19 @@ static char *stat_val_str(pid_t pid, char *field) {
     for (++c; *c == ' ' || *c == '\t'; ++c)
         continue;
 
-    if (fclose(stat) == EOF)
+    if (fclose(stat) == EOF) {
+        if (errno == ESRCH)
+            return NULL;
+
         xtest_fatal("fclose: %m");
+    }
+
     return c;
 
 fail:
-    if (fclose(stat) == EOF)
+    if (fclose(stat) == EOF && errno != ESRCH)
         xtest_fatal("fclose: %m");
+
     return NULL;
 }
 

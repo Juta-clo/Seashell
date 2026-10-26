@@ -3,6 +3,7 @@
 #include <linc/log.h>
 #include "unity_fixture.h"
 #include "input.h"
+#include "input_object.h"
 
 TEST_GROUP(input);
 

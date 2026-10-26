@@ -65,7 +65,7 @@ linc_fatal_target linc_target = {
     .ctx = &wrapper
 };
 
-linc_args opts[] = {
+linc_args opts[OPT_MAX + 1] = {
     [LOGFD] = {
         .long_name = "log-fd",
         .short_name = 'l',
@@ -78,11 +78,10 @@ linc_args opts[] = {
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_STR
     },
-    [PROMPT] = {
-        .long_name = "prompt",
-        .short_name = 'x',
-        .has_arg = LINC_ARGS_ARG_REQ,
-        .arg_type = LINC_ARGS_ARG_STR
+    [CLEAN] = {
+        .long_name = "clean",
+        .short_name = 'q',
+        .has_arg = LINC_ARGS_ARG_NONE
     },
     (linc_args){0}
 };
@@ -182,7 +181,10 @@ void env_setup(int argc, char *const *argv) {
     log_setup(&sh_env.log_fd);
     var_setup(&sh_env);
     input_init();
-    // config_init(&sh_env);
+
+    if (!opts[CLEAN].found)
+        config_init();
+
     sig_setup(&sh_env.og_mask);
 
     LOG_INFO("seashell PID(%d)", getpid());

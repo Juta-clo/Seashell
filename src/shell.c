@@ -9,9 +9,18 @@
 #include "plan.h"
 #include "state.h"
 #include "utils.h"
+#include "config.h"
 
-static const char *shell_get_prompt(void) {
-    return "> ";
+#define PROMPT_MAX 4096
+#define PROMPT_DEFAULT "> "
+
+static linc_string shell_get_prompt(void) {
+    linc_string prompt = LINC_STRING_INIT;
+
+    if (config_field_prompt(&prompt) == -1)
+        linc_string_append(&prompt, PROMPT_DEFAULT);
+
+    return prompt;
 }
 
 static ps_ast *line_to_ast(char *line) {
@@ -53,8 +62,13 @@ void shell_run(void) {
             process_signals();
 
             continue;
-        } else if (!(line = input_get_line(shell_get_prompt()))) {
-            xfatal("input_get_line: EOF/Error");
+        } else {
+            linc_string prompt = shell_get_prompt();
+
+            if (!(line = input_get_line(prompt.cstr)))
+                xfatal("input_get_line: EOF/Error");
+
+            linc_string_free(&prompt);
         }
 
         if (!(ast = line_to_ast(line))) {

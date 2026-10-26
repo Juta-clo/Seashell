@@ -101,7 +101,7 @@ static void create_exec_argv(void) {
 
     char *sh_cmd[] = {
         "./seashell",
-            "--prompt=simple",
+            "--clean",
             NULL
     };
 

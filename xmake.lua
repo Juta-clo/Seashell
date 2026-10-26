@@ -65,9 +65,9 @@ target("unit_test")
     set_targetdir(".")
 
     add_deps(linc_targets)
-    add_packages("unibilium")
+    add_packages("unibilium", "lua")
     add_defines("UNITY_FIXTURE_NO_EXTRAS", "UNITY_OUTPUT_COLOR")
-    add_includedirs("test/unit", "deps/unity", "deps/Printty/include")
+    add_includedirs("src", "test/unit", "deps/unity", "deps/Printty/include")
     add_files(
         "src/*.c|main.c|llog.c",
         "test/unit/*.c",

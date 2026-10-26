@@ -46,7 +46,6 @@ linc_log unit_assert_log = { .sink = unit_assert_sink };
 
 void run_all(void) {
     fprintf(log_file, "--Starting test group: lexer--\n");
-    LINC_LOG_INFO("hi");
     RUN_TEST_GROUP(lexer);
     fprintf(log_file, "\n--Starting test group: parser--\n");
     RUN_TEST_GROUP(parser);

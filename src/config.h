@@ -1,8 +1,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "state.h"
+#include <linc/string.h>
 
-void config_init(shell_env *env);
+int config_field_prompt(linc_string *prompt);
+void config_init(void);
 
 #endif

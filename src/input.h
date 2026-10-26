@@ -3,16 +3,8 @@
 
 #include <sys/signal.h>
 
-typedef struct {
-    int start, end;
-} input_word;
-
 typedef void (*input_cb)(void);
 extern void (*input_sig_cb)(void);
-
-int next_word(const char *line, int start, input_word *word);
-int prev_word(const char *line, int start, input_word *word);
-int cur_word(const char *line, int start, input_word *word);
 
 void input_init(void);
 void input_deinit(void);

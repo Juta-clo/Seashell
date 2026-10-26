@@ -10,6 +10,7 @@
 #undef basename
 
 #include "input.h"
+#include "input_object.h"
 #include "state.h"
 #include "utils.h"
 #include "printty.h"
@@ -98,159 +99,6 @@ static char *lstart(void) {
     return input.line + input.start;
 }
 
-static int next_non_ws(const char *line, int i) {
-    ASSERT(line);
-    ASSERT_GE_INT(i, 0);
-
-    ++i;
-
-    for (; i < (int)strlen(line); ++i)
-        if (line[i] != ' ')
-            return i;
-
-    return -1;
-}
-
-static int next_ws(const char *line, int i) {
-    ASSERT(line);
-    ASSERT_GE_INT(i, 0);
-
-    ++i;
-
-    for (; i < (int)strlen(line); ++i)
-        if (line[i] == ' ')
-            return i;
-
-    return -1;
-}
-
-static int prev_non_ws(const char *line, int i) {
-    ASSERT(line);
-    ASSERT_GE_INT(i, 0);
-
-    --i;
-
-    for (; i >= 0; --i)
-        if (line[i] != ' ')
-            return i;
-
-    return -1;
-}
-
-static inline int prev_ws(const char *line, int i) {
-    ASSERT(line);
-    ASSERT_GE_INT(i, 0);
-
-    --i;
-
-    for (; i >= 0; --i)
-        if (line[i] == ' ')
-            return i;
-
-    return -1;
-}
-
-int next_word(const char *line, int start, input_word *word) {
-    ASSERT(line && word);
-    ASSERT(start >= 0);
-    ASSERT(start < (int)strlen(line) + 1);
-
-    if (start == (int)strlen(line))
-        return -1;
-
-    int ws = start;
-
-    if (line[ws] != ' ') {
-        ws = next_ws(line, ws);
-        if (ws == -1)
-            return -1;
-    }
-
-    word->start = next_non_ws(line, ws);
-    if (word->start == -1)
-        return -1;
-
-    word->end = next_ws(line, word->start);
-    if (word->end == -1) {
-        word->end = strlen(line) - 1;
-    } else
-        --word->end;
-
-    ASSERT_GE_INT(word->start, 0);
-    ASSERT_GE_INT(word->end, 0);
-    ASSERT_G_INT((int)strlen(line), word->start);
-    ASSERT_G_INT((int)strlen(line), word->end);
-
-    return 0;
-}
-
-int prev_word(const char *line, int start, input_word *word) {
-    ASSERT(line && word);
-    ASSERT(start >= 0);
-    ASSERT(start < (int)strlen(line) + 1);
-
-    if (start == (int)strlen(line))
-        return -1;
-
-    int ws = start;
-
-    if (line[ws] != ' ') {
-        ws = prev_ws(line, ws);
-        if (ws == -1)
-            return -1;
-    }
-
-    word->end = prev_non_ws(line, ws);
-    if (word->end == -1)
-        return -1;
-
-    word->start = prev_ws(line, word->end);
-    if (word->start == -1) {
-        word->start = 0;
-    } else
-        ++word->start;
-
-    ASSERT_GE_INT(word->start, 0);
-    ASSERT_GE_INT(word->end, 0);
-    ASSERT_G_INT((int)strlen(line), word->start);
-    ASSERT_G_INT((int)strlen(line), word->end);
-
-    return 0;
-}
-
-int cur_word(const char *line, int start, input_word *word) {
-    ASSERT(line && word);
-    ASSERT(start >= 0);
-    ASSERT(start < (int)strlen(line) + 1);
-
-    if (start == (int)strlen(line))
-        return -1;
-
-    if (line[start] == ' ')
-        return -1;
-
-    word->start = prev_ws(line, start);
-
-    if (word->start == -1) {
-        word->start = 0;
-    } else
-        ++word->start;
-
-    word->end = next_ws(line, start);
-
-    if (word->end == -1) {
-        word->end = strlen(line) - 1;
-    } else
-        --word->end;
-
-    ASSERT_GE_INT(word->start, 0);
-    ASSERT_GE_INT(word->end, 0);
-    ASSERT_G_INT((int)strlen(line), word->start);
-    ASSERT_G_INT((int)strlen(line), word->end);
-
-    return 0;
-}
-
 static int input_current_tok(comp_tok *comp, int *start, int *end) {
     assert(comp && start && end);
 
@@ -291,6 +139,32 @@ static int input_current_tok(comp_tok *comp, int *start, int *end) {
 
     lx_free(&toks);
     return -1;
+}
+
+static void ncol_cell(int *crow, int *ccol, int start_row, int col_n) {
+    ASSERT_GE_INT(col_n, 0);
+    ASSERT_GE_INT(llen(), col_n);
+    ASSERT(crow && ccol);
+
+    *crow = start_row;
+    *ccol = col_n;
+
+    while (input.cols <= *ccol) {
+        *ccol -= input.cols;
+        ++*crow;
+    }
+}
+
+size_t input_draw_prompt(int crow, int ccol) {
+    // printf("%s", input.prompt);
+
+    int crow_p, ccol_p;
+
+    xprintty_get_cursor_pos(pt, &crow_p, &ccol_p);
+
+    size_t n = input.cols * crow_p - crow + (ccol_p - ccol);
+
+    return n;
 }
 
 static void new_start_pos(void) {
@@ -336,20 +210,6 @@ static void update_start_pos(void) {
     ASSERT_G_INT(input.rows, input.start_row);
 }
 
-static void ncol_cell(int *crow, int *ccol, int col_n) {
-    ASSERT_GE_INT(col_n, 0);
-    ASSERT_GE_INT(llen(), col_n);
-    ASSERT(crow && ccol);
-
-    *crow = input.start_row;
-    *ccol = col_n;
-
-    while (input.cols <= *ccol) {
-        *ccol -= input.cols;
-        ++*crow;
-    }
-}
-
 static void input_draw(int rows, int start_idx) {
     int scr_i = 0;
     int line_i = start_idx * input.cols;
@@ -359,7 +219,7 @@ static void input_draw(int rows, int start_idx) {
         if (line_i >= llen() || scr_i >= input.cols * rows)
             break;
 
-        ncol_cell(&crow, &ccol, scr_i);
+        ncol_cell(&crow, &ccol, input.start_row, scr_i);
 
         if (line_i < input.start)
             xprintty_set_color(pt, PRINTTY_CYAN, -1);
@@ -439,7 +299,8 @@ static void input_update(void) {
     }
 
     input_draw(rows, start_idx);
-    ncol_cell(&crow, &ccol, (input.off + input.start) - start_idx * input.cols);
+    ncol_cell(&crow, &ccol, input.start_row,
+            (input.off + input.start) - start_idx * input.cols);
 
     if (paging)
         crow += 1;

@@ -25,7 +25,6 @@ typedef struct {
     linc_log shell_log;
     linc_log assert_log;
     int fg_pending;
-    lua_State *L;
 } shell_env;
 
 extern shell_env sh_env;
@@ -33,7 +32,8 @@ extern shell_env sh_env;
 typedef enum {
     LOGFD,
     LOGFILE,
-    PROMPT,
+    CLEAN,
+    OPT_MAX
 } opt_names;
 
 extern linc_args opts[];
