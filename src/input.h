@@ -1,24 +1,26 @@
 #ifndef INPUT_H
 #define INPUT_H
 
-#include "state.h"
-
-#define PROMPT_SIMPLE 1
-#define PROMPT_CWD 2
-#define PROMPT_PS 3
+#include <sys/signal.h>
 
 typedef struct {
     int start, end;
 } input_word;
 
+typedef void (*input_cb)(void);
+extern void (*input_sig_cb)(void);
+
 int next_word(const char *line, int start, input_word *word);
 int prev_word(const char *line, int start, input_word *word);
 int cur_word(const char *line, int start, input_word *word);
 
-void input_init(shell_env *env);
-void input_deinit(shell_env *env);
+void input_init(void);
+void input_deinit(void);
 
-void input_drop_line(void);
-char *input_get_line(void);
+void input_set_suspend_mask(sigset_t suspend_mask);
+void input_clear_history(void);
+void input_reset_line_state(void);
+void input_on_new_line(void);
+char *input_get_line(const char *prompt);
 
 #endif

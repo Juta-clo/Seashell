@@ -43,9 +43,7 @@ static void reclaim_terminal(void) {
     if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");
 
-    printty_start(sh_env.pt);
     sh_env.fg_jid = NOFG;
-    sh_env.need_prompt = true;
 }
 
 static bool fg_event(job_event *jev) {
@@ -64,12 +62,10 @@ static void handle_fg_event(job_event *jev) {
 
         if (jev->exit_type == JEXIT_INTR) {
             reclaim_terminal();
-
             printf("\n");
 
             if (jev->signaled)
                 print_job_event(jid, NULL, false);
-
         } else {
             if (jev->signaled)
                 print_job_event(jid, NULL, false);
@@ -92,7 +88,6 @@ static void handle_fg_event(job_event *jev) {
         plan->tty_state_saved = true;
 
         xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tty_state);
-        printty_start(sh_env.pt);
 
         if (jev->intr_stop)
             printf("\n");
@@ -106,7 +101,8 @@ static void handle_fg_event(job_event *jev) {
         sh_env.fg_pending = false;
 
         if (try_run_next_job(pending_jid, success, IN_FG)) {
-            LOG_INFO("continued 'fg' plan (still pending=%d)", sh_env.fg_pending);
+            LOG_INFO("continued 'fg' plan (still pending=%d)",
+                    sh_env.fg_pending);
             return;
         }
 
@@ -119,6 +115,8 @@ static void handle_bg_event(job_event *jev) {
     if (jev->type != JEXITED) {
         print_job_event(jev->jid, jev, false);
         free_job_event(jev);
+        input_on_new_line();
+
         return;
     }
 
@@ -131,6 +129,8 @@ static void handle_bg_event(job_event *jev) {
 
     print_job_event(jev->jid, NULL, false);
     plan_done(jev->jid);
+    input_on_new_line();
+
     return;
 }
 
@@ -153,10 +153,9 @@ void process_signals(void) {
     }
 
     if (sigint_caught) {
-        sh_env.need_prompt = true;
-        printf("^C\n");
-        input_drop_line();
         LOG_INFO("SIGINT caught");
+        printf("^C\n");
+        input_reset_line_state();
     }
 
     if (sighup_caught) {

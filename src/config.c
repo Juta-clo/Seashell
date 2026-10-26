@@ -30,13 +30,13 @@ FILE *config_file_open(void) {
         if (errno != ENOENT)
             return NULL;
 
-        char *line = input_get_line(/*CONFIG_PROMPT*/);
+        // char *line = input_get_line(/*CONFIG_PROMPT*/);
 
-        if (strcmp(line, "y") == 0) {
-            xopen(path, O_RDONLY | O_CREAT | O_EXCL, 0700);
-        }
-
-        return NULL;
+        // if (strcmp(line, "y") == 0) {
+        //     xopen(path, O_RDONLY | O_CREAT | O_EXCL, 0700);
+        // }
+        //
+        // return NULL;
     }
 
     FILE *config = fdopen(fd, "r");

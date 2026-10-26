@@ -88,7 +88,7 @@ linc_args opts[] = {
 };
 
 static void seashell_shutdown(void) {
-    input_deinit(&sh_env);
+    input_deinit();
 
     for (size_t i = 0; i < get_jctl()->jobs.size; ++i) {
         jc_job *job = &get_jctl()->jobs.data[i];
@@ -172,20 +172,8 @@ void env_setup(int argc, char *const *argv) {
     xatexit(seashell_shutdown);
 
     sh_env.subshell = false;
-    sh_env.need_prompt = true;
     sh_env.fg_jid = NOFG;
     sh_env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
-
-    if (opts[PROMPT].found) {
-        if (strcmp("cwd", opts[PROMPT].val_str) == 0)
-            sh_env.prompt_style = PROMPT_CWD;
-        else if (strcmp("simple", opts[PROMPT].val_str) == 0)
-            sh_env.prompt_style = PROMPT_SIMPLE;
-        else if (strcmp("ps", opts[PROMPT].val_str) == 0)
-            sh_env.prompt_style = PROMPT_PS;
-    } else {
-        sh_env.prompt_style = PROMPT_CWD;
-    }
 
     xsetvbuf(stdin, NULL, _IONBF, 0);
     xsetvbuf(stdout, NULL, _IONBF, 0);
@@ -193,9 +181,9 @@ void env_setup(int argc, char *const *argv) {
 
     log_setup(&sh_env.log_fd);
     var_setup(&sh_env);
-    config_init(&sh_env);
+    input_init();
+    // config_init(&sh_env);
     sig_setup(&sh_env.og_mask);
-    input_init(&sh_env);
 
     LOG_INFO("seashell PID(%d)", getpid());
 }

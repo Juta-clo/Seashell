@@ -62,7 +62,37 @@ TEST(resize, resize_that_causes_cursor_wrap_then_unwrap) {
 }
 
 TEST(resize, resize_with_cursor_on_row_less_then_end_of_line) {
-    vt_send_str("\n\n\n\nbcdefghijklmnopqrstuvwxyz");
+    vt_send_str("\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("\n");
+    assert_term(4, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("bcdefghijklmnopqrstuvwxyz");
     vt_send_key(VTERM_KEY_ESCAPE, VTERM_MOD_NONE);
     vt_send_str("I");
     assert_term(4, PROMPT_LEN,
@@ -117,7 +147,20 @@ TEST(resize, insert_text_that_enters_pager) {
 TEST(resize, insert_that_causes_emulator_scroll) {
     test_resize_term(4, PROMPT_LEN + 1);
 
-    vt_send_str("\n\n\nx");
+    vt_send_str("\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("x");
     assert_term(3, 0,
         PROMPT,
         PROMPT,
@@ -208,7 +251,28 @@ TEST(resize, clearing_line_from_within_pager) {
 TEST(resize, resize_after_emulator_scroll) {
     test_resize_term(6, 4);
 
-    vt_send_str("\n\n\n\nabcdef");
+    vt_send_str("\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT,
+        PROMPT,
+        PROMPT,
+        PROMPT
+    );
+
+    vt_send_str("abcdef");
     vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
     assert_term(4, 2,

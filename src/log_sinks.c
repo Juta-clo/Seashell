@@ -1,5 +1,6 @@
 #include <linc/string.h>
 #include <linc/log.h>
+#include <stdio.h>
 
 #include "state.h"
 

@@ -189,22 +189,15 @@ static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
     return out;
 }
 
-static void display_msg(const char *msg) {
-    int crow, ccol;
+static void cursor_left_anchor(void) {
+    struct winsize ws;
+    if (ioctl(sh_env.tty_fd, TIOCGWINSZ, &ws) == -1)
+        xfatal("ioctl");
 
-    if (sh_env.fg_jid == NOFG) {
-        xprintty_get_cursor_pos(sh_env.pt, &crow, &ccol);
-
-        if (ccol != 0)
-            printf("\n");
-    }
-
-    printf("%s\n", msg);
+    printf("%*s\x1b[1G", ws.ws_col, "");
 }
 
 void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
-    sh_env.need_prompt = true;
-
     linc_string msg = LINC_STRING_INIT;
     linc_string_appendf(&msg, "[%d] ", jid);
 
@@ -238,9 +231,10 @@ void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
         linc_string_free(&s);
     }
 
-    display_msg(msg.cstr);
-    LOG_INFO("%s", msg.cstr);
+    cursor_left_anchor();
+    printf("%s\n", msg.cstr);
 
+    LOG_INFO("%s", msg.cstr);
     linc_string_free(&msg);
 }
 
@@ -498,9 +492,6 @@ int launch_job(ps_pline *pline, bool bg, pid_t jid) {
         return -1;
 
     if (!bg) {
-        if (sh_env.fg_jid == NOFG)
-            printty_stop(sh_env.pt);
-
         sh_env.fg_jid = jid;
 
         xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);

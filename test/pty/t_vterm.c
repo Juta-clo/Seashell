@@ -25,15 +25,19 @@ static linc_string reg_convert(char *line) {
                 switch (c[1]) {
                 case 'd':
                     linc_string_append(&out, "[0-9]+");
-                    ++c;
-                    continue;
+                    break;
                 case '%':
                     linc_string_push(&out, '%');
-                    ++c;
-                    continue;
+                    break;
+                case 's':
+                    linc_string_append(&out, "[ ]+");
+                    break;
                 default:
                     xtest_fatal("%s: Bad regex %s", test->test_name, line);
                 }
+
+                ++c;
+                continue;
             }
 
             for (size_t i = 0; i < sizeof(reg_chars); ++i) {

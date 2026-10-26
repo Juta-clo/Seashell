@@ -11,7 +11,6 @@
 #include <linc/args.h>
 #include <linc/log.h>
 #include "map.h"
-#include "printty.h"
 
 #define NOFG -1
 
@@ -21,11 +20,8 @@ typedef struct {
     int tty_fd;
     sigset_t og_mask;
     int log_fd;
-    int prompt_style;
     map_t vars;
     struct termios tty_state;
-    Printty *pt;
-    bool need_prompt;
     linc_log shell_log;
     linc_log assert_log;
     int fg_pending;

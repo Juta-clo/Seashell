@@ -24,8 +24,6 @@
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 
-#define PROMPT1 "> "
-
 #define DELETE_CURSOR 1
 #define DELETE_WORD   2
 #define DELETE_END    3
@@ -41,6 +39,8 @@
 #define OP_DEL  1
 
 typedef char * linc_hds;
+
+static Printty *pt;
 
 typedef enum {
     COMP_CMD,
@@ -76,7 +76,13 @@ typedef struct {
     input_hist hist;
 } input_editor;
 
-input_editor input = { .off = 0 };
+static void default_sig_cb(void) {
+    _exit(EXIT_FAILURE);
+}
+
+void (*input_sig_cb)(void) = default_sig_cb;
+
+input_editor input = {0};
 
 static int llen(void) {
     return (int)(linc_hda_size(input.line) - 1);
@@ -287,50 +293,18 @@ static int input_current_tok(comp_tok *comp, int *start, int *end) {
     return -1;
 }
 
-static void update_prompt(int style) {
-    if (style == PROMPT_SIMPLE) {
-        linc_hds_append(input.line, PROMPT1);
-
-    } else if (style == PROMPT_CWD) {
-        static char cwd_str[PATH_MAX];
-
-        char *cwd = xgetcwd(cwd_str, PATH_MAX);
-        char *cwd_base = basename(cwd);
-        sh_var *var = lookup_var(&sh_env.vars, "HOME");
-
-        if (var && strcmp(cwd, var->value) == 0) {
-            linc_hds_append(input.line, "~");
-        } else
-            linc_hds_append(input.line, cwd_base);
-
-        linc_hds_append(input.line, " > ");
-    } else if (style == PROMPT_PS) {
-        sh_var *var = lookup_var(&sh_env.vars, "PS");
-        if (!var) {
-            linc_hds_append(input.line, PROMPT1);
-        } else {
-            linc_hds_append(input.line, var->value);
-        }
-
-    } else
-        xfatal("unknown prompt mode");
-
-    input.start = llen();
-    LOG_INFO("new prompt: \"%s\"", input.line);
-}
-
 static void new_start_pos(void) {
     int row, col;
-    xprintty_get_term_size(sh_env.pt, &input.rows, &input.cols);
-    xprintty_get_cursor_pos(sh_env.pt, &row, &col);
+    xprintty_get_term_size(pt, &input.rows, &input.cols);
+    xprintty_get_cursor_pos(pt, &row, &col);
 
     if (col != 0) {
-        xprintty_write(sh_env.pt, unibi_enter_reverse_mode);
-        xprintty_write(sh_env.pt, unibi_enter_bold_mode);
+        xprintty_write(pt, unibi_enter_reverse_mode);
+        xprintty_write(pt, unibi_enter_bold_mode);
         printf("%%\n");
-        xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
+        xprintty_write(pt, unibi_exit_attribute_mode);
         /* we might have scrolled */
-        xprintty_get_cursor_pos(sh_env.pt, &row, &col);
+        xprintty_get_cursor_pos(pt, &row, &col);
     }
 
     input.start_row = row;
@@ -342,8 +316,8 @@ static void new_start_pos(void) {
 
 static void update_start_pos(void) {
     int crow, ccol;
-    xprintty_get_term_size(sh_env.pt, &input.rows, &input.cols);
-    xprintty_get_cursor_pos(sh_env.pt, &crow, &ccol);
+    xprintty_get_term_size(pt, &input.rows, &input.cols);
+    xprintty_get_cursor_pos(pt, &crow, &ccol);
 
     LOG_INFO("cursor[%d,%d], term[%d,%d]", crow, ccol, input.rows, input.cols);
 
@@ -388,19 +362,19 @@ static void input_draw(int rows, int start_idx) {
         ncol_cell(&crow, &ccol, scr_i);
 
         if (line_i < input.start)
-            xprintty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
+            xprintty_set_color(pt, PRINTTY_CYAN, -1);
 
         if (input.line[line_i] < 32 || input.line[line_i] > 126) {
-            xprintty_set_color(sh_env.pt, PRINTTY_BLACK, PRINTTY_RED);
-            xprintty_write(sh_env.pt, unibi_enter_bold_mode);
+            xprintty_set_color(pt, PRINTTY_BLACK, PRINTTY_RED);
+            xprintty_write(pt, unibi_enter_bold_mode);
             printf("%c", '?');
-            xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
+            xprintty_write(pt, unibi_exit_attribute_mode);
         } else {
             printf("%c", input.line[line_i]);
         }
 
         if (line_i < input.start)
-            xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
+            xprintty_write(pt, unibi_exit_attribute_mode);
 
         if (ccol == input.cols - 1) {
             if (crow != rows - 1) {
@@ -435,24 +409,24 @@ static void input_update(void) {
     }
 
     ASSERT_GE_INT(req_idx, start_idx);
-    xprintty_cursor_move(sh_env.pt, input.start_row, 0);
-    xprintty_write(sh_env.pt, unibi_clr_eos);
+    xprintty_cursor_move(pt, input.start_row, 0);
+    xprintty_write(pt, unibi_clr_eos);
 
     const char *pager_str = ">...";
     bool wrap_pending = input.cols <= (int)strlen(pager_str);
 
     if (paging) {
         while (input.start_row > 0) {
-            xprintty_cursor_move(sh_env.pt, input.rows - 1, 0);
-            xprintty_write(sh_env.pt, unibi_scroll_forward);
+            xprintty_cursor_move(pt, input.rows - 1, 0);
+            xprintty_write(pt, unibi_scroll_forward);
             --input.start_row;
         }
 
-        xprintty_write(sh_env.pt, unibi_cursor_home);
+        xprintty_write(pt, unibi_cursor_home);
 
-        xprintty_set_color(sh_env.pt, PRINTTY_CYAN, -1);
+        xprintty_set_color(pt, PRINTTY_CYAN, -1);
         printf("%.*s", MIN(input.cols, (int)strlen(pager_str)), pager_str);
-        xprintty_write(sh_env.pt, unibi_exit_attribute_mode);
+        xprintty_write(pt, unibi_exit_attribute_mode);
 
         if (input.rows > 1) {
             if (wrap_pending) {
@@ -470,7 +444,7 @@ static void input_update(void) {
     if (paging)
         crow += 1;
 
-    xprintty_cursor_move(sh_env.pt, crow, ccol);
+    xprintty_cursor_move(pt, crow, ccol);
 }
 
 static void input_move(int offset) {
@@ -587,12 +561,12 @@ static void input_insert(int type, const char *s) {
 }
 
 static void enter_mode_normal() {
-    xprintty_cstyle(sh_env.pt, PRINTTY_CBLOCK(false));
+    xprintty_cstyle(pt, PRINTTY_CBLOCK(false));
     input.insert_mode = false;
 }
 
 static void enter_mode_insert() {
-    xprintty_cstyle(sh_env.pt, PRINTTY_CBEAM(false));
+    xprintty_cstyle(pt, PRINTTY_CBEAM(false));
     input.insert_mode = true;
 }
 
@@ -668,7 +642,7 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
     } else if (codepoint == 21/*C-u*/) {
         input_delete(DELETE_START, NULL);
     } else if (codepoint == 12/*C-l*/) {
-        xprintty_write(sh_env.pt, unibi_clear_screen);
+        xprintty_write(pt, unibi_clear_screen);
         new_start_pos();
         input_update();
     } else if (codepoint == 27/*ESC*/) {
@@ -828,7 +802,7 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
     } else if (codepoint == 'd') {
         op = OP_DEL;
     } else if (codepoint == 'y') {
-        printty_clipboard_copy(sh_env.pt, input.line + input.start);
+        printty_clipboard_copy(pt, input.line + input.start);
     }
 }
 
@@ -879,64 +853,81 @@ static void history_next(void) {
     LOG_INFO("history_next: input.line = \"%s\"", input.line);
 }
 
-void input_init(shell_env *env) {
-    assert(env);
+void input_deinit(void) {
+    if (pt) {
+        xprintty_write(pt, unibi_exit_attribute_mode);
+        xprintty_write_name(pt, "Se");
+        printty_destroy(pt);
+    }
 
-    if (!(env->pt = printty_create(NULL)))
+    pt = NULL;
+}
+
+void input_init(void) {
+    if (!(pt = printty_create(NULL)))
         xfatal("printty_create");
-    if (printty_start(env->pt) == PRINTTY_ERR)
-        xfatal("printty_resume");
-    if (printty_cbreak(env->pt) == PRINTTY_ERR)
+    if (printty_cbreak(pt) == PRINTTY_ERR)
         xfatal("printty_cbreak");
 
-    printty_set_suspend_mask(env->pt, env->og_mask);
-    printty_set_esc_delay(env->pt, 25);
+    printty_set_esc_delay(pt, 25);
 }
 
-void input_deinit(shell_env *env) {
-    assert(env);
-    /* null when called from the exit builtin */
-    if (env->pt) {
-        xprintty_write(env->pt, unibi_exit_attribute_mode);
-        xprintty_write_name(env->pt, "Se");
-        printty_destroy(env->pt);
-    }
-
-    env->pt = NULL;
+void input_set_suspend_mask(sigset_t suspend_mask) {
+    printty_set_suspend_mask(pt, suspend_mask);
 }
 
-void input_drop_line(void) {
-    if (input.line) {
-        linc_hda_free(input.line);
-        input.line = NULL;
-    }
-}
+void input_on_new_line(void) {
+    if (!input.line)
+        return;
 
-char *input_get_line(void) {
-    if (!input.line) {
-        input.off = 0;
-        update_prompt(sh_env.prompt_style);
-    }
-
-    if (sh_env.need_prompt) {
-        sh_env.need_prompt = false;
-        new_start_pos();
-        enter_mode_insert();
-    }
-
+    new_start_pos();
     input_update();
+    enter_mode_insert();
+}
+
+void input_reset_line_state(void) {
+    if (!input.line)
+        return;
+
+    linc_hda_delete(input.line, input.start, line_len());
+    input.off = 0;
+
+    new_start_pos();
+    input_update();
+    enter_mode_insert();
+}
+
+void input_clear_history(void) {
+    size_t n = linc_hda_size(input.hist.lines);
+
+    for (size_t i = 0; i < n; ++i)
+        linc_hda_free(input.hist.lines[i]);
+
+    linc_hda_delete(input.hist.lines, 0, n);
+}
+
+char *input_get_line(const char *prompt) {
+    if (printty_start(pt) != PRINTTY_OK)
+        return NULL;
+
+    linc_hds_append(input.line, prompt);
+    input.start = linc_hda_size(input.line) - 1;
+
+    input_on_new_line();
+
+    LOG_INFO("input: new prompt: \"%s\"", input.line);
 
     while (true) {
         PrinttyEvent pev;
-        int rv = printty_get_event(sh_env.pt, &pev);
-        if (rv == PRINTTY_EOF) {
-            LOG_INFO("eof, exiting");
-            exit(EXIT_SUCCESS);
-        } else if (rv == PRINTTY_ERR) {
-            xfatal("failed parsing line");
-        } else if (rv == PRINTTY_SIG) {
+        int rv = printty_get_event(pt, &pev);
+
+        if (rv == PRINTTY_EOF || rv == PRINTTY_ERR)
             return NULL;
-        } else if (pev.type == PRINTTY_UNICODE) {
+
+        else if (rv == PRINTTY_SIG)
+            input_sig_cb();
+
+        else if (pev.type == PRINTTY_UNICODE) {
             if (input.insert_mode) {
                 insert_mode_feed_unicode(pev.cp, pev.utf8);
             } else {
@@ -971,7 +962,7 @@ char *input_get_line(void) {
             input_update();
         } else if (pev.type == PRINTTY_PASTE_BEGIN) {
             char *paste_data;
-            if (!(paste_data = printty_res_paste(sh_env.pt))) {
+            if (!(paste_data = printty_res_paste(pt))) {
                 LOG_WARN("timed out waiting for paste");
                 continue;
             }
@@ -983,6 +974,14 @@ char *input_get_line(void) {
 
     LOG_INFO("parsed line: %s", input.line);
 
-    sh_env.need_prompt = true;
-    return lstart();
+    if (printty_stop(pt) != PRINTTY_OK)
+        return NULL;
+
+    char *out = xstrdup(lstart());
+
+    linc_hda_free(input.line);
+    input.line = nullptr;
+    input.off = 0;
+
+    return out;
 }
