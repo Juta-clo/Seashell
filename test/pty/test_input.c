@@ -12,7 +12,7 @@ TEST_GROUP(input);
 /************ Fixture ************/
 
 TEST_SETUP(input) {
-    test_setup();
+    test_setup("./seashell", "--clean");
 
     if (mkdir("/tmp/sh-tmp", 0700) == -1 && errno != EEXIST)
         xtest_fatal("mkdir");

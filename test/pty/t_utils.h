@@ -30,7 +30,9 @@ LINC_ARRAY_TYPE(da_int, int);
 __attribute__ ((format(printf, 3, 4)))
 void test_fatal(const char *file, int line, const char *fmt, ...);
 
+__attribute__ ((__format__(printf, 1, 2)))
 void test_write(const char *fmt, ...);
+
 [[nodiscard]] FILE *new_tmp_file(char *path);
 void test_relink(const char *target, const char *link);
 void convert_special_chars(linc_string *str_out);

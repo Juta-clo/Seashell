@@ -47,7 +47,7 @@ static void add_dir(const char *path) {
 }
 
 TEST_SETUP(glob) {
-    test_setup();
+    test_setup("./seashell", "--clean");
     xsystem("mkdir -p " GLOB_DIR);
 
     vt_send_str("cd " GLOB_DIR "\n");

@@ -8,7 +8,7 @@ TEST_GROUP(resize);
 /************ Fixture ************/
 
 TEST_SETUP(resize) {
-    test_setup();
+    test_setup("./seashell", "--clean");
 }
 
 TEST_TEAR_DOWN(resize) {

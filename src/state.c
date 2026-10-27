@@ -84,6 +84,12 @@ linc_args opts[OPT_MAX + 1] = {
         .short_name = 'q',
         .has_arg = LINC_ARGS_ARG_NONE
     },
+    [CONFIG] = {
+        .long_name = "config-file",
+        .short_name = 'e',
+        .has_arg = LINC_ARGS_ARG_REQ,
+        .arg_type = LINC_ARGS_ARG_STR
+    },
     (linc_args){0}
 };
 

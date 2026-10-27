@@ -15,8 +15,10 @@ typedef struct {
     int fail_line;
     double duration;
     bool test_ok;
+    bool fail_exec;
     bool val_err;
     bool diff_snaps;
+    char **argv;
 
     linc_string pty_out_data;
     linc_string pty_in_data;
@@ -53,7 +55,6 @@ typedef struct {
     FILE *log_raw_in;
     int sh_p[2];
     int val_p[2];
-    char **exec_argv;
 } pty_harness;
 
 extern bool verbose;
@@ -63,12 +64,15 @@ extern bool script;
 extern pty_harness ptyh;
 extern pty_test *test;
 
+extern char **(*static_args_cb)(void);
+
 void test_harness_init(int argc, const char *const *argv);
 void test_harness_deinit(void);
-
 void print_val_sum(void);
-void test_resize_term(int row, int col);
+char **create_exec_argv(char **args);
 
+void test_resize_term(int row, int col);
+// void test_config_file(const char *content);
 int test_poll(int tfd);
 void test_pump_ms(int ms);
 

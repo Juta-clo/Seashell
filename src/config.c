@@ -58,17 +58,28 @@ static int push_ctx_table(lua_State *state) {
 }
 
 static FILE *config_file_open(void) {
-    const char *home = getenv("HOME");
-    if (!home)
-        return NULL;
+    int n;
 
-    int fd;
-    int n = snprintf(config_path, PATH_MAX - 1, "%s/.seashell.lua", home);
+    if (opts[CONFIG].found) {
+        n = snprintf(config_path, PATH_MAX - 1, "%s", opts[CONFIG].val_str);
+    } else {
+        const char *home = getenv("HOME");
+        if (!home)
+            return NULL;
+
+        n = snprintf(config_path, PATH_MAX - 1,
+                "%s/.seashell.lua", home);
+    }
 
     if (n < 0 || n >= PATH_MAX - 1)
         return NULL;
 
-    if ((fd = open(config_path, O_RDONLY)) == -1) {
+    int fd = open(config_path, O_RDONLY);
+
+    if (fd == -1) {
+        if (opts[CONFIG].found)
+            xfatal("--config-file=%s: %m", opts[CONFIG].val_str);
+
         if (errno != ENOENT)
             return NULL;
 
@@ -204,7 +215,7 @@ void config_init(void) {
     if (!L)
         xfatal("luaL_newstate");
 
-     luaL_openlibs(L);
+    luaL_openlibs(L);
 
     FILE *config = config_file_open();
 

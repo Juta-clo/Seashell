@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <pty.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -45,6 +46,8 @@ static void get_diff_msg(void) {
     } else {
         linc_string_appendf(&test->diff_msg, "VTERM -- CLEAN\n");
     }
+
+    linc_array_free(&dirty_lines);
 }
 
 static void log_test(void) {
@@ -55,34 +58,44 @@ static void log_test(void) {
             test->test_name, test->test_file, test->fail_line,
             test->fail_msg.cstr);
 
-    fprintf(ptyh.log_file, "===DIFF(` marks empty cell)===\n");
-    fprintf(ptyh.log_file, "%s", test->diff_msg.cstr);
+    fprintf(ptyh.log_file, "Test took %lf seconds\nSeashell %s\n",
+        test->duration, test->exit_msg.cstr);
 
-    fprintf(ptyh.log_file, "===SHELL LOGS===\n");
-    for (size_t i = 0; i < test->shlog_lines.size; ++i) {
-        linc_string *line = &test->shlog_lines.data[i];
-        fprintf(ptyh.log_file, "%s", line->cstr);
-        if (i != test->shlog_lines.size - 1)
-            fprintf(ptyh.log_file, "\n");
-    }
+    for (char **arg = test->argv; *arg != nullptr; ++arg)
+        fprintf(ptyh.log_file, "%s ", *arg);
 
-    fprintf(ptyh.log_file, "===VALGRIND===\n");
-    if (test->val_lines.size == 0)
-        fprintf(ptyh.log_file, "[memcheck not used]\n");
+    fprintf(ptyh.log_file, "\n");
 
-    if (!test->val_err) {
-        fprintf(ptyh.log_file, "CLEAN\n");
-    } else {
-        for (size_t i = 0; i < test->val_lines.size; ++i) {
-            linc_string *line = &test->val_lines.data[i];
-            fprintf(ptyh.log_file, "%s\n", line->cstr);
+    if (!test->fail_exec) {
+        fprintf(ptyh.log_file, "===DIFF(` marks empty cell)===\n");
+        fprintf(ptyh.log_file, "%s", test->diff_msg.cstr);
+
+        fprintf(ptyh.log_file, "===SHELL LOGS===\n");
+        for (size_t i = 0; i < test->shlog_lines.size; ++i) {
+            linc_string *line = &test->shlog_lines.data[i];
+            fprintf(ptyh.log_file, "%s", line->cstr);
+            if (i != test->shlog_lines.size - 1)
+                fprintf(ptyh.log_file, "\n");
         }
-    }
 
-    convert_special_chars(&test->pty_out_data);
-    convert_special_chars(&test->pty_in_data);
-    fprintf(ptyh.log_raw_out, "%s\n", test->pty_out_data.cstr);
-    fprintf(ptyh.log_raw_in, "%s\n", test->pty_in_data.cstr);
+        fprintf(ptyh.log_file, "===VALGRIND===\n");
+        if (test->val_lines.size == 0)
+            fprintf(ptyh.log_file, "[memcheck not used]\n");
+
+        if (!test->val_err) {
+            fprintf(ptyh.log_file, "CLEAN\n");
+        } else {
+            for (size_t i = 0; i < test->val_lines.size; ++i) {
+                linc_string *line = &test->val_lines.data[i];
+                fprintf(ptyh.log_file, "%s\n", line->cstr);
+            }
+        }
+
+        convert_special_chars(&test->pty_out_data);
+        convert_special_chars(&test->pty_in_data);
+        fprintf(ptyh.log_raw_out, "%s\n", test->pty_out_data.cstr);
+        fprintf(ptyh.log_raw_in, "%s\n", test->pty_in_data.cstr);
+    }
 }
 
 #define INFO_SEP "\x1b[1;38;2;255;133;54m:\x1b[m"
@@ -161,6 +174,13 @@ static void test_shutdown_prgm(void) {
             test_push_err("valgrind error(s)");
         }
 
+        if (exit_status == 199) {
+            Unity.CurrentTestFailed = true;
+            linc_string_clear(&test->fail_msg);
+            test_push_err("failed to exec test program");
+            test->fail_exec = true;
+        }
+
         linc_string_appendf(&test->exit_msg, "Exited with status %d",
                 exit_status);
     } else if (WIFSIGNALED(stat)) {
@@ -214,19 +234,24 @@ void test_push_err(const char *fmt, ...) {
     free(msg);
 }
 
-void test_setup(void) {
+void test_setup_imp(char **argv) {
+    assert(argv);
+
     test = linc_array_push(&ptyh.tests);
     *test = (pty_test){0};
 
     struct winsize ws = { .ws_row = 15, .ws_col = 60 };
 
+    test->argv = create_exec_argv(argv);
     test->cpid = forkpty(&test->mfd, NULL, NULL, &ws);
     if (test->cpid == -1)
         xtest_fatal("forkpty");
 
     if (test->cpid == 0) {
-        execvp(ptyh.exec_argv[0], ptyh.exec_argv);
-        _exit(EXIT_FAILURE);
+        execvp(test->argv[0], test->argv);
+        fprintf(stderr, "test_setup: execvp: %m\n");
+        fflush(stderr);
+        _exit(199);
     }
 
     if (ioctl(test->mfd, FIONBIO, &(int){1}) == -1)
@@ -264,10 +289,17 @@ void test_teardown(void) {
         test->exit_msg.cstr
     );
 
+    linc_string arg_line = LINC_STRING_INIT;
+
+    for (char **arg = test->argv; *arg != nullptr; ++arg)
+        linc_string_appendf(&arg_line, "%s ", *arg);
+
+    test_write("%s", arg_line.cstr);
+
     if (!test->test_ok || test->val_err) {
         print_test_fail();
 
-        if (test->diff_snaps) {
+        if (!test->fail_exec && test->diff_snaps) {
             get_diff_msg();
             test_write("===DIFF===");
             test_write("%s", test->diff_msg.cstr);
@@ -279,5 +311,6 @@ void test_teardown(void) {
     }
 
     vterm_free(test->vt.vp);
+    linc_string_free(&arg_line);
     close(test->mfd);
 }

@@ -19,6 +19,8 @@
 
 #define TEST_BIN_DIR "./test/pty/test_bins"
 
+char **(*static_args_cb)(void) = nullptr;
+
 bool verbose = false;
 bool memcheck = false;
 bool script = false;
@@ -67,9 +69,10 @@ static void process_args(int argc, const char *const *argv) {
     }
 }
 
-static void create_exec_argv(void) {
-    if (pipe2(ptyh.sh_p, O_NONBLOCK) == -1)
-        xtest_fatal("pipe2: %m");
+char **create_exec_argv(char **args) {
+    assert(args);
+    char **out = nullptr;
+
     if (pipe2(ptyh.val_p, O_NONBLOCK) == -1)
         xtest_fatal("pipe2: %m");
 
@@ -89,37 +92,32 @@ static void create_exec_argv(void) {
         };
 
         for (char **arg = val_cmd; memcheck && *arg != NULL; ++arg)
-            linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), *arg);
-
-        /* append lfd arg */
+            linc_hds_append(*linc_hda_push(out, nullptr), *arg);
 
         char val_lfd_arg[ARG_MAX];
         if (snprintf(val_lfd_arg, ARG_MAX, "--log-fd=%d", ptyh.val_p[1]) < 0)
             xtest_fatal("snprintf: %m");
-        linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), val_lfd_arg);
+
+        linc_hds_append(*linc_hda_push(out, nullptr), val_lfd_arg);
     }
 
-    char *sh_cmd[] = {
-        "./seashell",
-            "--clean",
-            NULL
-    };
+    for (char **arg = args; *arg != NULL; ++arg)
+        linc_hds_append(*linc_hda_push(out, nullptr), *arg);
 
-    for (char **arg = sh_cmd; *arg != NULL; ++arg)
-        linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), *arg);
+    if (static_args_cb) {
+        char **static_args = static_args_cb();
 
-    /* append lfd arg */
-    char sh_lfd_arg[ARG_MAX];
-    if (snprintf(sh_lfd_arg, ARG_MAX, "--log-fd=%d", ptyh.sh_p[1]) < 0)
-        xtest_fatal("snprintf: %m");
-    linc_hds_append(*linc_hda_push(ptyh.exec_argv, nullptr), sh_lfd_arg);
+        for (char **arg = static_args; *arg != NULL; ++arg)
+            linc_hds_append(*linc_hda_push(out, nullptr), *arg);
+    }
 
-    linc_hda_push(ptyh.exec_argv, nullptr);
+    linc_hda_push(out, nullptr);
+
+    return out;
 }
 
 void test_harness_init(int argc, const char *const *argv) {
     process_args(argc, argv);
-    create_exec_argv();
 
     if (mkdir("/tmp/seashell", 0700) == -1 && errno != EEXIST)
         xtest_fatal("mkdir: %m");

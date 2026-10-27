@@ -15,7 +15,7 @@ TEST_GROUP(shell);
 /************ Fixture ************/
 
 TEST_SETUP(shell) {
-    test_setup();
+    test_setup("./seashell", "--clean");
 }
 
 TEST_TEAR_DOWN(shell) {

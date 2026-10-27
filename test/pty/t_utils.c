@@ -50,7 +50,6 @@ void add_lines(da_dstr *lines, const char *str) {
     }
 }
 
-__attribute__ ((format(printf, 1, 2)))
 void test_write(const char *fmt, ...) {
     va_list va;
     char *p;

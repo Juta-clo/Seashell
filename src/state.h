@@ -33,6 +33,7 @@ typedef enum {
     LOGFD,
     LOGFILE,
     CLEAN,
+    CONFIG,
     OPT_MAX
 } opt_names;
 
