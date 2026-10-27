@@ -9,6 +9,7 @@ TEST_GROUP(resize);
 
 TEST_SETUP(resize) {
     test_setup("./seashell", "--clean");
+    assert_term(0, 2, PROMPT);
 }
 
 TEST_TEAR_DOWN(resize) {

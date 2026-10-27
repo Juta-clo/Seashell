@@ -272,9 +272,6 @@ void test_setup_imp(char **argv) {
 
     if (clock_gettime(CLOCK_MONOTONIC, &tstart) == -1)
         xtest_fatal("clock_gettime");
-
-    /* seashell *must* init termios before we write! */
-    assert_term(0, 2, PROMPT);
 }
 
 void test_teardown(void) {

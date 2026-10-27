@@ -13,6 +13,7 @@ TEST_GROUP(input);
 
 TEST_SETUP(input) {
     test_setup("./seashell", "--clean");
+    assert_term(0, 2, PROMPT);
 
     if (mkdir("/tmp/sh-tmp", 0700) == -1 && errno != EEXIST)
         xtest_fatal("mkdir");

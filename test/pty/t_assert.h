@@ -5,6 +5,10 @@
 
 #include <linc/array.h>
 
+#include "t_fixture.h" // IWYU pragma: keep
+#include "t_vterm.h" // IWYU pragma: keep
+#include "t_harness.h" // IWYU pragma: keep
+
 #define PSTATE_ZOMBIE   "Z"
 #define PSTATE_RUNNING  "R"
 #define PSTATE_SLEEPING "S"

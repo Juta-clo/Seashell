@@ -72,7 +72,6 @@ void print_val_sum(void);
 char **create_exec_argv(char **args);
 
 void test_resize_term(int row, int col);
-// void test_config_file(const char *content);
 int test_poll(int tfd);
 void test_pump_ms(int ms);
 

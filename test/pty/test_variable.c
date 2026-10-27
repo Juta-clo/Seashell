@@ -11,6 +11,7 @@ char *home;
 
 TEST_SETUP(variable) {
     test_setup("./seashell", "--clean");
+    assert_term(0, 2, PROMPT);
 
     home = getenv("HOME");
     if (!home)

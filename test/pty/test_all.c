@@ -50,6 +50,7 @@ void run_all(void) {
     RUN_TEST_GROUP(termios);
     RUN_TEST_GROUP(input);
     RUN_TEST_GROUP(resize);
+    RUN_TEST_GROUP(config);
 
     mute_unity = false;
     skip_nls = true;

@@ -79,7 +79,7 @@ int main(void) {
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
                 "--track-fds=bad", "--modify-fds=high",
-            "./seashell", (char *)NULL);
+            "./seashell", "--config=./.seashell.lua", (char *)NULL);
 
     errExit("execl: %m");
 }

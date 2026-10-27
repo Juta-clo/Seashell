@@ -16,6 +16,7 @@ TEST_GROUP(shell);
 
 TEST_SETUP(shell) {
     test_setup("./seashell", "--clean");
+    assert_term(0, 2, PROMPT);
 }
 
 TEST_TEAR_DOWN(shell) {
