@@ -5,7 +5,7 @@
 
 static volatile sig_atomic_t sigint_caught = 0;
 
-void sigint_handler(int _) {
+static void sigint_handler(int _) {
     sigint_caught = 1;
 }
 

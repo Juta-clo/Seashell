@@ -14,8 +14,14 @@
 UTIL_PFFORMAT(1, 2) UTIL_NORETURN
 noreturn void fatal(const char *fmt, ...);
 
+#define err_exit(...) \
+    do { \
+        LOG_ERR(__VA_ARGS__); \
+        err_exit_imp(__VA_ARGS__); \
+    } while (false)
+
 UTIL_PFFORMAT(1, 2) UTIL_NORETURN
-void err_exit(const char *fmt, ...);
+void err_exit_imp(const char *fmt, ...);
 
 #define ASSERT_EQ_INT(a, b) \
     err_assert_eq_int(a, b, #a, #b, __FILE__, __LINE__);

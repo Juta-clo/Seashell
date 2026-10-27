@@ -115,7 +115,7 @@ void err_assert(bool b, const char *text, const char *file, int line) {
     }
 }
 
-void err_exit(const char *fmt, ...) {
+void err_exit_imp(const char *fmt, ...) {
     va_list va;
     va_start(va, fmt);
     output_err(fmt, &va, true);

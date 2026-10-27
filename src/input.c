@@ -69,10 +69,10 @@ typedef struct {
 typedef struct {
     char *line;
     int start_row;
+    int start_i;
     int off;
     int rows, cols;
     int insert_mode;
-    int start;
     input_comp comp;
     input_hist hist;
 } input_editor;
@@ -90,13 +90,13 @@ static int llen(void) {
 }
 
 static int line_len(void) {
-    int rv = (int)(linc_hda_size(input.line) - 1) - input.start;
+    int rv = (int)(linc_hda_size(input.line) - 1) - input.start_i;
     assert(rv >= 0);
     return rv;
 }
 
 static char *lstart(void) {
-    return input.line + input.start;
+    return input.line + input.start_i;
 }
 
 static int input_current_tok(comp_tok *comp, int *start, int *end) {
@@ -155,18 +155,6 @@ static void ncol_cell(int *crow, int *ccol, int start_row, int col_n) {
     }
 }
 
-size_t input_draw_prompt(int crow, int ccol) {
-    // printf("%s", input.prompt);
-
-    int crow_p, ccol_p;
-
-    xprintty_get_cursor_pos(pt, &crow_p, &ccol_p);
-
-    size_t n = input.cols * crow_p - crow + (ccol_p - ccol);
-
-    return n;
-}
-
 static void new_start_pos(void) {
     int row, col;
     xprintty_get_term_size(pt, &input.rows, &input.cols);
@@ -195,7 +183,7 @@ static void update_start_pos(void) {
 
     LOG_INFO("cursor[%d,%d], term[%d,%d]", crow, ccol, input.rows, input.cols);
 
-    int rows_from_start = (input.start + input.off) / input.cols;
+    int rows_from_start = (input.start_i + input.off) / input.cols;
     input.start_row = crow - rows_from_start;
 
     LOG_INFO("rows_from_start=%d, input.start_row=%d",
@@ -210,6 +198,17 @@ static void update_start_pos(void) {
     ASSERT_G_INT(input.rows, input.start_row);
 }
 
+static size_t input_draw_prompt(void) {
+    int crow, ccol;
+    int crow_p, ccol_p;
+
+    xprintty_get_cursor_pos(pt, &crow, &ccol);
+    printf("%*s", input.start_i, input.line);
+    xprintty_get_cursor_pos(pt, &crow_p, &ccol_p);
+
+    return input.cols * (crow_p - crow) + (ccol_p - ccol);
+}
+
 static void input_draw(int rows, int start_idx) {
     int scr_i = 0;
     int line_i = start_idx * input.cols;
@@ -221,7 +220,7 @@ static void input_draw(int rows, int start_idx) {
 
         ncol_cell(&crow, &ccol, input.start_row, scr_i);
 
-        if (line_i < input.start)
+        if (line_i < input.start_i)
             xprintty_set_color(pt, PRINTTY_CYAN, -1);
 
         if (input.line[line_i] < 32 || input.line[line_i] > 126) {
@@ -233,7 +232,7 @@ static void input_draw(int rows, int start_idx) {
             printf("%c", input.line[line_i]);
         }
 
-        if (line_i < input.start)
+        if (line_i < input.start_i)
             xprintty_write(pt, unibi_exit_attribute_mode);
 
         if (ccol == input.cols - 1) {
@@ -243,7 +242,6 @@ static void input_draw(int rows, int start_idx) {
                 --input.start_row;
                 printf(" \x1b[1G");
             }
-
         }
 
         ++scr_i;
@@ -256,7 +254,7 @@ static void input_update(void) {
     ASSERT_NEQ_INT(input.cols, 0);
 
     int crow, ccol;
-    int req_idx = (input.start + input.off) / input.cols;
+    int req_idx = (input.start_i + input.off) / input.cols;
     int rows = input.rows;
     int start_idx = 0;
     bool paging = req_idx >= input.rows;
@@ -300,7 +298,7 @@ static void input_update(void) {
 
     input_draw(rows, start_idx);
     ncol_cell(&crow, &ccol, input.start_row,
-            (input.off + input.start) - start_idx * input.cols);
+            (input.off + input.start_i) - start_idx * input.cols);
 
     if (paging)
         crow += 1;
@@ -341,28 +339,28 @@ static void input_delete(int type, input_del_ctx *ctx) {
         ASSERT_GE_INT(line_len() - input.off, ctx->n);
         ASSERT_GE_INT(ctx->start_i, 0);
 
-        linc_hda_delete(input.line, input.start + ctx->start_i, ctx->n);
+        linc_hda_delete(input.line, input.start_i + ctx->start_i, ctx->n);
     } else if (input.insert_mode) {
         if (type == DELETE_CURSOR) {
             if (input.off == 0)
                 return;
 
-            linc_hda_delete(input.line, input.start + input.off - 1, 1);
+            linc_hda_delete(input.line, input.start_i + input.off - 1, 1);
             input.off -= 1;
         } else if (type == DELETE_END) {
             if (input.off == line_len())
                 return;
 
-            linc_hda_delete(input.line, input.start + input.off,
+            linc_hda_delete(input.line, input.start_i + input.off,
                     line_len() - input.off);
         } else if (type == DELETE_START) {
             if (input.off == 0)
                 return;
 
-            linc_hda_delete(input.line, input.start, input.off);
+            linc_hda_delete(input.line, input.start_i, input.off);
             input.off = 0;
         } else if (type == DELETE_ALL) {
-            linc_hda_delete(input.line, input.start, line_len());
+            linc_hda_delete(input.line, input.start_i, line_len());
             input.off = 0;
         } else if (type == DELETE_WORD) {
             input_word word;
@@ -370,7 +368,7 @@ static void input_delete(int type, input_del_ctx *ctx) {
             if (cur_word(lstart(), input.off, &word) == -1)
                 return;
 
-            linc_hda_delete(input.line, word.start + input.start,
+            linc_hda_delete(input.line, word.start + input.start_i,
                     (word.end - word.start) + 1);
 
             input.off = word.start;
@@ -378,11 +376,11 @@ static void input_delete(int type, input_del_ctx *ctx) {
 
     } else {
         if (type == DELETE_CURSOR) {
-            linc_hda_delete(input.line, input.start + input.off, 1);
+            linc_hda_delete(input.line, input.start_i + input.off, 1);
             if (input.off == line_len() && input.off != 0)
                 input.off -= 1;
         } else if (type == DELETE_ALL) {
-            linc_hda_delete(input.line, input.start, line_len());
+            linc_hda_delete(input.line, input.start_i, line_len());
             input.off = 0;
         } else if (type == DELETE_WORD) {
             input_word word;
@@ -390,7 +388,7 @@ static void input_delete(int type, input_del_ctx *ctx) {
             if (cur_word(lstart(), input.off, &word) == -1)
                 return;
 
-            linc_hda_delete(input.line, word.start + input.start,
+            linc_hda_delete(input.line, word.start + input.start_i,
                     (word.end - word.start) + 1);
 
             input.off = word.start;
@@ -410,10 +408,10 @@ static void input_insert(int type, const char *s) {
 
     if (input.insert_mode) {
         if (type == INSERT_CHAR) {
-            linc_hda_insert_buf(input.line, input.start + input.off, 1, s);
+            linc_hda_insert_buf(input.line, input.start_i + input.off, 1, s);
             input.off += 1;
         } else if (type == INSERT_STR) {
-            linc_hda_insert_buf(input.line, input.start + input.off, strlen(s), s);
+            linc_hda_insert_buf(input.line, input.start_i + input.off, strlen(s), s);
             input.off += strlen(s);
         }
     }
@@ -663,37 +661,40 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
     } else if (codepoint == 'd') {
         op = OP_DEL;
     } else if (codepoint == 'y') {
-        printty_clipboard_copy(pt, input.line + input.start);
+        printty_clipboard_copy(pt, input.line + input.start_i);
     }
 }
 
-static void history_push(const char *line) {
-    linc_hda_insert(input.hist.lines, 0, 1, { linc_hda_dup(line) });
+static void history_push(void) {
+    linc_hda_insert(input.hist.lines, 0, 1, { xstrdup(lstart()) });
     input.hist.i = 0;
 
     if (input.hist.saved) {
-        linc_hda_free(input.hist.saved);
+        free(input.hist.saved);
         input.hist.saved = nullptr;
     }
-
-    LOG_INFO("history push: \"%s\"", line);
 }
 
 static void history_prev(void) {
     if (input.hist.i == 0) {
         if (input.hist.saved) {
-            linc_hda_free(input.line);
-            input.line = input.hist.saved;
+            input_delete(DELETE_ALL, NULL);
+            input_insert(INSERT_STR, input.hist.saved);
+
+            free(input.hist.saved);
             input.hist.saved = nullptr;
-            input.off = line_len();
         }
 
         return;
     }
 
-    linc_hda_free(input.line);
-    input.line = linc_hda_dup(input.hist.lines[--input.hist.i]);
-    input.off = line_len();
+    char *line = xstrdup(input.hist.lines[--input.hist.i]);
+    LOG_INFO("history_prev: input.line = \"%s\"", input.line);
+
+    input_delete(DELETE_ALL, NULL);
+    input_insert(INSERT_STR, line);
+
+    free(line);
 }
 
 static void history_next(void) {
@@ -703,15 +704,18 @@ static void history_next(void) {
         return;
 
     if (!input.hist.saved) {
-        input.hist.saved = input.line;
+        input.hist.saved = xstrdup(lstart());
     } else {
-        linc_hda_free(input.line);
         ++input.hist.i;
     }
 
-    input.line = linc_hda_dup(input.hist.lines[input.hist.i]);
-    input.off = line_len();
+    char *line = xstrdup(input.hist.lines[input.hist.i]);
     LOG_INFO("history_next: input.line = \"%s\"", input.line);
+
+    input_delete(DELETE_ALL, NULL);
+    input_insert(INSERT_STR, line);
+
+    free(line);
 }
 
 void input_deinit(void) {
@@ -750,7 +754,7 @@ void input_reset_line_state(void) {
     if (!input.line)
         return;
 
-    linc_hda_delete(input.line, input.start, line_len());
+    linc_hda_delete(input.line, input.start_i, line_len());
     input.off = 0;
 
     new_start_pos();
@@ -772,7 +776,7 @@ char *input_get_line(const char *prompt) {
         return NULL;
 
     linc_hds_append(input.line, prompt);
-    input.start = linc_hda_size(input.line) - 1;
+    input.start_i = linc_hda_size(input.line) - 1;
 
     input_on_new_line();
 
@@ -797,7 +801,7 @@ char *input_get_line(const char *prompt) {
         } else if (pev.type == PRINTTY_KEY) {
             if (pev.key == PRINTTY_ENTER) {
                 if (line_len() > 0)
-                    history_push(input.line);
+                    history_push();
 
                 input_reset_comp();
                 printf("\n");

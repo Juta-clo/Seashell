@@ -28,7 +28,7 @@ bool sig_is_pending(int sig) {
 
     int is_member = sigismember(&set, sig);
     if (is_member == -1)
-        err_exit("sigismember");
+        err_exit_imp("sigismember");
 
     return (bool)is_member;
 }

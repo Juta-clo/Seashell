@@ -90,7 +90,7 @@ static FILE *config_file_open(void) {
                     xfatal("fprintf() falied()");
 
                 if (fclose(config) == EOF)
-                    err_exit("fclose");
+                    err_exit_imp("fclose");
             }
         }
 

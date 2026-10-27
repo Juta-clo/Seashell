@@ -125,7 +125,7 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
             struct dirent *dirent = readdir(dir);
             if (!dirent) {
                 if (errno != 0)
-                    err_exit("readdir");
+                    err_exit_imp("readdir");
                 break;
             }
 

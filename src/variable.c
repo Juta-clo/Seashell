@@ -109,6 +109,6 @@ void export_vars(map_t *vars) {
 
         if (var->export)
             if (setenv(pair->key, var->value, 1) == -1)
-                err_exit("setenv");
+                err_exit_imp("setenv");
     }
 }

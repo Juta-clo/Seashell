@@ -57,7 +57,7 @@ void shell_run(void) {
         if (sh_env.fg_jid != NOFG) {
             sigsuspend(&sh_env.og_mask);
             if (errno != EINTR)
-                err_exit("sigsuspend");
+                err_exit_imp("sigsuspend");
 
             process_signals();
 

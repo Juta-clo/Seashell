@@ -29,7 +29,8 @@ static void linc_fatal(const linc_fatal_ctx *ctx, void *user) {
     char err_buf[BUFSIZ];
 
     if (ctx->type == LINC_FATAL_OOM) {
-        snprintf(err_buf, BUFSIZ, "%s: out of memory", ctx->msg);
+        snprintf(err_buf, BUFSIZ, "%s:%d %s: out of memory",
+                ctx->site.file, ctx->site.line, ctx->msg);
     } else {
         int n = snprintf(err_buf, BUFSIZ, "%s", ctx->msg);
 
@@ -92,17 +93,22 @@ static void seashell_shutdown(void) {
     for (size_t i = 0; i < get_jctl()->jobs.size; ++i) {
         jc_job *job = &get_jctl()->jobs.data[i];
 
-        if (getpgrp() == job->pgrp.pgid || job->pgrp.pgid <= 1)
+        if (getpgrp() == job->pgrp.pgid || job->pgrp.pgid <= 1) {
             xfatal("unexpected pgid %d", job->pgrp.pgid);
+            fprintf(stderr, "unexpected pgid %d\n", job->pgrp.pgid);
+            _exit(EXIT_FAILURE);
+        }
 
         if (kill(-job->pgrp.pgid, SIGHUP) == -1 && errno != ESRCH) {
             LOG_ERR("kill: %m");
-            err_exit("kill");
+            perror("kill");
+            _exit(EXIT_FAILURE);
         }
 
         if (kill(-job->pgrp.pgid, SIGCONT) == -1 && errno != ESRCH) {
             LOG_ERR("kill: %m");
-            err_exit("kill");
+            perror("kill");
+            _exit(EXIT_FAILURE);
         }
     }
 

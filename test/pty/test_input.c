@@ -316,6 +316,10 @@ TEST(input, submitting_history_entry_with_saved_typed_input) {
     );
 }
 
+TEST(input, history_does_not_duplicate_prompt) {
+    // TODO: write this
+}
+
 TEST(input, bracketed_paste) {
     vterm_keyboard_start_paste(test->vt.vp);
     vt_send_str("PASTE\nDATA!");

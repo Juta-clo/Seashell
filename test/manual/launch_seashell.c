@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 __attribute__ ((format(printf, 1, 2)))
-void err_exit(const char *fmt, ...) {
+static void err_exit(const char *fmt, ...) {
     va_list va;
     va_start(va, fmt);
     vfprintf(stderr, fmt, va);
@@ -18,7 +18,7 @@ void err_exit(const char *fmt, ...) {
 }
 
 __attribute__ ((format(printf, 1, 2)))
-void errExit(const char *fmt, ...) {
+static void errExit(const char *fmt, ...) {
     va_list va;
     va_start(va, fmt);
     vfprintf(stderr, fmt, va);

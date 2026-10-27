@@ -38,7 +38,7 @@ int get_wstat(wait_event *wev) {
 
     if (cpid == -1 && errno != ECHILD) {
         LOG_ERR("waitpid: %m");
-        err_exit("waitpid");
+        err_exit_imp("waitpid");
     }
 
     if (cpid == 0 || errno == ECHILD)
