@@ -142,7 +142,29 @@ static void parse_config(lua_State *L) {
         lua_pop(L, 1);
     }
 
+    if (lua_getfield(L, -1, "export") == LUA_TTABLE) {
+        lua_pushnil(L); /* initialize key value iteration */
+
+        while (lua_next(L, -2) != 0) {
+            if (lua_type(L, -2) == LUA_TSTRING &&
+                lua_type(L, -1) == LUA_TSTRING) {
+
+                char *key = xstrdup(lua_tostring(L, -2));
+                char *value = xstrdup(lua_tostring(L, -1));
+
+                add_var(&sh_env.vars, key, value, true);
+
+                free(key);
+                free(value);
+            }
+
+            lua_pop(L, 1);
+        }
+    }
+
     lua_pop(L, 1);
+    lua_pop(L, 1);
+
     ASSERT(lua_gettop(L) == 0);
 }
 

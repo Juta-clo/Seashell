@@ -92,7 +92,7 @@ static int mp_delete(map_t *map, void *key, key_func func) {
     free(map->pairs.data[index].value);
     free(map->pairs.data[index].key);
 
-    linc_array_delete(&map->pairs, index);
+    linc_array_delete(&map->pairs, index, 1);
 
     free(canon_key);
     return 0;

@@ -98,7 +98,7 @@ static size_t get_job_index(pid_t jid) {
 static void remove_job (pid_t jid) {
     size_t i = get_job_index(jid);
     free_job(&jctl.jobs.data[i]);
-    linc_array_delete(&jctl.jobs, i);
+    linc_array_delete(&jctl.jobs, i, 1);
 }
 
 static bool job_inter_stopped(jc_job *job) {
@@ -300,7 +300,7 @@ job_event *pop_job_event(void) {
 
     jev = jevs.data[0];
 
-    linc_array_delete(&jevs, 0);
+    linc_array_delete(&jevs, 0, 1);
 
     return &jev;
 }

@@ -24,20 +24,17 @@ static linc_string shell_get_prompt(void) {
 }
 
 static ps_ast *line_to_ast(char *line) {
-    if (strcmp("", line) == 0) {
+    if (strcmp("", line) == 0)
         return NULL;
-    }
 
     da_tok toks;
     int rv = lx_tokenize(line, &toks);
-
     if (rv != LX_OK) {
         err_msg(lx_errstr(rv));
         return NULL;
     }
 
     ps_ast *ast = xmalloc(sizeof(ps_ast));
-
     if (ps_parse(&toks, ast) == -1) {
         err_msg("syntax error");
         free(ast);

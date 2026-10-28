@@ -174,7 +174,6 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
 
             free_charp_arr(&matches);
         }
-
     } else {
         word->arg = strdup_alloc(arg.cstr, &allo);
 

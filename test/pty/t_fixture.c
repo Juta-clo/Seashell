@@ -187,10 +187,9 @@ static void test_shutdown_prgm(void) {
     if (kill(test->cpid, SIGHUP) == -1)
         xtest_fatal("kill: %m");
 
-    int checks = (memcheck) ? 1000 : 100;
     int rv, stat, i;
 
-    for (i = 0; i < checks; ++i) {
+    for (i = 0; i < 100; ++i) {
         if ((rv = waitpid(test->cpid, &stat, WNOHANG)) == -1)
             xtest_fatal("waitpid: %m");
 
@@ -200,7 +199,7 @@ static void test_shutdown_prgm(void) {
         test_pump_ms(1);
     }
 
-    if (i == checks) {
+    if (i == 100) {
         if (kill(test->cpid, SIGKILL) == -1)
             xtest_fatal("kill: %m");
 

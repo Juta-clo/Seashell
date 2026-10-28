@@ -14,6 +14,13 @@ local function push(...)
 end
 
 return {
+    export = {
+        PATH = os.getenv("HOME") .. "/.local/bin:" .. os.getenv("PATH"),
+        EDITOR = os.getenv("HOME") .. "./local/bin/nvim",
+        MANPAGER = 'nvim +Man!',
+        XMAKE_COLORTERM = "color8",
+        LS_COLORS = dofile(".ls_colors.lua")
+    },
     prompt = function(ctx)
         prompt = ""
 

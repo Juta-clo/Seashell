@@ -154,10 +154,10 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
         xclosedir(dir);
     }
 
-    for (size_t i = 0; i < og_dent_size; ++i) {
-        free(dents->data[0]);
-        linc_array_delete(dents, 0);
-    }
+    for (size_t i = 0; i < og_dent_size; ++i)
+        free(dents->data[i]);
+
+    linc_array_delete(dents, 0, og_dent_size);
 
     LOG_INFO("dents updated; new size %ld", dents->size);
 }
@@ -177,7 +177,7 @@ static void filter_dents(const char *glob, da_charp *dents) {
             !substrs_ok(base_name, &substrs, pre_n, suf_n))
         {
             free(dents->data[i]);
-            linc_array_delete(dents, i--);
+            linc_array_delete(dents, i--, 1);
         }
 
         free(dent_cpy);
@@ -210,8 +210,7 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
             strcmp("..", comps.data[0]) == 0)
         {
             *linc_array_push(&dents) = xstrdup(comps.data[0]);
-            linc_array_delete(&comps, 0);
-
+            linc_array_delete(&comps, 0, 1);
         } else {
             *linc_array_push(&dents) = xstrdup(".");
         }

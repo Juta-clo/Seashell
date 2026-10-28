@@ -134,7 +134,7 @@ void set_timerfd(int tfd, int ms) {
 
 int start_timerfd(int ms) {
     if (memcheck)
-        ms *= 100;
+        ms *= 10;
 
     struct itimerspec its;
     its = ms_to_its(ms);

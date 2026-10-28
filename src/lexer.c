@@ -5,7 +5,7 @@
 
 #include <linc/array.h>
 #include "lexer.h"
-#include "arena.h"
+#include "linc/xsys.h"
 
 static lx_status status = LX_OK;
 
@@ -16,7 +16,6 @@ typedef struct {
     const char *part_start;
     const char *cur_char;
     const char *cmd;
-    linc_allo allo;
 } lx_scanner;
 
 char *lx_errstr(lx_status stat) {
@@ -80,51 +79,23 @@ static bool kind_is_double_char_op(lx_kind kind) {
     }
 }
 
-static int add_tok(da_tok *tokens, lx_kind kind, lx_scanner *scanner) {
-    assert(scanner);
-    assert(!scanner->cur_tok);
-
-    lx_tok *tok = linc_array_push(tokens);
-    *tok = (lx_tok){ .kind = kind, .parts.allo = scanner->allo };
-
-    scanner->cur_tok = tok;
-    return 0;
+static void ensure_tok(da_tok *tokens, lx_kind kind, lx_scanner *scanner) {
+    if (!scanner->cur_tok) {
+        lx_tok *tok = linc_array_push(tokens);
+        *tok = (lx_tok){ .kind = kind };
+        scanner->cur_tok = tok;
+    }
 }
 
-static int ensure_tok(da_tok *tokens, lx_kind kind, lx_scanner *scanner) {
-    if (!scanner->cur_tok)
-        if (add_tok(tokens, kind, scanner) == -1)
-            return -1;
-
-    return 0;
+static void ensure_part(lx_scanner *scanner, lx_quote quote) {
+    if (!scanner->part_start) {
+        lx_part *part = linc_array_push(&scanner->cur_tok->parts);
+        *part = (lx_part){ .quote = quote };
+        scanner->part_start = scanner->cur_char;
+    }
 }
 
-static void end_tok(lx_scanner *scanner) {
-    assert(scanner);
-    scanner->cur_tok = NULL;
-}
-
-static int add_part(lx_scanner *scanner, lx_quote quote) {
-    assert(scanner);
-    assert(scanner->cur_tok);
-    assert(!scanner->part_start);
-
-    lx_part *part = linc_array_push(&scanner->cur_tok->parts);
-    *part = (lx_part){ .quote = quote };
-
-    scanner->part_start = scanner->cur_char;
-    return 0;
-}
-
-static int ensure_part(lx_scanner *scanner, lx_quote quote) {
-    if (!scanner->part_start)
-        if (add_part(scanner, quote) == -1)
-            return -1;
-    return 0;
-}
-
-/* TODO: maybe refactor alloc from setting scanner->part_start */
-static int end_part(lx_scanner *scanner) {
+static void end_part(lx_scanner *scanner) {
     assert(scanner);
     assert(scanner->cur_tok);
     assert(scanner->part_start);
@@ -139,59 +110,46 @@ static int end_part(lx_scanner *scanner) {
     for (const char *c = scanner->part_start; c != scanner->cur_char; ++c)
         ++len;
 
-    part->raw = scanner->allo.alloc(len + 1, scanner->allo.ctx);
-    if (!part->raw) {
-        status = LX_ERRMEM;
-        return -1;
-    }
+    part->raw = xmalloc(len + 1);
 
     memcpy(part->raw, scanner->part_start, len);
     part->raw[len] = '\0';
 
     scanner->part_start = NULL;
-    return 0;
 }
 
-static int clear_part(lx_scanner *scanner) {
+static void clear_part(lx_scanner *scanner) {
     if (scanner->cur_tok && scanner->part_start)
-        if (end_part(scanner) == -1)
-            return -1;
-    return 0;
+        end_part(scanner);
 }
 
-static int clear_empty_part(lx_scanner *scanner) {
+static void clear_empty_part(lx_scanner *scanner) {
     da_part *parts = &scanner->cur_tok->parts;
     lx_part *part = &parts->data[parts->size - 1];
 
-    part->raw = scanner->allo.alloc(1, scanner->allo.ctx);
-    if (!part->raw) {
-        status = LX_ERRMEM;
-        return -1;
-    }
+    part->start = scanner->part_start - scanner->cmd;
+    part->end = scanner->cur_char - scanner->cmd;
+
+    part->raw = xmalloc(1);
     part->raw[0] = '\0';
 
     scanner->part_start = NULL;
-    return 0;
 }
 
-static int handle_single_quote(lx_scanner *scanner) {
+static void handle_single_quote(lx_scanner *scanner) {
     if (*scanner->cur_char == '\'') {
-        if (clear_part(scanner) == -1)
-            return -1;
+        clear_part(scanner);
+
         scanner->mode = LX_M_NORMAL;
     }
-
-    return 0;
 }
 
-static int handle_double_quote(lx_scanner *scanner) {
+static void handle_double_quote(lx_scanner *scanner) {
     if (*scanner->cur_char == '"') {
-        if (clear_part(scanner) == -1)
-            return -1;
+        clear_part(scanner);
+
         scanner->mode = LX_M_NORMAL;
     }
-
-    return 0;
 }
 
 static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
@@ -204,10 +162,8 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
         clear_part(scanner);
         ++scanner->cur_char;
 
-        if (ensure_tok(tokens, LX_TOK_WORD, scanner) == -1)
-            return -1;
-        if (ensure_part(scanner, LX_Q_DOUBLE) == -1)
-                return -1;
+        ensure_tok(tokens, LX_TOK_WORD, scanner);
+        ensure_part(scanner, LX_Q_DOUBLE);
 
         if (*scanner->cur_char == '"') {
             clear_empty_part(scanner);
@@ -220,9 +176,7 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
             }
             scanner->mode = LX_M_DOUBLEQ;
         }
-    }
-
-    else if (*scanner->cur_char == '\'') {
+    } else if (*scanner->cur_char == '\'') {
         if (scanner->cur_char[1] == '\0') {
             status = LX_ERRNOENDQUOTE;
             return -1;
@@ -231,43 +185,35 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
         clear_part(scanner);
         ++scanner->cur_char;
 
-        if (ensure_tok(tokens, LX_TOK_WORD, scanner) == -1)
-            return -1;
-        if (ensure_part(scanner, LX_Q_SINGLE) == -1)
-                return -1;
+        ensure_tok(tokens, LX_TOK_WORD, scanner);
+        ensure_part(scanner, LX_Q_SINGLE);
 
         if (*scanner->cur_char == '\'') {
             clear_empty_part(scanner);
         } else {
             scanner->mode = LX_M_SINGLEQ;
         }
-    }
-
-    else if (*scanner->cur_char == ' ') {
-        if (clear_part(scanner) == -1)
-            return -1;
-        end_tok(scanner);
+    } else if (*scanner->cur_char == ' ') {
+        clear_part(scanner);
+        scanner->cur_tok = NULL;
     } else {
         lx_kind kind = get_kind(scanner->cur_char);
 
         if (kind_is_delim(kind)) {
-            if (clear_part(scanner) == -1)
-                return -1;
-            end_tok(scanner);
+            clear_part(scanner);
+            scanner->cur_tok = NULL;
 
-            if (ensure_tok(tokens, kind, scanner) == -1)
-                return -1;
-            end_tok(scanner);
+            ensure_tok(tokens, kind, scanner);
+            scanner->cur_tok = NULL;
 
             if (kind_is_double_char_op(kind))
                 ++scanner->cur_char;
         }
 
         else if (kind == LX_TOK_UNKNOWN) {
-            if (ensure_tok(tokens, LX_TOK_WORD, scanner) == -1)
-                return -1;
-            if (ensure_part(scanner, LX_Q_NONE) == -1)
-                return -1;
+            ensure_tok(tokens, LX_TOK_WORD, scanner);
+            ensure_part(scanner, LX_Q_NONE);
+
             if (*scanner->cur_char == '\\') {
                 if (*++scanner->cur_char == '\0') {
                     status = LX_ERREMPTYESC;
@@ -281,11 +227,19 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
 }
 
 void lx_free(da_tok *tokens) {
-    if (!tokens || !tokens->allo.ctx)
+    if (!tokens)
         return;
 
-    arena_destroy(tokens->allo.ctx);
+    for (size_t i = 0; i < tokens->size; ++i) {
+        lx_tok *tok = &tokens->data[i];
 
+        for (size_t y = 0; y < tok->parts.size; ++y)
+            free(tok->parts.data[y].raw);
+
+        linc_array_free(&tok->parts);
+    }
+
+    linc_array_free(tokens);
     *tokens = (da_tok){0};
 }
 
@@ -303,15 +257,10 @@ int lx_tokenize(const char *cmd, da_tok *tokens) {
         .mode = LX_M_NORMAL,
         .prev_mode = LX_M_NORMAL,
         .cur_char = cmd,
-        .cmd = cmd,
-        .allo = (linc_allo) {
-            .alloc = arena_alloc,
-            .free = arena_free,
-            .ctx = arena_create()
-        }
+        .cmd = cmd
     };
 
-    *tokens = (da_tok){ .allo = scanner.allo };
+    *tokens = (da_tok){0};
 
     for (; *scanner.cur_char != '\0'; ++scanner.cur_char) {
         switch (scanner.mode) {
@@ -320,12 +269,10 @@ int lx_tokenize(const char *cmd, da_tok *tokens) {
                 goto fail;
             break;
         case LX_M_DOUBLEQ:
-            if (handle_double_quote(&scanner) == -1)
-                goto fail;
+            handle_double_quote(&scanner);
             break;
         case LX_M_SINGLEQ:
-            if (handle_single_quote(&scanner) == -1)
-                goto fail;
+            handle_single_quote(&scanner);
             break;
         }
     }
@@ -335,10 +282,8 @@ int lx_tokenize(const char *cmd, da_tok *tokens) {
         goto fail;
     }
 
-    if (clear_part(&scanner) == -1)
-        goto fail;
-
-    end_tok(&scanner);
+    clear_part(&scanner);
+    scanner.cur_tok = NULL;
 
     return status;
 

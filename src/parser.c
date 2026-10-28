@@ -18,7 +18,7 @@ typedef struct {
     ps_ast *ast;
 } ps_scanner;
 
-static void cpy_word(ps_word *dst, lx_tok *src, ps_scanner *scanner) {
+static void copy_word(ps_word *dst, lx_tok *src, ps_scanner *scanner) {
     assert(dst);
     assert(dst->segments.size == 0);
 
@@ -131,7 +131,7 @@ int ps_parse(da_tok *tokens, ps_ast *ast) {
         switch (scanner.cur_tok->kind) {
         case LX_TOK_WORD: {
             if (scanner.queued_redir) {
-                cpy_word(
+                copy_word(
                     &scanner.queued_redir->target,
                     scanner.cur_tok,
                     &scanner
@@ -150,7 +150,7 @@ int ps_parse(da_tok *tokens, ps_ast *ast) {
             scanner.cur_cmd->words.allo = scanner.ast->allo;
             ps_word *word = linc_array_push(&scanner.cur_cmd->words);
             *word = (ps_word){ .segments.allo = scanner.ast->allo };
-            cpy_word(word, scanner.cur_tok, &scanner);
+            copy_word(word, scanner.cur_tok, &scanner);
 
             break;
         }

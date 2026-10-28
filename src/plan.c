@@ -35,7 +35,7 @@ void remove_plan(size_t index) {
     ps_free(plans.data[index].ast);
     free(plans.data[index].ast);
 
-    linc_array_delete(&plans, index);
+    linc_array_delete(&plans, index, 1);
 }
 
 void plan_done(pid_t jid) {
