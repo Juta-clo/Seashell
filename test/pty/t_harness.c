@@ -19,8 +19,6 @@
 
 #define TEST_BIN_DIR "./test/pty/test_bins"
 
-char **(*static_args_cb)(void) = nullptr;
-
 bool verbose = false;
 bool memcheck = false;
 bool script = false;
@@ -67,53 +65,6 @@ static void process_args(int argc, const char *const *argv) {
 
         linc_hds_append(ptyh.cmd_str, " ");
     }
-}
-
-char **create_exec_argv(char **args) {
-    assert(args);
-    char **out = nullptr;
-
-    if (pipe2(ptyh.val_p, O_NONBLOCK) == -1)
-        xtest_fatal("pipe2: %m");
-
-    if (memcheck) {
-        char *val_cmd[] = {
-            "valgrind",
-                "--vgdb=no",
-                "--leak-check=full",
-                "--errors-for-leak-kinds=definite,indirect",
-                "--show-leak-kinds=definite,indirect",
-                "--error-exitcode=99", /*seashell shouldn't return that*/
-                "--track-fds=bad", /*this is awesome - bugged with forkpty tho*/
-                "--modify-fds=high",
-                /* this is bugged with sigsuspend. See bugzilla#526386 */
-                "--enable-debuginfod=no",
-                NULL
-        };
-
-        for (char **arg = val_cmd; memcheck && *arg != NULL; ++arg)
-            linc_hds_append(*linc_hda_push(out, nullptr), *arg);
-
-        char val_lfd_arg[ARG_MAX];
-        if (snprintf(val_lfd_arg, ARG_MAX, "--log-fd=%d", ptyh.val_p[1]) < 0)
-            xtest_fatal("snprintf: %m");
-
-        linc_hds_append(*linc_hda_push(out, nullptr), val_lfd_arg);
-    }
-
-    for (char **arg = args; *arg != NULL; ++arg)
-        linc_hds_append(*linc_hda_push(out, nullptr), *arg);
-
-    if (static_args_cb) {
-        char **static_args = static_args_cb();
-
-        for (char **arg = static_args; *arg != NULL; ++arg)
-            linc_hds_append(*linc_hda_push(out, nullptr), *arg);
-    }
-
-    linc_hda_push(out, nullptr);
-
-    return out;
 }
 
 void test_harness_init(int argc, const char *const *argv) {
@@ -187,8 +138,8 @@ int test_poll(int tfd) {
     struct pollfd pollfds[POLL_NFDS] = {
         [POLL_TFD] = { .fd = tfd,           .events = POLLIN },
         [POLL_MFD] = { .fd = test->mfd,     .events = POLLIN },
-        [POLL_SH]  = { .fd = ptyh.sh_p[0],  .events = POLLIN },
-        [POLL_VAL] = { .fd = ptyh.val_p[0], .events = POLLIN }
+        [POLL_SH]  = { .fd = test->sh_p[0],  .events = POLLIN },
+        [POLL_VAL] = { .fd = test->val_p[0], .events = POLLIN }
     };
 
     while (true) {
@@ -207,13 +158,13 @@ int test_poll(int tfd) {
         }
 
         if (pollfds[POLL_SH].revents & POLLIN) {
-            char *data = flush_pipe(ptyh.sh_p[0]);
+            char *data = flush_pipe(test->sh_p[0]);
             linc_string_append(&test->shell_data, data);
             free(data);
         }
 
         if (pollfds[POLL_VAL].revents & POLLIN) {
-            char *data = flush_pipe(ptyh.val_p[0]);
+            char *data = flush_pipe(test->val_p[0]);
             linc_string_append(&test->val_data, data);
             free(data);
         }
@@ -227,11 +178,11 @@ void test_pump_ms(int ms) {
         vt_write(data);
         free(data);
 
-        data = flush_pipe(ptyh.sh_p[0]);
+        data = flush_pipe(test->sh_p[0]);
         linc_string_append(&test->shell_data, data);
         free(data);
 
-        data = flush_pipe(ptyh.val_p[0]);
+        data = flush_pipe(test->val_p[0]);
         linc_string_append(&test->val_data, data);
         free(data);
 

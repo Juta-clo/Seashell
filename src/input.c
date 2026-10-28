@@ -50,6 +50,14 @@ typedef enum {
 } comp_tok;
 
 typedef struct {
+    int i;
+    int n;
+    bool prompt;
+} input_cell;
+
+LINC_ARRAY_TYPE(da_cell, input_cell);
+
+typedef struct {
     size_t i;
     size_t start_i;
     linc_hds glob;
@@ -70,6 +78,7 @@ typedef struct {
     char *line;
     int start_row;
     int start_i;
+    int prompt_len;
     int off;
     int rows, cols;
     int insert_mode;
@@ -183,7 +192,7 @@ static void update_start_pos(void) {
 
     LOG_INFO("cursor[%d,%d], term[%d,%d]", crow, ccol, input.rows, input.cols);
 
-    int rows_from_start = (input.start_i + input.off) / input.cols;
+    int rows_from_start = (input.prompt_len + input.off) / input.cols;
     input.start_row = crow - rows_from_start;
 
     LOG_INFO("rows_from_start=%d, input.start_row=%d",
@@ -198,54 +207,107 @@ static void update_start_pos(void) {
     ASSERT_G_INT(input.rows, input.start_row);
 }
 
-static size_t input_draw_prompt(void) {
-    int crow, ccol;
-    int crow_p, ccol_p;
-
-    xprintty_get_cursor_pos(pt, &crow, &ccol);
-    printf("%*s", input.start_i, input.line);
-    xprintty_get_cursor_pos(pt, &crow_p, &ccol_p);
-
-    return input.cols * (crow_p - crow) + (ccol_p - ccol);
+static void input_draw_ch(char c) {
+    if (c >= 32 && c < 127) {
+        printf("%c", c);
+    } else {
+        xprintty_set_color(pt, PRINTTY_BLACK, PRINTTY_RED);
+        xprintty_write(pt, unibi_enter_bold_mode);
+        printf("%c", '?');
+        xprintty_write(pt, unibi_exit_attribute_mode);
+    }
 }
 
-static void input_draw(int rows, int start_idx) {
+static da_cell get_cells(int *prompt_len) {
+    ASSERT(prompt_len);
+
+    *prompt_len = 0;
+    da_cell cells = {0};
+    bool pending_csi = false;
+    bool pending_esc = false;
+    int i = 0;
+    int n = 0;
+
+    for (char *b = input.line; *b != '\0'; ++b, ++i) {
+        if (i >= input.start_i) {
+            for (; n > 0; --n)
+                *linc_array_push(&cells) = (input_cell){
+                    .i = i - n, .n = 1, .prompt = false };
+
+            *linc_array_push(&cells) = (input_cell){
+                .i = i, .n = 1, .prompt = false };
+        } else if (pending_csi) {
+            ++n;
+
+            if (*b >= '@' && *b <= '~') {
+                pending_csi = false;
+                *linc_array_push(&cells) = (input_cell){
+                    .i = i - (n - 1), .n = n, .prompt = true };
+                n = 0;
+            }
+
+        } else if (pending_esc) {
+            pending_esc = false;
+
+            if (*b == '[') {
+                pending_csi = true;
+                n = 2;
+            } else {
+                *linc_array_push(&cells) =
+                    (input_cell){ .i = i - 1, .n = 1, .prompt = true };
+                *linc_array_push(&cells) = (input_cell){
+                    .i = i, .n = 1, .prompt = true };
+            }
+        } else if (*b == '\x1b') {
+            pending_esc = true;
+        } else {
+            ++*prompt_len;
+            *linc_array_push(&cells) = (input_cell){
+                .i = i, .n = 1, .prompt = true };
+        }
+    }
+
+    // LOG_INFO("collected %zu cells {", cells.size);
+    // for (size_t i = 0; i < cells.size; ++i)
+    //     LOG_INFO("    cell(n=%d,i=%d,prompt=%d) = %.*s",
+    //             cells.data[i].n, cells.data[i].i,
+    //             cells.data[i].prompt,
+    //             cells.data[i].n, &input.line[cells.data[i].i]);
+    // LOG_INFO("}");
+
+    return cells;
+}
+
+static void input_draw(int rows, int start_row, da_cell cells) {
     int scr_i = 0;
-    int line_i = start_idx * input.cols;
+    size_t start_i = start_row * input.cols;
     int crow, ccol;
 
-    while (true) {
-        if (line_i >= llen() || scr_i >= input.cols * rows)
+    for (size_t i = 0; i < cells.size; ++i) {
+        if (scr_i >= input.cols * rows)
             break;
 
-        ncol_cell(&crow, &ccol, input.start_row, scr_i);
+        input_cell cell = cells.data[i];
 
-        if (line_i < input.start_i)
-            xprintty_set_color(pt, PRINTTY_CYAN, -1);
-
-        if (input.line[line_i] < 32 || input.line[line_i] > 126) {
-            xprintty_set_color(pt, PRINTTY_BLACK, PRINTTY_RED);
-            xprintty_write(pt, unibi_enter_bold_mode);
-            printf("%c", '?');
-            xprintty_write(pt, unibi_exit_attribute_mode);
-        } else {
-            printf("%c", input.line[line_i]);
+        if (cell.prompt && cell.n != 1) {
+            printf("%.*s", cell.n, &input.line[cell.i]);
+            ++start_i;
+            continue;
         }
 
-        if (line_i < input.start_i)
-            xprintty_write(pt, unibi_exit_attribute_mode);
+        if (i >= start_i) {
+            input_draw_ch(input.line[cell.i]);
+            ncol_cell(&crow, &ccol, input.start_row, scr_i++);
 
-        if (ccol == input.cols - 1) {
-            if (crow != rows - 1) {
-                printf(" \x1b[1G");
-            } else if (input.start_row > 0) {
-                --input.start_row;
-                printf(" \x1b[1G");
+            if (ccol == input.cols - 1) {
+                if (crow != rows - 1) {
+                    printf(" \x1b[1G");
+                } else if (input.start_row > 0) {
+                    --input.start_row;
+                    printf(" \x1b[1G");
+                }
             }
         }
-
-        ++scr_i;
-        ++line_i;
     }
 }
 
@@ -253,27 +315,23 @@ static void input_update(void) {
     ASSERT_NEQ_INT(input.rows, 0);
     ASSERT_NEQ_INT(input.cols, 0);
 
-    int crow, ccol;
-    int req_idx = (input.start_i + input.off) / input.cols;
     int rows = input.rows;
-    int start_idx = 0;
-    bool paging = req_idx >= input.rows;
+    da_cell cells = get_cells(&input.prompt_len);
+    int crow, ccol;
 
-    if (paging) {
-        rows -= 1;
-
-        if (rows != 0)
-            start_idx = (rows * ((req_idx - input.rows) / rows)) + input.rows;
-    }
-
-    ASSERT_GE_INT(req_idx, start_idx);
     xprintty_cursor_move(pt, input.start_row, 0);
     xprintty_write(pt, unibi_clr_eos);
 
-    const char *pager_str = ">...";
-    bool wrap_pending = input.cols <= (int)strlen(pager_str);
+    int start_row = 0;
+    int req_row = (input.prompt_len + input.off) / input.cols;
+    bool paging = req_row >= input.rows;
 
     if (paging) {
+        if (--rows != 0)
+            start_row = (rows * ((req_row - input.rows) / rows)) + input.rows;
+
+        ASSERT_GE_INT(req_row, start_row);
+
         while (input.start_row > 0) {
             xprintty_cursor_move(pt, input.rows - 1, 0);
             xprintty_write(pt, unibi_scroll_forward);
@@ -283,25 +341,34 @@ static void input_update(void) {
         xprintty_write(pt, unibi_cursor_home);
 
         xprintty_set_color(pt, PRINTTY_CYAN, -1);
-        printf("%.*s", MIN(input.cols, (int)strlen(pager_str)), pager_str);
+        printf("%.*s", MIN(input.cols, 4), ">...");
         xprintty_write(pt, unibi_exit_attribute_mode);
+
+        bool wrap_pending = input.cols <= 4;
 
         if (input.rows > 1) {
             if (wrap_pending) {
                 printf(" \x1b[1G");
-            } else
+            } else {
                 printf("\n");
+            }
         } else {
+            linc_array_free(&cells);
             return;
         }
     }
 
-    input_draw(rows, start_idx);
-    ncol_cell(&crow, &ccol, input.start_row,
-            (input.off + input.start_i) - start_idx * input.cols);
+    input_draw(rows, start_row, cells);
+    linc_array_free(&cells);
 
-    if (paging)
+    if (paging) {
+        ncol_cell(&crow, &ccol, input.start_row,
+                (input.off + input.prompt_len) % (input.cols * start_row));
+
         crow += 1;
+    } else {
+        ncol_cell(&crow, &ccol, input.start_row, input.off + input.prompt_len);
+    }
 
     xprintty_cursor_move(pt, crow, ccol);
 }
@@ -766,7 +833,7 @@ void input_clear_history(void) {
     size_t n = linc_hda_size(input.hist.lines);
 
     for (size_t i = 0; i < n; ++i)
-        linc_hda_free(input.hist.lines[i]);
+        free(input.hist.lines[i]);
 
     linc_hda_delete(input.hist.lines, 0, n);
 }
@@ -777,10 +844,9 @@ char *input_get_line(const char *prompt) {
 
     linc_hds_append(input.line, prompt);
     input.start_i = linc_hda_size(input.line) - 1;
+    LOG_INFO("input: new prompt: \"%s\"", input.line);
 
     input_on_new_line();
-
-    LOG_INFO("input: new prompt: \"%s\"", input.line);
 
     while (true) {
         PrinttyEvent pev;

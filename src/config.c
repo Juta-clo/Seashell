@@ -26,6 +26,8 @@ static int push_ctx_table(lua_State *state) {
     const char *home = lua_touserdata(state, 2);
     int last_status = *(int *)lua_touserdata(state, 3);
     const char *git_branch = lua_touserdata(state, 4);
+    int git_dirty = *(int *)lua_touserdata(state, 5);
+    int git_untracked = *(int *)lua_touserdata(state, 6);
 
     lua_newtable(state);
 
@@ -50,6 +52,12 @@ static int push_ctx_table(lua_State *state) {
 
                 lua_pushstring(state, git_branch);
                 lua_setfield(state, -2, "branch");
+
+                lua_pushnumber(state, git_dirty);
+                lua_setfield(state, -2, "dirty");
+
+                lua_pushnumber(state, git_untracked);
+                lua_setfield(state, -2, "untracked");
 
             lua_setfield(state, -2, "git");
         }
@@ -159,6 +167,36 @@ char *get_git_branch(void) {
     return branch;
 }
 
+int get_git_dirty(void) {
+    int ws = system(
+        "git diff --quiet 2>/dev/null &&"
+        "git diff --cached --quiet 2>/dev/null"
+    );
+
+    if (ws == -1)
+        err_exit("system");
+
+    if (WIFEXITED(ws)) {
+        return WEXITSTATUS(ws);
+    } else
+        return -1;
+}
+
+int get_git_untracked(void) {
+    int ws = system(
+        "! git ls-files --others --exclude-standard 2>/dev/null |"
+        "grep -q ."
+    );
+
+    if (ws == -1)
+        err_exit("system");
+
+    if (WIFEXITED(ws)) {
+        return WEXITSTATUS(ws);
+    } else
+        return -1;
+}
+
 int config_field_prompt(linc_string *string) {
     if (ref_field_prompt == NO_REF)
         return -1;
@@ -183,14 +221,18 @@ int config_field_prompt(linc_string *string) {
     }
 
     char *git_branch = get_git_branch();
+    int git_dirty = get_git_dirty();
+    int git_untracked = get_git_untracked();
 
     lua_pushcfunction(L, push_ctx_table);
     lua_pushlightuserdata(L, cwd);
     lua_pushlightuserdata(L, home);
     lua_pushlightuserdata(L, &last_status);
     lua_pushlightuserdata(L, git_branch);
+    lua_pushlightuserdata(L, &git_dirty);
+    lua_pushlightuserdata(L, &git_untracked);
 
-    if (lua_pcall(L, 4, 1, 0) != LUA_OK)
+    if (lua_pcall(L, 6, 1, 0) != LUA_OK)
         xfatal("Lua: %s", lua_tostring(L, -1));
 
     if (lua_pcall(L, 1, 1, 0) != LUA_OK)

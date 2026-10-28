@@ -20,15 +20,25 @@ return {
         push(ccyan)
 
         if ctx.cwd == ctx.home then
-            push("~ ")
+            push("~")
         else
-            push(ctx.cwd:match("([^/]+)$"))
+            push(ctx.cwd:match("([^/]+)$") or "/")
         end
 
         push(coff)
 
         if ctx.git then
-            push(" ", cmag, "(" , coff, ctx.git.branch, cmag, ")", coff)
+            push(" ", cmag, "(", coff, ctx.git.branch)
+
+            if ctx.git.dirty == 1 then
+                push(ccyan, "*", coff)
+            end
+
+            if ctx.git.untracked == 1 then
+                push(ccyan, "+", coff)
+            end
+
+            push(cmag, ")", coff)
         end
 
         push(" ")

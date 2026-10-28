@@ -55,6 +55,7 @@ UTIL_PFFORMAT(1, 2) UTIL_NORETURN
 void usage_err(const char *fmt, ...);
 
 LINC_ARRAY_TYPE(da_charp, char *);
+LINC_ARRAY_TYPE(da_int, int);
 
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)

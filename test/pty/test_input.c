@@ -317,10 +317,6 @@ TEST(input, submitting_history_entry_with_saved_typed_input) {
     );
 }
 
-TEST(input, history_does_not_duplicate_prompt) {
-    // TODO: write this
-}
-
 TEST(input, bracketed_paste) {
     vterm_keyboard_start_paste(test->vt.vp);
     vt_send_str("PASTE\nDATA!");
@@ -440,7 +436,7 @@ TEST(input, sigchld_does_not_reset_editing_mode) {
     if (kill(test->cpid, SIGCHLD) == -1)
         PTY_TEST_FAIL("kill: %m");
 
-    test_pump_ms(1);
+    test_pump_ms(3);
 
     vt_send_str("x");
     assert_term(0, PROMPT_LEN,

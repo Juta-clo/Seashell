@@ -1,10 +1,13 @@
 #include <assert.h>
+#include <linux/limits.h>
 #include <pty.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
 
-#include "t_assert.h"
+#include "linc/hds.h"
+#include "linc/hda.h"
+#include "linc/xsys.h"
 #include "unity_fixture.h" // IWYU pragma: keep
 #include "t_fixture.h"
 #include "t_harness.h"
@@ -128,6 +131,50 @@ static void print_test_fail(void) {
 
         printf("%s" INFO_SEP "\x1b[97;41mFAIL\x1b[m\n", test->fail_msg.cstr);
     }
+}
+
+static char **create_exec_argv(char **args) {
+    assert(args);
+    char **out = nullptr;
+    char lfd_arg[ARG_MAX];
+
+    if (pipe2(test->val_p, O_NONBLOCK) == -1)
+        xtest_fatal("pipe2: %m");
+
+    if (memcheck) {
+        char *val_cmd[] = {
+            "valgrind",
+                "--vgdb=no",
+                "--leak-check=full",
+                "--errors-for-leak-kinds=definite,indirect",
+                "--show-leak-kinds=definite,indirect",
+                "--error-exitcode=99", /*seashell shouldn't return that*/
+                "--track-fds=bad", /*this is awesome - bugged with forkpty tho*/
+                "--modify-fds=high",
+                /* this is bugged with sigsuspend. See bugzilla#526386 */
+                "--enable-debuginfod=no",
+                NULL
+        };
+
+        for (char **arg = val_cmd; memcheck && *arg != NULL; ++arg)
+            linc_hds_append(*linc_hda_push(out, nullptr), *arg);
+
+        if (snprintf(lfd_arg, ARG_MAX, "--log-fd=%d", test->val_p[1]) < 0)
+            xtest_fatal("snprintf: %m");
+        linc_hds_append(*linc_hda_push(out, nullptr), lfd_arg);
+    }
+
+    for (char **arg = args; *arg != NULL; ++arg)
+        linc_hds_append(*linc_hda_push(out, nullptr), *arg);
+
+    if (pipe2(test->sh_p, O_NONBLOCK) == -1)
+        xtest_fatal("pipe2: %m");
+    if (snprintf(lfd_arg, ARG_MAX, "--log-fd=%d", test->sh_p[1]) < 0)
+        xtest_fatal("snprintf: %m");
+    linc_hds_append(*linc_hda_push(out, nullptr), lfd_arg);
+
+    linc_hda_push(out, nullptr);
+    return out;
 }
 
 static void test_shutdown_prgm(void) {
@@ -309,5 +356,10 @@ void test_teardown(void) {
 
     vterm_free(test->vt.vp);
     linc_string_free(&arg_line);
-    close(test->mfd);
+
+    xclose(test->sh_p[0]);
+    xclose(test->sh_p[1]);
+    xclose(test->val_p[0]);
+    xclose(test->val_p[1]);
+    xclose(test->mfd);
 }

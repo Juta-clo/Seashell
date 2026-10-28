@@ -20,6 +20,9 @@ typedef struct {
     bool diff_snaps;
     char **argv;
 
+    int sh_p[2];
+    int val_p[2];
+
     linc_string pty_out_data;
     linc_string pty_in_data;
     linc_string shell_data;
@@ -53,8 +56,6 @@ typedef struct {
     FILE *log_file;
     FILE *log_raw_out;
     FILE *log_raw_in;
-    int sh_p[2];
-    int val_p[2];
 } pty_harness;
 
 extern bool verbose;
@@ -64,12 +65,9 @@ extern bool script;
 extern pty_harness ptyh;
 extern pty_test *test;
 
-extern char **(*static_args_cb)(void);
-
 void test_harness_init(int argc, const char *const *argv);
 void test_harness_deinit(void);
 void print_val_sum(void);
-char **create_exec_argv(char **args);
 
 void test_resize_term(int row, int col);
 int test_poll(int tfd);
