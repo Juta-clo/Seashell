@@ -36,7 +36,6 @@ static ps_ast *line_to_ast(char *line) {
 
     ps_ast *ast = xmalloc(sizeof(ps_ast));
     if (ps_parse(&toks, ast) == -1) {
-        err_msg("syntax error");
         free(ast);
         lx_free(&toks);
         return NULL;

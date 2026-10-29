@@ -56,6 +56,7 @@ typedef struct lx_tok lx_tok;
 LINC_ARRAY_TYPE(da_tok, lx_tok);
 
 char *lx_errstr(lx_status stat);
+void lx_free_tok(lx_tok *tok);
 void lx_free(da_tok *tokens);
 int lx_tokenize(const char *cmd, da_tok *tokens);
 

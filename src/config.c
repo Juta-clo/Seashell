@@ -131,7 +131,7 @@ static void parse_config(lua_State *L) {
         xfatal("Lua: %s\n", lua_tostring(L, -1));
 
     if (!lua_istable(L, -1))
-        xfatal("lua_istable");
+        xfatal("config did not return a table: %s", config_path);
 
     if (lua_getfield(L, -1, "prompt") != LUA_TNIL) {
         if (!lua_isfunction(L, -1))
@@ -156,6 +156,28 @@ static void parse_config(lua_State *L) {
 
                 free(key);
                 free(value);
+            }
+
+            lua_pop(L, 1);
+        }
+    }
+
+    lua_pop(L, 1);
+
+    if (lua_getfield(L, -1, "alias") == LUA_TTABLE) {
+        lua_pushnil(L);
+
+        while (lua_next(L, -2) != 0) {
+            if (lua_type(L, -2) == LUA_TSTRING &&
+                lua_type(L, -1) == LUA_TSTRING) {
+
+                char *key = xstrdup(lua_tostring(L, -2));
+                char *value = xstrdup(lua_tostring(L, -1));
+
+                mp_str_add(&sh_env.aliases, key, value);
+                add_var(&sh_env.vars, key, value, true);
+
+                free(key);
             }
 
             lua_pop(L, 1);

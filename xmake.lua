@@ -48,6 +48,7 @@ target("pty_test")
 
     add_deps(test_bins, { inherit = false })
     add_deps("seashell", { inherit = false })
+    add_deps("launch_seashell", { inherit = false })
     add_deps(linc_targets)
     add_packages("ncurses", "vterm", "m")
     add_defines(

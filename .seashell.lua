@@ -14,9 +14,19 @@ local function push(...)
 end
 
 return {
+    alias = {
+        ls = "lsd",
+        cl = "clear",
+        cat = "bat --style=plain --paging=never --theme=gruvbox-dark",
+        gs = "git status -s",
+        val = "valgrind" ..
+            " --vgdb=no --quiet --leak-check=full" ..
+            " --errors-for-leak-kinds=definite,indirect" ..
+            " --show-leak-kinds=definite,indirect"
+    },
     export = {
         PATH = os.getenv("HOME") .. "/.local/bin:" .. os.getenv("PATH"),
-        EDITOR = os.getenv("HOME") .. "./local/bin/nvim",
+        EDITOR = os.getenv("HOME") .. "/local/bin/nvim",
         MANPAGER = 'nvim +Man!',
         XMAKE_COLORTERM = "color8",
         LS_COLORS = dofile(".ls_colors.lua")

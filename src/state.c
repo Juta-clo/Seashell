@@ -19,13 +19,9 @@
 #include "utils.h"
 #include "config.h"
 
-typedef struct {
-    void(*fatal)(const char *, ...);
-} fatal_wrapper;
+#define ALIAS_MAX 4096
 
-fatal_wrapper wrapper = { .fatal = fatal };
-
-static void linc_fatal(const linc_fatal_ctx *ctx, void *user) {
+static void linc_fatal(const linc_fatal_ctx *ctx, void *_) {
     char err_buf[BUFSIZ];
 
     if (ctx->type == LINC_FATAL_OOM) {
@@ -43,28 +39,19 @@ static void linc_fatal(const linc_fatal_ctx *ctx, void *user) {
             );
         }
 
-        linc_site site = {
-            .file = ctx->site.file,
-            .func = ctx->site.func,
-            .line = ctx->site.line
-        };
-
         linc_log_write(
             sh_env.shell_log,
             LINC_LOG_ERROR,
-            site,
+            ctx->site,
             "Linc: %s",
             err_buf
         );
     }
 
-    ((fatal_wrapper *)user)->fatal(err_buf);
+    fatal("%s", err_buf);
 }
 
-linc_fatal_target linc_target = {
-    .handler = linc_fatal,
-    .ctx = &wrapper
-};
+linc_fatal_target linc_target = { .handler = linc_fatal };
 
 linc_args opts[OPT_MAX + 1] = {
     [LOGFD] = {
@@ -136,7 +123,7 @@ static void log_setup(int *log_fd) {
 
         *log_fd = opts[LOGFD].val_int;
     } else if (opts[LOGFILE].found) {
-        *log_fd = open(opts[LOGFILE].val_str, O_WRONLY | O_CREAT, 0666);
+        *log_fd = open(opts[LOGFILE].val_str, O_WRONLY|O_CREAT|O_APPEND, 0666);
         if (*log_fd == -1) {
             perror("Failed to open log file");
             exit(EXIT_FAILURE);
@@ -193,6 +180,7 @@ void env_setup(int argc, char *const *argv) {
     log_setup(&sh_env.log_fd);
     var_setup(&sh_env);
     input_init();
+    mp_init(&sh_env.aliases, ALIAS_MAX);
 
     if (!opts[CLEAN].found)
         config_init();

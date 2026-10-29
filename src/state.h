@@ -21,6 +21,7 @@ typedef struct {
     sigset_t og_mask;
     int log_fd;
     map_t vars;
+    map_t aliases;
     struct termios tty_state;
     linc_log shell_log;
     linc_log assert_log;

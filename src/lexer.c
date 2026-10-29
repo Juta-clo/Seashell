@@ -23,7 +23,7 @@ char *lx_errstr(lx_status stat) {
     case LX_ERRMEM:        return "malloc failure";
     case LX_ERRNOENDQUOTE: return "unterminated quote";
     case LX_ERREMPTYESC:   return "bad escape";
-    case LX_ERRINPUT:      return "bad input";
+    case LX_ERRINPUT:      return "empty input";
     case LX_OK:            return "success";
     default:               return "???";
     }
@@ -226,18 +226,19 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
     return 0;
 }
 
+void lx_free_tok(lx_tok *tok) {
+    for (size_t i = 0; i < tok->parts.size; ++i)
+        free(tok->parts.data[i].raw);
+
+    linc_array_free(&tok->parts);
+}
+
 void lx_free(da_tok *tokens) {
     if (!tokens)
         return;
 
-    for (size_t i = 0; i < tokens->size; ++i) {
-        lx_tok *tok = &tokens->data[i];
-
-        for (size_t y = 0; y < tok->parts.size; ++y)
-            free(tok->parts.data[y].raw);
-
-        linc_array_free(&tok->parts);
-    }
+    for (size_t i = 0; i < tokens->size; ++i)
+        lx_free_tok(&tokens->data[i]);
 
     linc_array_free(tokens);
     *tokens = (da_tok){0};

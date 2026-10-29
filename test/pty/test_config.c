@@ -8,39 +8,42 @@ TEST_GROUP(config);
 /************ Fixture ************/
 
 FILE *config;
+char prompt_buf[BUFSIZ];
+char aliases_buf[BUFSIZ];
 
-__attribute__ ((__format__(printf, 1, 2)))
-void create_config(const char *fmt, ...) {
+void create_config(void) {
     config = fopen("/tmp/config_test.lua", "w+");
     if (!config)
         xtest_fatal("fopen: %m");
 
-    va_list va;
-    va_start(va, fmt);
-
-    if (vfprintf(config, fmt, va) < 0)
+    if (fprintf(config, "return {%s%s}", prompt_buf, aliases_buf) < 0)
         xtest_fatal("fprintf: %m");
-
-    va_end(va);
 
     if (fclose(config) == EOF)
         xtest_fatal("fclose: %m");
-}
-
-void set_prompt(const char *prompt) {
-    create_config(
-        "return {\n"
-            "prompt = function()\n"
-                "return \"%s\"\n"
-            "end\n"
-        "}\n", prompt
-    );
 
     test_setup("./seashell", "--config-file=/tmp/config_test.lua");
 }
 
+void set_prompt(const char *prompt) {
+    snprintf(prompt_buf, BUFSIZ,
+            "prompt = function()"
+                "return \"%s\""
+            "end,",
+        prompt
+    );
+    create_config();
+}
+
+void set_aliases(const char *aliases) {
+    snprintf(aliases_buf, BUFSIZ, "alias = {%s},", aliases);
+    create_config();
+}
+
 TEST_SETUP(config) {
     config = nullptr;
+    prompt_buf[0] = '\0';
+    aliases_buf[0] = '\0';
 }
 
 TEST_TEAR_DOWN(config) {
@@ -258,6 +261,109 @@ IGNORE_TEST(config, history_does_not_duplicate_colored_prompt) {
     // Requires, hot reloading of config file to change prompt
 }
 
+TEST(config, simple_alias_expansion) {
+    set_aliases("p = 'echo'");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("p\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "p",
+        "",
+        PROMPT
+    );
+}
+
+TEST(config, alias_with_multiple_words) {
+    set_aliases("p = 'echo hello world!'");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("p\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "p",
+        "hello world!",
+        PROMPT
+    );
+}
+
+TEST(config, alias_expands_after_pipe_from_alias) {
+    set_aliases("p = 'echo -n abc |', count = 'wc -c'");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("p count\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "p count",
+        "3",
+        PROMPT
+    );
+}
+
+TEST(config, alias_with_non_first_word) {
+    set_aliases("p = '&& echo hi'");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("p\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "p",
+        "seashell: alias error: p -> '&& echo hi'",
+        PROMPT
+    );
+}
+
+TEST(config, alias_with_no_value) {
+    set_aliases("p = ''");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("p\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "p",
+        "seashell: alias error: empty input",
+        PROMPT
+    );
+}
+
+TEST(config, alias_that_contains_redirect) {
+    set_aliases("p = 'echo x >/dev/null'");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("p\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT "p",
+        PROMPT
+    );
+}
+
+TEST(config, alias_that_contains_variable_expansion) {
+    set_aliases("p = 'echo $FOO'");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("set FOO bar\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "set FOO bar",
+        PROMPT
+    );
+
+    vt_send_str("p\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "p",
+        "bar",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -274,4 +380,11 @@ TEST_GROUP_RUNNER(config) {
     RUN_TEST_CASE(config, paste_csi_that_enters_pager);
     RUN_TEST_CASE(config, prompt_len_zero);
     RUN_TEST_CASE(config, history_does_not_duplicate_colored_prompt);
+    RUN_TEST_CASE(config, simple_alias_expansion);
+    RUN_TEST_CASE(config, alias_with_multiple_words);
+    RUN_TEST_CASE(config, alias_expands_after_pipe_from_alias);
+    RUN_TEST_CASE(config, alias_with_non_first_word);
+    RUN_TEST_CASE(config, alias_with_no_value);
+    RUN_TEST_CASE(config, alias_that_contains_redirect);
+    RUN_TEST_CASE(config, alias_that_contains_variable_expansion);
 }

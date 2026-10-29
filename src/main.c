@@ -1,3 +1,4 @@
+#include <linc/xsys.h>
 #include "shell.h"
 #include "state.h"
 

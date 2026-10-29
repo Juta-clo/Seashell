@@ -844,7 +844,6 @@ char *input_get_line(const char *prompt) {
 
     linc_hds_append(input.line, prompt);
     input.start_i = linc_hda_size(input.line) - 1;
-    LOG_INFO("input: new prompt: \"%s\"", input.line);
 
     input_on_new_line();
 
@@ -903,7 +902,7 @@ char *input_get_line(const char *prompt) {
         }
     }
 
-    LOG_INFO("parsed line: %s", input.line);
+    LOG_INFO("parsed line: %s", lstart());
 
     if (printty_stop(pt) != PRINTTY_OK)
         return NULL;
