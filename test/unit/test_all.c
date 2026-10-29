@@ -63,6 +63,11 @@ int main(int argc, const char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    /* We don't need parser error messages */
+    int fd = open("/dev/null", O_RDWR);
+    dup2(fd, STDERR_FILENO);
+    close(fd);
+
     sh_env.shell_log = unit_shell_log;
     sh_env.assert_log = unit_assert_log;
 

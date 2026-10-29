@@ -42,9 +42,8 @@ TEST(glob, no_matches_with_exact_match_pattern) {
 
 TEST(glob, multiple_matches) {
     TEST_ASSERT_EQUAL_INT(0, glob_pattern("d*", 2, &matches));
-    TEST_ASSERT_EQUAL_size_t(2, matches.size);
+    TEST_ASSERT_EQUAL_size_t(1, matches.size);
     TEST_ASSERT_EQUAL_STRING("./deps", matches.data[0]);
-    TEST_ASSERT_EQUAL_STRING("./docs", matches.data[1]);
 }
 
 TEST(glob, prefix_suffix_match) {

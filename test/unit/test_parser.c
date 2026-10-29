@@ -1,6 +1,8 @@
 #include "unity_fixture.h"
 #include "parser.h"
 #include "lexer.h"
+#include "map.h"
+#include "state.h"
 
 TEST_GROUP(parser);
 
@@ -242,9 +244,11 @@ static void validate(const char *shell_cmd, const exp_job *exp) {
 /************ Fixture ************/
 
 TEST_SETUP(parser) {
+    mp_init(&sh_env.aliases, 4096);
 }
 
 TEST_TEAR_DOWN(parser) {
+    mp_free(&sh_env.aliases);
 }
 
 /************ Tests ************/
