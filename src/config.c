@@ -15,10 +15,8 @@
 #define CONFIG_PROMPT \
     "Config file not found. Create one at '" CONFIG_PATH "' (y/N): "
 
-#define NO_REF -1
-
 static lua_State *L;
-static int ref_field_prompt = NO_REF;
+static int ref_field_prompt = LUA_NOREF;
 char config_path[PATH_MAX] = "";
 
 static int push_ctx_table(lua_State *state) {
@@ -65,7 +63,7 @@ static int push_ctx_table(lua_State *state) {
     return 1;
 }
 
-static FILE *config_file_open(void) {
+FILE *config_file_open(void) {
     int n;
 
     if (opts[CONFIG].found) {
@@ -124,7 +122,7 @@ static FILE *config_file_open(void) {
     return config;
 }
 
-static void parse_config(lua_State *L) {
+void parse_config() {
     ASSERT(lua_gettop(L) == 0);
 
     if (luaL_dofile(L, config_path) != LUA_OK)
@@ -136,6 +134,9 @@ static void parse_config(lua_State *L) {
     if (lua_getfield(L, -1, "prompt") != LUA_TNIL) {
         if (!lua_isfunction(L, -1))
             xfatal("config.prompt not a function");
+
+        if (ref_field_prompt != LUA_NOREF)
+            luaL_unref(L, LUA_REGISTRYINDEX, ref_field_prompt);
 
         ref_field_prompt = luaL_ref(L, LUA_REGISTRYINDEX);
     } else {
@@ -242,7 +243,7 @@ int get_git_untracked(void) {
 }
 
 int config_field_prompt(linc_string *string) {
-    if (ref_field_prompt == NO_REF)
+    if (ref_field_prompt == LUA_NOREF)
         return -1;
 
     ASSERT(lua_gettop(L) == 0);
@@ -308,7 +309,7 @@ void config_init(void) {
     if (!config)
         return;
 
-    parse_config(L);
+    parse_config();
 
     if (fclose(config) == EOF)
         xfatal("fclose");

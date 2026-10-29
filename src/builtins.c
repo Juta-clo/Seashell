@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <assert.h>
 
+#include "config.h"
 #include "variable.h"
 #include "state.h"
 #include "job_state.h"
@@ -395,6 +396,24 @@ static int run_vars_builtin(char **argv, shell_env *sh_env) {
     return EXIT_SUCCESS;
 }
 
+static int run_reload_builtin(char **argv, shell_env *_) {
+    if (validate_argc(argv, 0, 0) == -1)
+        return EXIT_FAILURE;
+
+    FILE *config = config_file_open();
+    if (!config) {
+        printf("%s: failed to open config file\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    parse_config();
+
+    if (fclose(config) == EOF)
+        xfatal("fclose");
+
+    return EXIT_SUCCESS;
+}
+
 static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "exit", .func = run_exit_builtin },
     { .name = "cd", .func = run_cd_builtin },
@@ -406,6 +425,7 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "kill", .func = run_kill_builtin },
     { .name = "fg", .func = run_fg_builtin },
     { .name = "bg", .func = run_bg_builtin },
+    { .name = "reload", .func = run_reload_builtin }
 };
 
 sh_builtin *get_builtin(const char *arg) {
