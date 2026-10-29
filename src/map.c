@@ -86,8 +86,10 @@ static int mp_delete(map_t *map, void *key, key_func func) {
         goto fail;
 
     size_t index;
-    if (!lookup_index(map, canon_key, &index))
-        goto fail;
+    if (!lookup_index(map, canon_key, &index)) {
+        free(canon_key);
+        return 0;
+    }
 
     free(map->pairs.data[index].value);
     free(map->pairs.data[index].key);

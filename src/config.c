@@ -176,7 +176,6 @@ void parse_config() {
                 char *value = xstrdup(lua_tostring(L, -1));
 
                 mp_str_add(&sh_env.aliases, key, value);
-                add_var(&sh_env.vars, key, value, true);
 
                 free(key);
             }

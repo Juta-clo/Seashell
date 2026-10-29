@@ -343,30 +343,6 @@ static int run_cd_builtin(char **argv, shell_env *_) {
     return EXIT_SUCCESS;
 }
 
-static int run_set_builtin(char **argv, shell_env *sh_env) {
-    if (validate_argc(argv, 2, 2) == -1)
-        return EXIT_FAILURE;
-
-    if (add_var(&sh_env->vars, argv[1], argv[2], false) == -1) {
-        fprintf(stderr, "%s: failed to add variable\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
-}
-
-static int run_unset_builtin(char **argv, shell_env *sh_env) {
-    if (validate_argc(argv, 1, 1) == -1)
-        return EXIT_FAILURE;
-
-    if (delete_var(&sh_env->vars, argv[1])) {
-        fprintf(stderr, "%s: failed to delete variable\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
-}
-
 static int run_export_builtin(char **argv, shell_env *sh_env) {
     if (validate_argc(argv, 2, 2) == -1)
         return EXIT_FAILURE;
@@ -414,18 +390,80 @@ static int run_reload_builtin(char **argv, shell_env *_) {
     return EXIT_SUCCESS;
 }
 
+static int run_set_builtin(char **argv, shell_env *sh_env) {
+    if (validate_argc(argv, 2, 2) == -1)
+        return EXIT_FAILURE;
+
+    if (add_var(&sh_env->vars, argv[1], argv[2], false) == -1) {
+        fprintf(stderr, "%s: failed to add variable\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+static int run_unset_builtin(char **argv, shell_env *sh_env) {
+    if (validate_argc(argv, 1, 1) == -1)
+        return EXIT_FAILURE;
+
+    if (delete_var(&sh_env->vars, argv[1])) {
+        fprintf(stderr, "%s: failed to delete variable\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+static int run_alias_builtin(char **argv, shell_env *_) {
+    if (validate_argc(argv, 2, 2) == -1)
+        return EXIT_FAILURE;
+
+    char *key = strdup(argv[1]);
+    char *value = strdup(argv[2]);
+
+    if (!key || !value) {
+        perror("strdup");
+        return EXIT_FAILURE;
+    }
+
+    mp_str_add(&sh_env.aliases, key, value);
+    free(key);
+
+    return EXIT_SUCCESS;
+}
+
+static int run_unalias_builtin(char **argv, shell_env *_) {
+    if (validate_argc(argv, 1, 1) == -1)
+        return EXIT_FAILURE;
+
+    char *key = strdup(argv[1]);
+
+    if (!key) {
+        perror("strdup");
+        return EXIT_FAILURE;
+    }
+
+    int status = mp_str_delete(&sh_env.aliases, key);
+
+    free(key);
+
+    return status;
+}
+
 static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "exit", .func = run_exit_builtin },
     { .name = "cd", .func = run_cd_builtin },
-    { .name = "set", .func = run_set_builtin },
-    { .name = "unset", .func = run_unset_builtin },
     { .name = "export", .func = run_export_builtin },
     { .name = "vars", .func = run_vars_builtin },
     { .name = "jobs", .func = run_jobs_builtin },
     { .name = "kill", .func = run_kill_builtin },
     { .name = "fg", .func = run_fg_builtin },
     { .name = "bg", .func = run_bg_builtin },
-    { .name = "reload", .func = run_reload_builtin }
+    { .name = "reload", .func = run_reload_builtin },
+    { .name = "set", .func = run_set_builtin },
+    { .name = "unset", .func = run_unset_builtin },
+    { .name = "alias", .func = run_alias_builtin },
+    { .name = "unalias", .func = run_unalias_builtin }
 };
 
 sh_builtin *get_builtin(const char *arg) {
