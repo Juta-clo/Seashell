@@ -471,16 +471,24 @@ static void input_delete(int type, input_del_ctx *ctx) {
 static void input_insert(int type, const char *s) {
     ASSERT(input.off >= 0);
     ASSERT(input.off <= line_len());
-    ASSERT(input.insert_mode || input.off < line_len());
 
     if (input.insert_mode) {
         if (type == INSERT_CHAR) {
             linc_hda_insert_buf(input.line, input.start_i + input.off, 1, s);
             input.off += 1;
         } else if (type == INSERT_STR) {
-            linc_hda_insert_buf(input.line, input.start_i + input.off, strlen(s), s);
+            linc_hda_insert_buf(input.line,
+                    input.start_i + input.off, strlen(s), s);
             input.off += strlen(s);
         }
+    } else {
+        linc_hda_insert_buf(input.line,
+                input.start_i + input.off, strlen(s), s);
+
+        input.off += strlen(s);
+
+        if (input.off == line_len() && input.off != 0)
+            input.off -= 1;
     }
 
     input_update();
@@ -536,6 +544,59 @@ static void escape_spaces(linc_string *str) {
 
     linc_string_free(str);
     *str = out;
+}
+
+static void history_push(void) {
+    linc_hda_insert(input.hist.lines, 0, 1, { xstrdup(lstart()) });
+    input.hist.i = 0;
+
+    if (input.hist.saved) {
+        free(input.hist.saved);
+        input.hist.saved = nullptr;
+    }
+}
+
+static void history_prev(void) {
+    if (input.hist.i == 0) {
+        if (input.hist.saved) {
+            input_delete(DELETE_ALL, NULL);
+            input_insert(INSERT_STR, input.hist.saved);
+
+            free(input.hist.saved);
+            input.hist.saved = nullptr;
+        }
+
+        return;
+    }
+
+    char *line = xstrdup(input.hist.lines[--input.hist.i]);
+    LOG_INFO("history_prev: input.line = \"%s\"", input.line);
+
+    input_delete(DELETE_ALL, NULL);
+    input_insert(INSERT_STR, line);
+
+    free(line);
+}
+
+static void history_next(void) {
+    if (linc_hda_size(input.hist.lines) == 0)
+        return;
+    if (input.hist.i == linc_hda_size(input.hist.lines) - 1 && input.hist.saved)
+        return;
+
+    if (!input.hist.saved) {
+        input.hist.saved = xstrdup(lstart());
+    } else {
+        ++input.hist.i;
+    }
+
+    char *line = xstrdup(input.hist.lines[input.hist.i]);
+    LOG_INFO("history_next: input.line = \"%s\"", input.line);
+
+    input_delete(DELETE_ALL, NULL);
+    input_insert(INSERT_STR, line);
+
+    free(line);
 }
 
 static void insert_mode_feed_key(PrinttyInputKey key) {
@@ -729,60 +790,13 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
         op = OP_DEL;
     } else if (codepoint == 'y') {
         printty_clipboard_copy(pt, input.line + input.start_i);
+    } else if (codepoint == 'k') {
+        history_next();
+        input_update();
+    } else if (codepoint == 'j') {
+        history_prev();
+        input_update();
     }
-}
-
-static void history_push(void) {
-    linc_hda_insert(input.hist.lines, 0, 1, { xstrdup(lstart()) });
-    input.hist.i = 0;
-
-    if (input.hist.saved) {
-        free(input.hist.saved);
-        input.hist.saved = nullptr;
-    }
-}
-
-static void history_prev(void) {
-    if (input.hist.i == 0) {
-        if (input.hist.saved) {
-            input_delete(DELETE_ALL, NULL);
-            input_insert(INSERT_STR, input.hist.saved);
-
-            free(input.hist.saved);
-            input.hist.saved = nullptr;
-        }
-
-        return;
-    }
-
-    char *line = xstrdup(input.hist.lines[--input.hist.i]);
-    LOG_INFO("history_prev: input.line = \"%s\"", input.line);
-
-    input_delete(DELETE_ALL, NULL);
-    input_insert(INSERT_STR, line);
-
-    free(line);
-}
-
-static void history_next(void) {
-    if (linc_hda_size(input.hist.lines) == 0)
-        return;
-    if (input.hist.i == linc_hda_size(input.hist.lines) - 1 && input.hist.saved)
-        return;
-
-    if (!input.hist.saved) {
-        input.hist.saved = xstrdup(lstart());
-    } else {
-        ++input.hist.i;
-    }
-
-    char *line = xstrdup(input.hist.lines[input.hist.i]);
-    LOG_INFO("history_next: input.line = \"%s\"", input.line);
-
-    input_delete(DELETE_ALL, NULL);
-    input_insert(INSERT_STR, line);
-
-    free(line);
 }
 
 void input_deinit(void) {
