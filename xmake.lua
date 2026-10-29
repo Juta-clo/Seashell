@@ -5,11 +5,20 @@ set_toolset("cc", "clang")
 set_toolset("ld", "clang")
 set_policy("build.ccache", false)
 
+add_rules("mode.debug", "mode.release")
+add_cflags("-std=gnu23", "-Wall", "-Wextra")
+
+if is_mode("debug") then
+    set_symbols("debug")
+    set_optimize("none")
+elseif is_mode("release") then
+    set_symbols("none")
+    set_optimize("faster")
+end
+
 add_rules("plugin.compile_commands.autoupdate", { outputdir = "." })
-add_cflags("-g", "-O0", "-std=gnu23", "-Wall", "-Wextra")
 add_defines("_GNU_SOURCE")
-add_requires("unibilium", "ncurses", "m", "vterm", { system = true })
-add_requires("lua 5.4.8")
+add_requires("unibilium", "lua 5.4", { system = true })
 
 target("launch_seashell")
     set_kind("binary")
@@ -19,15 +28,15 @@ target("launch_seashell")
 
 target("seashell")
     set_kind("binary")
-    set_default(false)
     set_targetdir(".")
 
     add_deps(linc_targets)
-    add_deps("launch_seashell")
     add_packages("unibilium", "lua")
     add_ldflags("-rdynamic")
     add_includedirs("deps/Printty/include")
     add_files("src/*.c", "deps/Printty/src/*.c")
+
+-- TESTING --
 
 local test_bins = {
     "change_tio", "interrupt_me", "self_kill", "write_sleep"
@@ -45,12 +54,13 @@ end
 target("pty_test")
     set_kind("binary")
     set_targetdir(".")
+    set_default(false)
 
     add_deps(test_bins, { inherit = false })
     add_deps("seashell", { inherit = false })
     add_deps("launch_seashell", { inherit = false })
     add_deps(linc_targets)
-    add_packages("ncurses", "vterm", "m")
+    add_syslinks("ncurses", "vterm", "m")
     add_defines(
         "UNITY_FIXTURE_NO_EXTRAS",
         "UNITY_OUTPUT_COLOR",
