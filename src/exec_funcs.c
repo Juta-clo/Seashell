@@ -69,7 +69,7 @@ void child_redir_setup(da_redir *redirs) {
 
 pline_data exec_pline(const ps_pline *pline, bool bg) {
     if (!pline)
-        assert(pline);
+        ASSERT(pline);
 
     int next_pipe[2];
     int prev_rfd;

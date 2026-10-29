@@ -3,6 +3,7 @@
 
 #include <linc/array.h>
 #include "map.h"
+#include "utils.h"
 
 typedef void *(* key_func)(map_t *, const void *);
 
@@ -61,7 +62,7 @@ fail:
 }
 
 static int mp_lookup(map_t *map, const void *key, void **value, key_func func) {
-    assert(map && key && value);
+    ASSERT(map && key && value);
 
     void *canon_key = func(map, key);
     if (!canon_key)
@@ -105,7 +106,7 @@ fail:
 }
 
 static void *str_canon_key(map_t *map, const void *key) {
-    assert(map && key && strlen(key) < map->key_size);
+    ASSERT(map && key && strlen(key) < map->key_size);
 
     void *canon_key = calloc(map->key_size, 1);
     if (!canon_key)
@@ -138,7 +139,7 @@ int mp_str_delete(map_t *map, char *key) {
 }
 
 static void *num_canon_key(map_t *map, const void *key) {
-    assert(map && key);
+    ASSERT(map && key);
 
     int *canon_key = calloc(map->key_size, 1);
     if (!canon_key)

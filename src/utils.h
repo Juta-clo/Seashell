@@ -24,28 +24,28 @@ UTIL_PFFORMAT(1, 2) UTIL_NORETURN
 void err_exit_imp(const char *fmt, ...);
 
 #define ASSERT_EQ_INT(a, b) \
-    err_assert_eq_int(a, b, #a, #b, __FILE__, __LINE__);
+    err_assert_eq_int(a, b, #a, #b, LINC_SITE);
 void err_assert_eq_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line);
+        linc_site site);
 
 #define ASSERT_NEQ_INT(a, b) \
-    err_assert_not_eq_int(a, b, #a, #b, __FILE__, __LINE__);
+    err_assert_not_eq_int(a, b, #a, #b, LINC_SITE);
 void err_assert_not_eq_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line);
+        linc_site site);
 
 #define ASSERT_G_INT(a, b) \
-    err_assert_g_int(a, b, #a, #b, __FILE__, __LINE__);
+    err_assert_g_int(a, b, #a, #b, LINC_SITE);
 void err_assert_g_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line);
+        linc_site site);
 
 #define ASSERT_GE_INT(a, b) \
-    err_assert_ge_int(a, b, #a, #b, __FILE__, __LINE__);
+    err_assert_ge_int(a, b, #a, #b, LINC_SITE);
 void err_assert_ge_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line);
+        linc_site site);
 
 #define ASSERT(ass) \
-    err_assert(ass, #ass, __FILE__, __LINE__);
-void err_assert(bool b, const char *text, const char *file, int line);
+    err_assert(ass, #ass, LINC_SITE);
+void err_assert(bool b, const char *text, linc_site site);
 
 void err_msg(const char *fmt, ...);
 

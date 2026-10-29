@@ -31,10 +31,12 @@ static void output_err(const char *fmt, va_list *va, bool print_err) {
 }
 
 void fatal(const char *fmt, ...) {
-    va_list va;
-    va_start(va, fmt);
-    output_err(fmt, &va, false);
-    va_end(va);
+    if (fmt) {
+        va_list va;
+        va_start(va, fmt);
+        output_err(fmt, &va, false);
+        va_end(va);
+    }
 
     if (sh_env.subshell)
         _exit(EXIT_FAILURE);
@@ -43,75 +45,55 @@ void fatal(const char *fmt, ...) {
 }
 
 void err_assert_eq_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line)
-{
+        linc_site site) {
     if (a != b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
-                "%s:%d [%s == %s] failed: %s = %d, %s = %d",
-                file, line, p1, p2, p1, a, p2, b);
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
+                "%s == %s, %s = %d, %s = %d",
+                p1, p2, p1, a, p2, b);
 
-        if (sh_env.subshell) {
-            _exit(EXIT_FAILURE);
-        } else
-            exit(EXIT_FAILURE);
+        fatal(NULL);
     }
 }
 
 void err_assert_not_eq_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line)
-{
+        linc_site site) {
     if (a == b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
-                "%s:%d [%s != %s] failed: %s = %d, %s = %d",
-                file, line, p1, p2, p1, a, p2, b);
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
+                "%s != %s, %s = %d, %s = %d",
+                p1, p2, p1, a, p2, b);
 
-        if (sh_env.subshell) {
-            _exit(EXIT_FAILURE);
-        } else
-            exit(EXIT_FAILURE);
+        fatal(NULL);
     }
 }
 
 void err_assert_g_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line)
-{
+        linc_site site) {
     if (a <= b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
-                "%s:%d [%s > %s] failed: %s = %d, %s = %d",
-                file, line, p1, p2, p1, a, p2, b);
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
+                "%s > %s, %s = %d, %s = %d",
+                p1, p2, p1, a, p2, b);
 
-        if (sh_env.subshell) {
-            _exit(EXIT_FAILURE);
-        } else
-            exit(EXIT_FAILURE);
+        fatal(NULL);
     }
 }
 
 void err_assert_ge_int(int a, int b, const char *p1, const char *p2,
-        const char *file, int line)
-{
+        linc_site site) {
     if (a < b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
-                "%s:%d [%s >= %s] failed: %s = %d, %s = %d",
-                file, line, p1, p2, p1, a, p2, b);
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
+                "%s >= %s, %s = %d, %s = %d",
+                p1, p2, p1, a, p2, b);
 
-        if (sh_env.subshell) {
-            _exit(EXIT_FAILURE);
-        } else
-            exit(EXIT_FAILURE);
+        fatal(NULL);
     }
 }
 
-void err_assert(bool b, const char *text, const char *file, int line) {
+void err_assert(bool b, const char *text, linc_site site) {
     if (!b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, LINC_SITE,
-                "%s:%d [%s] failed",
-                file, line, text);
+        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
+                "%s", text);
 
-        if (sh_env.subshell) {
-            _exit(EXIT_FAILURE);
-        } else
-            exit(EXIT_FAILURE);
+        fatal(NULL);
     }
 }
 
@@ -121,10 +103,7 @@ void err_exit_imp(const char *fmt, ...) {
     output_err(fmt, &va, true);
     va_end(va);
 
-    if (sh_env.subshell)
-        _exit(EXIT_FAILURE);
-    else
-        exit(EXIT_FAILURE);
+    fatal(NULL);
 }
 
 void err_msg(const char *fmt, ...) {

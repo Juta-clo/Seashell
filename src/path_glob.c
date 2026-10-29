@@ -84,7 +84,7 @@ static bool suffix_ok(const char *dent, const char *comp, size_t suf_n) {
 
 static bool substrs_ok(const char *dent, da_charp *substrs, size_t pre_n,
         size_t suf_n) {
-    assert(dent && substrs);
+    ASSERT(dent && substrs);
 
     if (substrs->size == 0)
         return true;

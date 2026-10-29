@@ -100,7 +100,7 @@ static int llen(void) {
 
 static int line_len(void) {
     int rv = (int)(linc_hda_size(input.line) - 1) - input.start_i;
-    assert(rv >= 0);
+    ASSERT(rv >= 0);
     return rv;
 }
 
@@ -109,7 +109,7 @@ static char *lstart(void) {
 }
 
 static int input_current_tok(comp_tok *comp, int *start, int *end) {
-    assert(comp && start && end);
+    ASSERT(comp && start && end);
 
     *comp = COMP_CMD;
 
@@ -469,9 +469,9 @@ static void input_delete(int type, input_del_ctx *ctx) {
 }
 
 static void input_insert(int type, const char *s) {
-    assert(input.off >= 0);
-    assert(input.off <= line_len());
-    assert(input.insert_mode || input.off < line_len());
+    ASSERT(input.off >= 0);
+    ASSERT(input.off <= line_len());
+    ASSERT(input.insert_mode || input.off < line_len());
 
     if (input.insert_mode) {
         if (type == INSERT_CHAR) {
@@ -507,7 +507,7 @@ static void input_reset_comp(void) {
 }
 
 static void get_path_entries(da_charp *pents) {
-    assert(pents);
+    ASSERT(pents);
     *pents = (da_charp){0};
 
     sh_var *var = lookup_var(&sh_env.vars, "PATH");

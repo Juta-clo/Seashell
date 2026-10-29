@@ -39,8 +39,8 @@ static void log_tokens(const da_tok *toks) {
 }
 
 static void copy_word(ps_word *dst, lx_tok *src, ps_scanner *scanner) {
-    assert(dst);
-    assert(dst->segments.size == 0);
+    ASSERT(dst);
+    ASSERT(dst->segments.size == 0);
 
     for (size_t i = 0; i < src->parts.size; ++i) {
         lx_part *src_part = &src->parts.data[i];
@@ -63,7 +63,7 @@ static void copy_word(ps_word *dst, lx_tok *src, ps_scanner *scanner) {
 }
 
 static void queue_redir(lx_kind kind, int append, ps_scanner *scanner) {
-    assert(scanner);
+    ASSERT(scanner);
 
     ps_redir *redir = linc_array_push(&scanner->cur_cmd->redirs);
 
@@ -85,7 +85,7 @@ static void queue_redir(lx_kind kind, int append, ps_scanner *scanner) {
 }
 
 static void add_cmd(da_cmd *cmds, ps_scanner *scanner) {
-    assert(scanner);
+    ASSERT(scanner);
 
     ps_cmd *cmd = linc_array_push(cmds);
 
@@ -99,7 +99,7 @@ static void add_cmd(da_cmd *cmds, ps_scanner *scanner) {
 
 static void add_andor(da_andor *andors, ps_andor_op op,
         ps_scanner *scanner) {
-    assert(andors);
+    ASSERT(andors);
 
     ps_andor *andor = linc_array_push(andors);
 

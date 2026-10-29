@@ -46,7 +46,7 @@ static job_stat calc_job_stat(jc_job *job) {
 }
 
 static bool identify_proc(pid_t pid, jc_job **job, jc_proc** proc) {
-    assert(job && proc);
+    ASSERT(job && proc);
 
     for (size_t i = 0; i < jctl.jobs.size; ++i) {
         jc_job *in_job = &jctl.jobs.data[i];
@@ -460,7 +460,7 @@ void queue_builtin_exit_event(pid_t jid, char **argv, int status) {
 }
 
 void add_job(pid_t jid, pline_data *pld) {
-    assert(pld);
+    ASSERT(pld);
 
     if (pld->procs.size == 0)
         xfatal("empty pline proc array");

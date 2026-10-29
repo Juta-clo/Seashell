@@ -115,7 +115,7 @@ static linc_string expand_seg(const char *seg, bool *has_glob) {
 }
 
 static int expand_word(ps_word *word, da_charp *argv, bool redir) {
-    assert(redir || argv);
+    ASSERT(redir || argv);
 
     linc_allo allo = word->segments.allo;
     linc_string arg = LINC_STRING_INIT;

@@ -31,7 +31,7 @@ char *get_wstat_str(pid_t pid, int wstat) {
 }
 
 int get_wstat(wait_event *wev) {
-    assert(wev);
+    ASSERT(wev);
 
     int wstat;
     pid_t cpid = waitpid(-1, &wstat, WUNTRACED | WCONTINUED | WNOHANG);

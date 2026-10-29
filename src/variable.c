@@ -9,7 +9,7 @@
 #include "utils.h"
 
 static bool verify_key(const void *key) {
-    assert(key);
+    ASSERT(key);
 
     if (strlen(key) >= VAR_KEY_SIZE)
         return false;
@@ -49,7 +49,7 @@ int add_var(map_t *vars, char *key, char *value, bool export) {
 }
 
 void update_status_variable(map_t *vars, const job_event *jev) {
-    assert(jev->type == JEXITED);
+    ASSERT(jev->type == JEXITED);
 
     /* Conveniently if the 'set' builtin assigns a value to
      * the '?' variable the exit status returned by 'set' will

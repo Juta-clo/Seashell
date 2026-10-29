@@ -6,6 +6,7 @@
 #include <linc/array.h>
 #include "lexer.h"
 #include "linc/xsys.h"
+#include "utils.h"
 
 static lx_status status = LX_OK;
 
@@ -96,9 +97,9 @@ static void ensure_part(lx_scanner *scanner, lx_quote quote) {
 }
 
 static void end_part(lx_scanner *scanner) {
-    assert(scanner);
-    assert(scanner->cur_tok);
-    assert(scanner->part_start);
+    ASSERT(scanner);
+    ASSERT(scanner->cur_tok);
+    ASSERT(scanner->part_start);
 
     da_part *parts = &scanner->cur_tok->parts;
     lx_part *part = &parts->data[parts->size - 1];
