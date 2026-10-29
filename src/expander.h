@@ -2,6 +2,7 @@
 #define EXPANDER_H
 
 #include <linc/array.h>
+#include "linc/string.h"
 #include "parser.h"
 
 typedef enum {
@@ -18,6 +19,7 @@ struct ex_tok {
 typedef struct ex_tok ex_tok;
 LINC_ARRAY_TYPE(da_ex_tok, ex_tok);
 
-int ex_expand_pline(const ps_pline *pline);
+linc_string expand_seg(const char *seg, bool *has_glob);
+int expand_pline(const ps_pline *pline);
 
 #endif

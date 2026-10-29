@@ -1,6 +1,6 @@
 [submodule "deps/Printty"]
 	path = deps/Printty
-	url = git@github_old:Ammsiss/Printty.git
+	url = https://github.com/Juta-clo/Printty.git
 [submodule "deps/Linc"]
 	path = deps/Linc
-	url = git@github_old:Ammsiss/Linc
+	url = https://github.com/Juta-clo/Linc.git

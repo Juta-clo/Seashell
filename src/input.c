@@ -1,4 +1,3 @@
-#include "linc/string.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <linux/limits.h>
@@ -9,6 +8,8 @@
 
 #undef basename
 
+#include "expander.h"
+#include "linc/string.h"
 #include "input.h"
 #include "input_object.h"
 #include "state.h"
@@ -93,6 +94,18 @@ static void default_sig_cb(void) {
 void (*input_sig_cb)(void) = default_sig_cb;
 
 input_editor input = {0};
+
+static void log_cells(da_cell cells) {
+    return;
+
+    LOG_INFO("collected %zu cells {", cells.size);
+    for (size_t i = 0; i < cells.size; ++i)
+        LOG_INFO("    cell(n=%d,i=%d,prompt=%d) = %.*s",
+                cells.data[i].n, cells.data[i].i,
+                cells.data[i].prompt,
+                cells.data[i].n, &input.line[cells.data[i].i]);
+    LOG_INFO("}");
+}
 
 static int llen(void) {
     return (int)(linc_hda_size(input.line) - 1);
@@ -267,13 +280,7 @@ static da_cell get_cells(int *prompt_len) {
         }
     }
 
-    // LOG_INFO("collected %zu cells {", cells.size);
-    // for (size_t i = 0; i < cells.size; ++i)
-    //     LOG_INFO("    cell(n=%d,i=%d,prompt=%d) = %.*s",
-    //             cells.data[i].n, cells.data[i].i,
-    //             cells.data[i].prompt,
-    //             cells.data[i].n, &input.line[cells.data[i].i]);
-    // LOG_INFO("}");
+    log_cells(cells);
 
     return cells;
 }
@@ -645,6 +652,9 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         }
 
         if (!input.comp.glob) {
+            if (*(lstart() + tstart) == '/' && tok == COMP_CMD)
+                return;
+
             linc_hds_append_n(input.comp.glob, lstart() + tstart, tend - tstart);
             linc_hds_append_n(input.comp.glob, "*", 1);
             input.comp.start_i = tstart;
@@ -675,11 +685,11 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
 
             free_charp_arr(&pents);
         } else if (tok == COMP_ARG || tok == COMP_REDIR) {
-            if (matches.size == 0)
-                glob_pattern(input.comp.glob,
-                        linc_hds_len(input.comp.glob), &matches);
+            linc_string result = expand_seg(input.comp.glob, NULL);
+            glob_pattern(result.cstr, result.len, &matches);
+            LOG_INFO("File glob: %s", result.cstr);
 
-            LOG_INFO("File glob: %s", input.comp.glob);
+            linc_string_free(&result);
         }
 
         if (matches.size == 0)
@@ -689,18 +699,20 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
             char *glob_copy = xstrdup(input.comp.glob);
             char *glob_dirname = dirname(glob_copy);
             bool path_pre = (strcmp(glob_dirname, ".") != 0);
-
-            bool append_slash = is_dir(matches.data[i]);
             char *bn = basename(matches.data[i]);
 
             linc_string result = LINC_STRING_INIT;
 
-            if (path_pre)
-                linc_string_appendf(&result, "%s/", glob_dirname);
+            if (path_pre) {
+                linc_string_appendf(&result, "%s", glob_dirname);
+
+                if (glob_dirname[strlen(glob_dirname) - 1] != '/')
+                    linc_string_append(&result, "/");
+            }
 
             linc_string_append(&result, bn);
 
-            if (append_slash)
+            if (is_dir(matches.data[i]))
                 linc_string_append(&result, "/");
 
             free(matches.data[i]);

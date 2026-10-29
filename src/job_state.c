@@ -488,7 +488,7 @@ void add_job(pid_t jid, pline_data *pld) {
 }
 
 int launch_job(ps_pline *pline, bool bg, pid_t jid) {
-    if (ex_expand_pline(pline) == -1)
+    if (expand_pline(pline) == -1)
         return -1;
 
     if (!bg) {

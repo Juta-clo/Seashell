@@ -1,4 +1,6 @@
 #include <errno.h>
+#include <sys/stat.h>
+
 #include <linc/xsys.h>
 #include <linc/array.h>
 #include "path_glob.h"
@@ -137,8 +139,18 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
             if (!inc_prev && is_prev_dirent)
                 continue;
 
-            if (dirs && !(dirent->d_type == DT_DIR || is_prev_dirent))
-                continue;
+            if (dirs && !(dirent->d_type == DT_DIR || is_prev_dirent)) {
+                struct stat sb;
+
+                if (dirent->d_type != DT_LNK && dirent->d_type != DT_UNKNOWN)
+                    continue;
+
+                if (fstatat(dirfd(dir), dirent->d_name, &sb, 0) == -1)
+                    continue;
+
+                if (!S_ISDIR(sb.st_mode))
+                    continue;
+            }
 
             char **dent = linc_array_push(dents);
             *dent = xmalloc(strlen(path) + strlen(dirent->d_name) + 2);
@@ -190,9 +202,11 @@ static void filter_dents(const char *glob, da_charp *dents) {
 
 int glob_pattern(const char *glob, size_t len, da_charp *matches) {
     ASSERT(glob && matches);
-    ASSERT_G_INT(len, 0);
 
     *matches = (da_charp){0};
+
+    if (len == 0)
+        return 0;
 
     int rv = -1;
     bool slash_last = (glob[len - 1] == '/');

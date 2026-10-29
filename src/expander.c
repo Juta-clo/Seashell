@@ -36,7 +36,7 @@ static void push_key(da_ex_tok *toks, const char *start, size_t n) {
     tok->str_len = n;
 }
 
-static void  ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
+static void ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
     *toks = (da_ex_tok){0};
 
     ex_tok_type type = EXT_REG;
@@ -69,7 +69,7 @@ static void  ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
             start = c + 1;
         }
 
-        if (*c == ' ' || *c == '/' || *c == '.') {
+        if (*c == ' ' || *c == '/' || *c == '.' || *c == '*') {
         /* as a convenience, you can achieve the same by just
          * escaping the character after the variable name */
             if (type != EXT_KEY)
@@ -90,8 +90,9 @@ static void  ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
     try_push_tok(toks, start, c, type);
 }
 
-static linc_string expand_seg(const char *seg, bool *has_glob) {
+linc_string expand_seg(const char *seg, bool *has_glob) {
     linc_string out = LINC_STRING_INIT;
+    LOG_INFO("expanding segment: %s", seg);
 
     da_ex_tok toks;
     ex_tokenize(seg, &toks, has_glob);
@@ -100,8 +101,11 @@ static linc_string expand_seg(const char *seg, bool *has_glob) {
         ex_tok *tok = &toks.data[i];
         if (tok->type == EXT_KEY) {
             sh_var *var = lookup_var_n(&sh_env.vars, tok->str, tok->str_len);
-            if (var)
+            if (var) {
+                LOG_INFO("expanded varaible %s -> %.*s", var->value,
+                        (int)tok->str_len, tok->str);
                 linc_string_append(&out, var->value);
+            }
 
         } else if (tok->type == EXT_REG) {
             linc_string_append_n(&out, tok->str, tok->str_len);
@@ -197,7 +201,7 @@ static int create_argv(ps_cmd *cmd) {
     return 0;
 }
 
-int ex_expand_pline(const ps_pline *pline) {
+int expand_pline(const ps_pline *pline) {
     for (size_t j = 0; j < pline->cmds.size; ++j) {
         ps_cmd *cmd = &pline->cmds.data[j];
 

@@ -374,7 +374,7 @@ TEST(glob, glob_detected_in_empty_variable) {
     assert_term(3, PROMPT_LEN,
         PROMPT "set FOO \"\"",
         PROMPT "echo $FOO*",
-        "",
+        "*",
         PROMPT
     );
 }
