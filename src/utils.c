@@ -134,6 +134,19 @@ void usage_err(const char *fmt, ...) {
 
 /* general */
 
+int get_int(const char *arg) {
+    if (arg[0] == '\0')
+        return -1;
+
+    char *endptr;
+    pid_t num = (int) strtol(&arg[0], &endptr, 10);
+
+    if (*endptr != '\0')
+        return -1;
+
+    return num;
+}
+
 bool is_dir(const char *path) {
     struct stat sb;
     if (stat(path, &sb) == -1)

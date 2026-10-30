@@ -48,6 +48,14 @@ int add_var(map_t *vars, char *key, char *value, bool export) {
     return 0;
 }
 
+int get_last_status(void) {
+    sh_var *var = lookup_var(&sh_env.vars, "?");
+    if (!var)
+        return -1;
+
+    return get_int(var->value);
+}
+
 void update_status_variable(map_t *vars, const job_event *jev) {
     ASSERT(jev->type == JEXITED);
 

@@ -99,8 +99,6 @@ struct job_event {
 };
 
 void print_job_event(pid_t jid, const job_event *jev, bool verbose);
-pid_t request_job_id(pid_t jid);
-pid_t create_job_id(void);
 
 job_table *get_jctl(void);
 da_jevent get_job_info(void);

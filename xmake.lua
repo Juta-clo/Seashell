@@ -29,6 +29,7 @@ target("launch_seashell")
 target("seashell")
     set_kind("binary")
     set_targetdir(".")
+    set_default(false)
 
     add_deps(linc_targets)
     add_packages("unibilium", "lua")
@@ -54,7 +55,6 @@ end
 target("pty_test")
     set_kind("binary")
     set_targetdir(".")
-    set_default(false)
 
     add_deps(test_bins, { inherit = false })
     add_deps("seashell", { inherit = false })
@@ -72,8 +72,8 @@ target("pty_test")
 
 target("unit_test")
     set_kind("binary")
-    set_default(false)
     set_targetdir(".")
+    set_default(false)
 
     add_deps(linc_targets)
     add_packages("unibilium", "lua")

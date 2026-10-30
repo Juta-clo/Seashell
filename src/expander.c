@@ -92,7 +92,6 @@ static void ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
 
 linc_string expand_seg(const char *seg, bool *has_glob) {
     linc_string out = LINC_STRING_INIT;
-    LOG_INFO("expanding segment: %s", seg);
 
     da_ex_tok toks;
     ex_tokenize(seg, &toks, has_glob);
@@ -146,6 +145,8 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
 
         linc_string_free(&exp_seg);
     }
+
+    LOG_INFO("expanded word: %s", arg.cstr);
 
     /* globbing */
 

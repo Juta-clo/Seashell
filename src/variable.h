@@ -12,6 +12,7 @@ typedef struct {
 } sh_var;
 
 int add_var(map_t *vars, char *key, char *value, bool export);
+int get_last_status(void);
 void update_status_variable(map_t *vars, const job_event *jev);
 sh_var *lookup_var(map_t *vars, const char *key);
 sh_var *lookup_var_n(map_t *vars, const char *key, size_t key_len);

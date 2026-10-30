@@ -16,6 +16,7 @@ static bool try_run_next_job(pid_t jid, bool success, int how) {
     bool bg = (how == IN_BG);
     bool execed_pline = false;
 
+    /* THIS POINTER COULD BE INVALIDATED ON LAUNCH_JOB FROM LUA */
     job_plan *plan = lookup_plan(jid, NULL);
     if (!plan)
         return false;

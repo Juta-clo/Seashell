@@ -60,6 +60,7 @@ LINC_ARRAY_TYPE(da_int, int);
 #define MAX(a, b) ((a) > (b)) ? (a) : (b)
 #define MIN(a, b) ((a) < (b)) ? (a) : (b)
 
+int get_int(const char *arg);
 bool is_dir(const char *file);
 size_t argv_len(char **argv);
 void free_charp_arr(da_charp *arr);

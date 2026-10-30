@@ -1,29 +1,17 @@
 #include <errno.h>
-#include <signal.h>
 
 #include "event.h"
-#include "input.h"
 #include "job_state.h"
 #include "linc/xsys.h"
 #include "parser.h"
 #include "plan.h"
-#include "state.h"
 #include "utils.h"
 #include "config.h"
+#include "variable.h"
 
-#define PROMPT_MAX 4096
 #define PROMPT_DEFAULT "> "
 
-static linc_string shell_get_prompt(void) {
-    linc_string prompt = LINC_STRING_INIT;
-
-    if (config_field_prompt(&prompt) == -1)
-        linc_string_append(&prompt, PROMPT_DEFAULT);
-
-    return prompt;
-}
-
-static ps_ast *line_to_ast(char *line) {
+static ps_ast *line_to_ast(const char *line) {
     if (strcmp("", line) == 0)
         return NULL;
 
@@ -45,44 +33,42 @@ static ps_ast *line_to_ast(char *line) {
     return ast;
 }
 
-void shell_run(void) {
-    char *line;
-    ps_ast *ast;
+linc_string shell_get_prompt(void) {
+    linc_string prompt = LINC_STRING_INIT;
 
-    while (true) {
-        if (sh_env.fg_jid != NOFG) {
-            sigsuspend(&sh_env.og_mask);
-            if (errno != EINTR)
-                err_exit_imp("sigsuspend");
+    if (config_field_prompt(&prompt) == -1)
+        linc_string_append(&prompt, PROMPT_DEFAULT);
 
-            process_signals();
+    return prompt;
+}
 
-            continue;
-        } else {
-            linc_string prompt = shell_get_prompt();
+void shell_sleep(void) {
+    sigsuspend(&sh_env.og_mask);
+    if (errno != EINTR)
+        err_exit("sigsuspend");
 
-            if (!(line = input_get_line(prompt.cstr)))
-                xfatal("input_get_line: EOF/Error");
+    process_signals();
+}
 
-            linc_string_free(&prompt);
-        }
+int shell_run(const char *line) {
+    ps_ast *ast = line_to_ast(line);
+    if (!ast)
+        return -1;
 
-        if (!(ast = line_to_ast(line))) {
-            free(line);
-            continue;
-        }
+    job_plan *plan = add_plan(ast);
 
-        free(line);
-
-        int jid = create_job_id();
-        job_plan *plan = add_plan(jid, ast);
-
-        if (launch_job(&plan_next(plan)->pline, ast->bg, jid) == -1) {
-            plan_done(jid);
-            continue;
-        }
-
-        if (ast->bg)
-            printf("[%d] %d\n", jid , lookup_job_pgrp(jid));
+    if (launch_job(&plan_next(plan)->pline, ast->bg, plan->jid) == -1) {
+        plan_done(plan->jid);
+        return -1;
     }
+
+    if (ast->bg) {
+        printf("[%d] %d\n", plan->jid , lookup_job_pgrp(plan->jid));
+        return 0;
+    }
+
+    while (sh_env.fg_jid != NOFG)
+        shell_sleep();
+
+    return get_last_status();
 }

@@ -238,25 +238,6 @@ void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
     linc_string_free(&msg);
 }
 
-pid_t create_job_id(void) {
-    pid_t jid = 1;
-
-    if (jctl.jobs.size == 0)
-        return jid;
-
-    for (size_t i = 0; i < jctl.jobs.size;) {
-        if (jid == jctl.jobs.data[i].jid) {
-            ++jid;
-            i = 0;
-            continue;
-        }
-
-        ++i;
-    }
-
-    return jid;
-}
-
 void free_job_event(job_event *jev) {
     for (size_t i = 0; i < jev->pviews.size; ++i)
         free_argv(jev->pviews.data[i].argv);

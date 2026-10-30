@@ -12,25 +12,13 @@
 #include "builtins.h"
 #include "utils.h"
 #include "plan.h"
+#include "luart.h"
 
 #include <linc/args.h>
 
 typedef enum {
     SHOW_PIDS,
 } jobs_opt_names;
-
-static int get_int(const char *arg) {
-    if (arg[0] == '\0')
-        return -1;
-
-    char *endptr;
-    pid_t num = (int) strtol(&arg[0], &endptr, 10);
-
-    if (*endptr != '\0')
-        return -1;
-
-    return num;
-}
 
 static int arg_to_sig(char *sig_arg) {
     /* - just to be consistent */
@@ -450,6 +438,20 @@ static int run_unalias_builtin(char **argv, shell_env *_) {
     return status;
 }
 
+static int run_lua_builtin(char **argv, shell_env *_) {
+    if (validate_argc(argv, 1, 1) == -1)
+        return EXIT_FAILURE;
+
+    if (luaL_dostring(L, argv[1]) != LUA_OK) {
+        fprintf(stderr, "%s\n", lua_tostring(L, -1));
+        lua_pop(L, 1);
+        return EXIT_FAILURE;
+    }
+
+    lua_settop(L, 0); /* discard any return values */
+    return EXIT_SUCCESS;
+}
+
 static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "exit", .func = run_exit_builtin },
     { .name = "cd", .func = run_cd_builtin },
@@ -463,7 +465,8 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "set", .func = run_set_builtin },
     { .name = "unset", .func = run_unset_builtin },
     { .name = "alias", .func = run_alias_builtin },
-    { .name = "unalias", .func = run_unalias_builtin }
+    { .name = "unalias", .func = run_unalias_builtin },
+    { .name = "lua", .func = run_lua_builtin }
 };
 
 sh_builtin *get_builtin(const char *arg) {

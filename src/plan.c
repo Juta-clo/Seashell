@@ -2,8 +2,25 @@
 
 #include "plan.h"
 #include "utils.h"
+#include "job_state.h"
 
 da_plan plans = {0};
+
+static pid_t create_job_id(void) {
+    pid_t jid = 1;
+
+    for (size_t i = 0; i < plans.size;) {
+        if (jid == plans.data[i].jid) {
+            ++jid;
+            i = 0;
+            continue;
+        }
+
+        ++i;
+    }
+
+    return jid;
+}
 
 ps_andor *plan_next(job_plan *plan) {
     if (plan->index >= plan->ast->andors.size)
@@ -12,14 +29,14 @@ ps_andor *plan_next(job_plan *plan) {
     return &plan->ast->andors.data[plan->index++];
 }
 
-job_plan *add_plan(pid_t jid, ps_ast *ast) {
-    LOG_INFO("added plan jid=%d", jid);
-
+job_plan *add_plan(ps_ast *ast) {
     job_plan *plan = linc_array_push(&plans);
     *plan = (job_plan){0};
 
-    plan->jid = jid;
+    plan->jid = create_job_id();
     plan->ast = ast;
+
+    LOG_INFO("added plan jid=%d", plan->jid);
 
     return plan;
 }

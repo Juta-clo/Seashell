@@ -18,6 +18,7 @@
 #include "sig_funcs.h"
 #include "utils.h"
 #include "config.h"
+#include "luart.h"
 
 #define ALIAS_MAX 4096
 
@@ -181,6 +182,7 @@ void env_setup(int argc, char *const *argv) {
     var_setup(&sh_env);
     input_init();
     mp_init(&sh_env.aliases, ALIAS_MAX);
+    luart_init();
 
     if (!opts[CLEAN].found)
         config_init();

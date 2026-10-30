@@ -1,4 +1,3 @@
-#include <asm-generic/errno-base.h>
 #include <errno.h>
 #include <lua.h>
 #include <lualib.h>
@@ -9,13 +8,13 @@
 #include "utils.h"
 #include "input.h"
 #include "variable.h"
+#include "luart.h"
 
 #define CONFIG_PATH "~/.seashell.lua"
 
 #define CONFIG_PROMPT \
     "Config file not found. Create one at '" CONFIG_PATH "' (y/N): "
 
-static lua_State *L;
 static int ref_field_prompt = LUA_NOREF;
 char config_path[PATH_MAX] = "";
 
@@ -89,11 +88,14 @@ FILE *config_file_open(void) {
         if (errno != ENOENT)
             return NULL;
 
+        void *saved_cb = input_sig_cb;
+        input_sig_cb = NULL;
+
         char *line = input_get_line(CONFIG_PROMPT);
         if (!line)
             return NULL;
 
-        input_clear_history();
+        input_sig_cb = saved_cb;
 
         if (strcmp(line, "y") == 0) {
             if ((fd = open(config_path, O_RDWR | O_CREAT, 0600)) == -1) {
@@ -297,12 +299,6 @@ int config_field_prompt(linc_string *string) {
 }
 
 void config_init(void) {
-    L = luaL_newstate();
-    if (!L)
-        xfatal("luaL_newstate");
-
-    luaL_openlibs(L);
-
     FILE *config = config_file_open();
 
     if (!config)
