@@ -16,6 +16,7 @@
 
 typedef struct {
     bool subshell;
+    bool lua_mode;
     pid_t fg_jid;
     int tty_fd;
     sigset_t og_mask;

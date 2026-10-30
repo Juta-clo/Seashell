@@ -7,6 +7,7 @@
 
 extern lua_State *L;
 
+void luart_run_string(const char *s);
 void luart_init(void);
 
 #endif

@@ -10,6 +10,7 @@
 #include "variable.h"
 
 #define PROMPT_DEFAULT "> "
+#define PROMPT_LUA "\x1b[36mlua\x1b[m \x1b[35m>\x1b[m "
 
 static ps_ast *line_to_ast(const char *line) {
     if (strcmp("", line) == 0)
@@ -36,8 +37,12 @@ static ps_ast *line_to_ast(const char *line) {
 linc_string shell_get_prompt(void) {
     linc_string prompt = LINC_STRING_INIT;
 
-    if (config_field_prompt(&prompt) == -1)
-        linc_string_append(&prompt, PROMPT_DEFAULT);
+    if (sh_env.lua_mode) {
+        linc_string_append(&prompt, PROMPT_LUA);
+    } else {
+        if (config_field_prompt(&prompt) == -1)
+            linc_string_append(&prompt, PROMPT_DEFAULT);
+    }
 
     return prompt;
 }

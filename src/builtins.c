@@ -438,17 +438,15 @@ static int run_unalias_builtin(char **argv, shell_env *_) {
     return status;
 }
 
-static int run_lua_builtin(char **argv, shell_env *_) {
-    if (validate_argc(argv, 1, 1) == -1)
+int run_lua_builtin(char **argv, shell_env *sh_env) {
+    if (sh_env->subshell)
         return EXIT_FAILURE;
 
-    if (luaL_dostring(L, argv[1]) != LUA_OK) {
-        fprintf(stderr, "%s\n", lua_tostring(L, -1));
-        lua_pop(L, 1);
+    if (validate_argc(argv, 0, 0) == -1)
         return EXIT_FAILURE;
-    }
 
-    lua_settop(L, 0); /* discard any return values */
+    sh_env->lua_mode = !sh_env->lua_mode;
+
     return EXIT_SUCCESS;
 }
 

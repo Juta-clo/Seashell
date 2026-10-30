@@ -3,6 +3,7 @@
 #include "state.h"
 #include "utils.h"
 #include "shell.h"
+#include "luart.h"
 
 int main(int argc, char *const *argv) {
     env_setup(argc, argv);
@@ -14,7 +15,11 @@ int main(int argc, char *const *argv) {
         if (!(line = input_get_line(prompt.cstr)))
             xfatal("input_get_line: EOF/Error");
 
-        shell_run(line);
+        if (sh_env.lua_mode) {
+            luart_run_string(line);
+        } else {
+            shell_run(line);
+        }
 
         free(line);
         linc_string_free(&prompt);

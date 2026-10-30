@@ -26,7 +26,7 @@
 
 lua_State *L;
 
-int l_run(lua_State *state) {
+static int l_run(lua_State *state) {
     const char *s = luaL_checkstring(state, 1);
     int status = shell_run(s);
     lua_pushinteger(state, status);
@@ -38,6 +38,16 @@ static const luaL_Reg core_funcs[] = {
     { "run", l_run },
     { NULL, NULL }
 };
+
+void luart_run_string(const char *s) {
+    if (luaL_dostring(L, s) != LUA_OK) {
+        fprintf(stderr, "lua: %s\n", lua_tostring(L, -1));
+        lua_pop(L, 1);
+        return;
+    }
+
+    lua_settop(L, 0);
+}
 
 void luart_init(void) {
     L = luaL_newstate();
