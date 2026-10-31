@@ -3,7 +3,6 @@
 
 #include <linc/array.h>
 
-#include "exec_funcs.h"
 #include "wait_stat.h"
 
 typedef enum {
@@ -112,9 +111,10 @@ void free_job_event(job_event *jev);
 void clear_job_table(void);
 void clear_job_events(void);
 
+struct pline_data;
+
 pid_t lookup_job_pgrp(pid_t jid);
 void queue_builtin_exit_event(pid_t jid, char **argv, int status);
-void add_job(pid_t jid, pline_data *pld);
-int launch_job(ps_pline *pline, bool bg, pid_t jid);
+void add_job(pid_t jid, struct pline_data *pld);
 
 #endif

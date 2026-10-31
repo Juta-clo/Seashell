@@ -8,6 +8,9 @@
 int main(int argc, char *const *argv) {
     env_setup(argc, argv);
 
+    input_set_suspend_mask(sh_env.og_mask);
+    input_sig_cb = process_signals;
+
     while (true) {
         char *line;
         linc_string prompt = shell_get_prompt();

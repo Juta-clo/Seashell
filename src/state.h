@@ -14,8 +14,14 @@
 
 #define NOFG -1
 
+#define SUBSH_NONE  0
+#define SUBSH_PIPE  1
+#define SUBSH_ASYNC 2
+#define SUBSH_CMD   4
+#define SUBSH_PROC  8
+
 typedef struct {
-    bool subshell;
+    uint64_t subshell;
     bool lua_mode;
     pid_t fg_jid;
     int tty_fd;

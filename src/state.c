@@ -170,7 +170,7 @@ void env_setup(int argc, char *const *argv) {
 
     xatexit(seashell_shutdown);
 
-    sh_env.subshell = false;
+    sh_env.subshell = SUBSH_NONE;
     sh_env.fg_jid = NOFG;
     sh_env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
 

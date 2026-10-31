@@ -4,7 +4,7 @@
 #include "input.h"
 #include "utils.h"
 #include "sig_funcs.h"
-#include "event.h"
+#include "shell.h"
 
 volatile sig_atomic_t sigchld_caught = false;
 volatile sig_atomic_t sighup_caught = false;
@@ -91,7 +91,4 @@ void sig_setup(sigset_t *og_mask) {
 
     block_sig(SIGINT);
     set_sig_action(SIGINT, sigint_handler, 0, NULL);
-
-    input_set_suspend_mask(*og_mask);
-    input_sig_cb = process_signals;
 }

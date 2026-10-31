@@ -2,13 +2,10 @@
 #include <string.h>
 #include <assert.h>
 
-#include "builtins.h"
-#include "expander.h"
+#include "shell.h"
 #include "job_state.h"
-#include "plan.h"
 #include "wait_stat.h"
 #include "utils.h"
-#include "exec_funcs.h"
 #include "state.h"
 
 #include <linc/xsys.h>
@@ -466,56 +463,4 @@ void add_job(pid_t jid, pline_data *pld) {
     }
 
     linc_array_free(&pld->procs);
-}
-
-int launch_job(ps_pline *pline, bool bg, pid_t jid) {
-    if (expand_pline(pline) == -1)
-        return -1;
-
-    if (!bg) {
-        sh_env.fg_jid = jid;
-
-        xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);
-
-        job_plan *plan = lookup_plan(jid, NULL);
-        ASSERT(plan);
-
-        if (plan->tty_state_saved) {
-            xtcsetattr(sh_env.tty_fd, TCSANOW, &plan->tty_state);
-            plan->tty_state_saved = false;
-        }
-    }
-
-    bool handled = false;
-    if (pline->cmds.size == 1 && pline->cmds.data[0].redirs.size == 0 && !bg) {
-        sh_builtin *builtin = get_builtin(pline->cmds.data[0].argv[0]);
-
-        if (builtin) {
-            LOG_INFO("[%d] Started %s (no fork)", jid, builtin->name);
-
-            int status = builtin->func(pline->cmds.data[0].argv, &sh_env);
-
-            /* fg "replaces" itself with the existing job. Because we
-             * don't queue fg's exit event we only reclaim the termianl
-             * when the job that was fg'd exits (or stops) */
-            if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE) {
-                LOG_INFO("queued \"%s\" exit event", builtin->name);
-                queue_builtin_exit_event(jid, pline->cmds.data[0].argv, status);
-            } else {
-                sh_env.fg_pending = jid;
-            }
-
-            handled = true;
-        }
-    }
-
-    if (!handled) {
-        pline_data pld = exec_pline(pline, bg);
-        add_job(jid, &pld);
-
-        LOG_INFO("[%d] Started %s %d", jid, pline->cmds.data[0].argv[0],
-                pld.pgid);
-    }
-
-    return 0;
 }

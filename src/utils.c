@@ -38,7 +38,7 @@ void fatal(const char *fmt, ...) {
         va_end(va);
     }
 
-    if (sh_env.subshell)
+    if (sh_env.subshell != SUBSH_NONE)
         _exit(EXIT_FAILURE);
     else
         exit(EXIT_FAILURE);
