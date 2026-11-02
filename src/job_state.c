@@ -27,7 +27,6 @@ static job_stat calc_job_stat(jc_job *job) {
     bool stopped = false;
 
     for (size_t i = 0; i < job->pgrp.procs.size; ++i) {
-
         jc_proc *proc = &job->pgrp.procs.data[i];
 
         if (proc->stat == PROC_RUN)
@@ -206,6 +205,9 @@ jc_job *job_lookup(pid_t jid) {
 }
 
 void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
+    if (sh_env.subsh != SUBSH_NONE)
+        return;
+
     linc_string msg = LINC_STRING_INIT;
     linc_string_appendf(&msg, "[%d] ", jid);
 
@@ -361,7 +363,7 @@ int update_job_proc(wait_event wev) {
     jc_proc *proc;
 
     if (!identify_proc(wev.pid, &job, &proc))
-        return -1;
+        xfatal("bad jctl state");
 
     update_proc(proc, wev);
 
@@ -370,11 +372,9 @@ int update_job_proc(wait_event wev) {
     if (job->stat == JOB_RUN && stat == JOB_STOP) {
         job->stat = stat;
         push_stop_event(job);
-
     } else if (job->stat == JOB_STOP && stat == JOB_RUN) {
         job->stat = stat;
         push_continue_event(job);
-
     } else if (stat == JOB_EXIT) {
         push_exit_event(job);
         remove_job(job->jid);

@@ -3,9 +3,13 @@
 
 #include <signal.h>
 
+typedef void(sig_handler)(int);
+
 extern volatile sig_atomic_t sigchld_caught;
 extern volatile sig_atomic_t sighup_caught;
 extern volatile sig_atomic_t sigint_caught;
+
+sig_handler *sig_set_handler(int sig, sig_handler *handler);
 
 bool sig_is_pending(int sig);
 void reset_sig_flags(void);

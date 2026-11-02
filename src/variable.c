@@ -56,23 +56,10 @@ int get_last_status(void) {
     return get_int(var->value);
 }
 
-void update_status_variable(map_t *vars, const job_event *jev) {
-    ASSERT(jev->type == JEXITED);
-
-    /* Conveniently if the 'set' builtin assigns a value to
-     * the '?' variable the exit status returned by 'set' will
-     * overwrite it back to 0 (or 1) before the prompt is
-     * redisplayed. Likewise if the 'unset ?' is called its
-     * exit status will reinitialize the variable. */
-
+void update_status_variable(int status) {
     char exit_stat[64];
-
-    if (jev->last->stat == PROC_EXIT)
-        snprintf(exit_stat, 64, "%d", jev->last->exit_stat);
-    else if (jev->last->stat == PROC_SIG)
-        snprintf(exit_stat, 64, "%d", jev->last->term_sig + 128);
-
-    add_var(vars, "?", exit_stat, false);
+    snprintf(exit_stat, 64, "%d", status);
+    add_var(&sh_env.vars, "?", exit_stat, false);
 }
 
 sh_var *lookup_var(map_t *vars, const char *key) {

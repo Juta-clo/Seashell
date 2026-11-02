@@ -1,10 +1,8 @@
 #include <signal.h>
 
 #include <linc/xsys.h>
-#include "input.h"
 #include "utils.h"
 #include "sig_funcs.h"
-#include "shell.h"
 
 volatile sig_atomic_t sigchld_caught = false;
 volatile sig_atomic_t sighup_caught = false;
@@ -33,30 +31,29 @@ bool sig_is_pending(int sig) {
     return (bool)is_member;
 }
 
-static void set_sig_action(int sig, sighandler_t handler, int flags,
-        sigset_t *mask) {
+sig_handler *sig_set_handler(int sig, sig_handler *handler) {
     struct sigaction sa;
-    sa.sa_flags = flags;
+    struct sigaction osa;
+
+    sa.sa_flags = 0;
     sa.sa_handler = handler;
+    xsigemptyset(&sa.sa_mask);
 
-    if (mask) {
-        sa.sa_mask = *mask;
-    } else
-        sigemptyset(&sa.sa_mask);
+    xsigaction(sig, &sa, &osa);
 
-    xsigaction(sig, &sa, NULL);
+    return osa.sa_handler;
 }
 
-static void procmask_add(int sig, int how) {
+sigset_t sig_block(int sig) {
     sigset_t set;
+    sigset_t oset;
 
     xsigemptyset(&set);
     xsigaddset(&set, sig);
-    xsigprocmask(how, &set, NULL);
-}
 
-static void block_sig(int sig) {
-    procmask_add(sig, SIG_BLOCK);
+    xsigprocmask(SIG_BLOCK, &set, &oset);
+
+    return oset;
 }
 
 void reset_sig_flags(void) {
@@ -67,28 +64,30 @@ void reset_sig_flags(void) {
 
 void sig_restore(sigset_t *og_mask) {
     xsigprocmask(SIG_SETMASK, og_mask, NULL);
-    set_sig_action(SIGTTOU, SIG_DFL, 0, NULL);
-    set_sig_action(SIGTTIN, SIG_DFL, 0, NULL);
-    set_sig_action(SIGTSTP, SIG_DFL, 0, NULL);
-    set_sig_action(SIGQUIT, SIG_DFL, 0, NULL);
-    set_sig_action(SIGTERM, SIG_DFL, 0, NULL);
+
+    sig_set_handler(SIGTTOU, SIG_DFL);
+    sig_set_handler(SIGTTIN, SIG_DFL);
+    sig_set_handler(SIGTSTP, SIG_DFL);
+    sig_set_handler(SIGQUIT, SIG_DFL);
+    sig_set_handler(SIGTERM, SIG_DFL);
+
+    sig_set_handler(SIGCHLD, SIG_DFL);
+    sig_set_handler(SIGHUP, SIG_DFL);
+    sig_set_handler(SIGINT, SIG_DFL);
 }
 
 void sig_setup(sigset_t *og_mask) {
-    xsigprocmask(0, NULL, og_mask);
+    sig_set_handler(SIGTTOU, SIG_IGN);
+    sig_set_handler(SIGTTIN, SIG_IGN);
+    sig_set_handler(SIGTSTP, SIG_IGN);
+    sig_set_handler(SIGQUIT, SIG_IGN);
+    sig_set_handler(SIGTERM, SIG_IGN);
 
-    set_sig_action(SIGTTOU, SIG_IGN, 0, NULL);
-    set_sig_action(SIGTTIN, SIG_IGN, 0, NULL);
-    set_sig_action(SIGTSTP, SIG_IGN, 0, NULL);
-    set_sig_action(SIGQUIT, SIG_IGN, 0, NULL);
-    set_sig_action(SIGTERM, SIG_IGN, 0, NULL);
+    sig_set_handler(SIGCHLD, sigchld_handler);
+    sig_set_handler(SIGHUP, sighup_handler);
+    sig_set_handler(SIGINT, sigint_handler);
 
-    block_sig(SIGCHLD);
-    set_sig_action(SIGCHLD, sigchld_handler, 0, NULL);
-
-    block_sig(SIGHUP);
-    set_sig_action(SIGHUP, sighup_handler, 0, NULL);
-
-    block_sig(SIGINT);
-    set_sig_action(SIGINT, sigint_handler, 0, NULL);
+    *og_mask = sig_block(SIGCHLD);
+    sig_block(SIGHUP);
+    sig_block(SIGINT);
 }

@@ -45,7 +45,7 @@ void remove_plan(size_t index);
 void plan_done(pid_t jid);
 job_plan *lookup_plan(pid_t jid, size_t *index);
 void process_signals(void);
-void shell_sleep(void);
+void shell_wait(void);
 linc_string shell_get_prompt(void);
 int shell_run(const char *line);
 

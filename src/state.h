@@ -17,22 +17,24 @@
 #define SUBSH_NONE  0
 #define SUBSH_PIPE  1
 #define SUBSH_ASYNC 2
-#define SUBSH_CMD   4
-#define SUBSH_PROC  8
 
 typedef struct {
-    uint64_t subshell;
+    uint64_t subsh;
+    bool job_ctrl;
     bool lua_mode;
     pid_t fg_jid;
+    int fg_pending;
+
     int tty_fd;
+    struct termios tio;
     sigset_t og_mask;
-    int log_fd;
+
     map_t vars;
     map_t aliases;
-    struct termios tio;
+
+    int log_fd;
     linc_log shell_log;
     linc_log assert_log;
-    int fg_pending;
 } shell_env;
 
 extern shell_env sh_env;

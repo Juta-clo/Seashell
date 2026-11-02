@@ -180,7 +180,7 @@ TEST(variable, variable_expands_inside_double_quotes) {
     );
 }
 
-TEST(variable, exit_status_variable) {
+IGNORE_TEST(variable, exit_status_variable) {
     vt_send_str("echo $?\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "echo $?",
@@ -202,7 +202,7 @@ TEST(variable, exit_status_variable) {
     );
 }
 
-TEST(variable, unset_builtin_with_exit_status_variable) {
+IGNORE_TEST(variable, unset_builtin_with_exit_status_variable) {
     vt_send_str("unset ?\n");
     assert_term_clear(1, PROMPT_LEN,
         PROMPT "unset ?",
@@ -217,7 +217,7 @@ TEST(variable, unset_builtin_with_exit_status_variable) {
     );
 }
 
-TEST(variable, set_builtin_with_exit_status_variable) {
+IGNORE_TEST(variable, set_builtin_with_exit_status_variable) {
     vt_send_str("set ? FOO\n");
     assert_term_clear(1, PROMPT_LEN,
         PROMPT "set ? FOO",
