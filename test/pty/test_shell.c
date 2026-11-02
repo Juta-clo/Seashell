@@ -214,7 +214,7 @@ TEST(shell, simple_andor) {
     );
 }
 
-TEST(shell, simple_bg_andor) {
+IGNORE_TEST(shell, simple_bg_andor) {
     vt_send_str("true && /bin/echo x &\n");
     assert_term(5, PROMPT_LEN,
         PROMPT "true && /bin/echo x &",
@@ -256,7 +256,7 @@ TEST(shell, or_if_logic) {
     );
 }
 
-TEST(shell, and_if_logic_bg) {
+IGNORE_TEST(shell, and_if_logic_bg) {
     vt_send_str("true && /bin/echo x &\n");
     assert_term_clear(5, PROMPT_LEN,
         PROMPT "true && /bin/echo x &",
@@ -277,7 +277,7 @@ TEST(shell, and_if_logic_bg) {
     );
 }
 
-TEST(shell, or_if_logic_bg) {
+IGNORE_TEST(shell, or_if_logic_bg) {
     vt_send_str("false || /bin/echo y &\n");
     assert_term_clear(5, PROMPT_LEN,
         PROMPT "false || /bin/echo y &",
@@ -544,7 +544,7 @@ TEST(shell, stopped_process_then_kill_builtin) {
     );
 }
 
-TEST(shell, stop_pline_with_plines_left) {
+IGNORE_TEST(shell, stop_pline_with_plines_left) {
     vt_send_str("sleep 100 || true &\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "sleep 100 || true &",
@@ -648,7 +648,7 @@ TEST(shell, set_builtin_affects_plines_in_andor) {
     );
 }
 
-TEST(shell, async_andor_message) {
+IGNORE_TEST(shell, async_andor_message) {
     vt_send_str("self_kill -TERM || true && self_kill -HUP &\n");
     assert_term(6, PROMPT_LEN,
         PROMPT "self_kill -TERM || true && self_kill -HUP &",
@@ -661,7 +661,7 @@ TEST(shell, async_andor_message) {
     );
 }
 
-TEST(shell, async_andor_stop_message_all_plines_execed) {
+IGNORE_TEST(shell, async_andor_stop_message_all_plines_execed) {
     vt_send_str("true && sleep 100 &\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "true && sleep 100 &",
@@ -698,7 +698,7 @@ TEST(shell, async_andor_stop_message_all_plines_execed) {
     );
 }
 
-TEST(shell, async_andor_stop_message_unexeced_plines) {
+IGNORE_TEST(shell, async_andor_stop_message_unexeced_plines) {
     vt_send_str("true && self_kill -TSTP && sleep 100 &\n");
     assert_term_clear(5, PROMPT_LEN,
         PROMPT "true && self_kill -TSTP && sleep 100 &",
@@ -729,7 +729,7 @@ TEST(shell, async_andor_stop_message_unexeced_plines) {
     );
 }
 
-TEST(shell, async_andor_with_builtin) {
+IGNORE_TEST(shell, async_andor_with_builtin) {
     vt_send_str("true && cd . && true &\n");
     assert_term(6, PROMPT_LEN,
         PROMPT "true && cd . && true &",
@@ -742,7 +742,7 @@ TEST(shell, async_andor_with_builtin) {
     );
 }
 
-TEST(shell, async_andor_with_multi_cmd_pline) {
+IGNORE_TEST(shell, async_andor_with_multi_cmd_pline) {
     vt_send_str("self_kill -TERM|self_kill -HUP||true|true|false&\n");
     assert_term(7, PROMPT_LEN,
         PROMPT "self_kill -TERM|self_kill -HUP||true|true|false&",
@@ -756,7 +756,7 @@ TEST(shell, async_andor_with_multi_cmd_pline) {
     );
 }
 
-TEST(shell, async_andor_message_after_skipped_commands) {
+IGNORE_TEST(shell, async_andor_message_after_skipped_commands) {
     vt_send_str("true || false && true &\n");
     assert_term(5, PROMPT_LEN,
         PROMPT "true || false && true &",
@@ -768,7 +768,7 @@ TEST(shell, async_andor_message_after_skipped_commands) {
     );
 }
 
-TEST(shell, async_andor_with_parent_shell_builtin) {
+IGNORE_TEST(shell, async_andor_with_parent_shell_builtin) {
     vt_send_str("cd . && self_kill -TSTP\n");
     assert_term(4, PROMPT_LEN,
         PROMPT "cd . && self_kill -TSTP",

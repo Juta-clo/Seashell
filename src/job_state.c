@@ -198,35 +198,11 @@ void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
     linc_string msg = LINC_STRING_INIT;
     linc_string_appendf(&msg, "[%d] ", jid);
 
-    job_plan *plan = lookup_plan(jid, NULL);
     int offset = msg.len;
 
-    for (size_t i = 0; i < plan->exit_events.size; ++i) {
-        job_event *next = &plan->exit_events.data[i];
-        linc_string s = get_pline_str(next, offset, 21, verbose);
-        linc_string_append(&msg, s.cstr);
-        linc_string_free(&s);
-
-        if (i != plan->exit_events.size - 1 || jev) {
-            size_t index = plan->exit_event_indexes.data[i];
-
-            if (plan->ast->andors.data[index].op == PS_AND_IF) {
-                linc_string_append(&msg, " &&");
-            } else if (plan->ast->andors.data[index].op == PS_OR_IF) {
-                linc_string_append(&msg, " ||");
-            } else {
-                ASSERT(false && "should not be possible");
-            }
-
-            linc_string_appendf(&msg, "\n%*s", offset, "");
-        }
-    }
-
-    if (jev) {
-        linc_string s = get_pline_str(jev, offset, 21, verbose);
-        linc_string_append(&msg, s.cstr);
-        linc_string_free(&s);
-    }
+    linc_string s = get_pline_str(jev, offset, 21, verbose);
+    linc_string_append(&msg, s.cstr);
+    linc_string_free(&s);
 
     cursor_left_anchor();
     printf("%s\n", msg.cstr);

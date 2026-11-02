@@ -192,11 +192,6 @@ job_plan *add_plan(ps_ast *ast) {
 void remove_plan(size_t index) {
     LOG_INFO("removed plan jid=%d", plans.data[index].jid);
 
-    for (size_t i = 0; i < plans.data[index].exit_events.size; ++i)
-        free_job_event(&plans.data[index].exit_events.data[i]);
-    linc_array_free(&plans.data[index].exit_events);
-    linc_array_free(&plans.data[index].exit_event_indexes);
-
     ps_free(plans.data[index].ast);
     free(plans.data[index].ast);
 
@@ -296,7 +291,6 @@ static bool try_run_next_job(pid_t jid, bool success, int how) {
         if (launch_job(&andor->pline, bg, plan->jid) == -1)
             return false;
 
-        *linc_array_push(&plan->exit_event_indexes) = plan->index - 1;
         execed_pline = true;
         break;
     }
@@ -320,9 +314,6 @@ static void handle_fg_event(job_event *jev) {
     bool success = jev->success;
 
     if (jev->type == JEXITED) {
-        job_plan *plan = lookup_plan(jev->jid, NULL);
-        *linc_array_push(&plan->exit_events) = *jev;
-
         update_status_variable(&sh_env.vars, jev);
 
         if (jev->exit_type == JEXIT_INTR) {
@@ -330,10 +321,10 @@ static void handle_fg_event(job_event *jev) {
             printf("\n");
 
             if (jev->signaled)
-                print_job_event(jid, NULL, false);
+                print_job_event(jid, jev, false);
         } else {
             if (jev->signaled)
-                print_job_event(jid, NULL, false);
+                print_job_event(jid, jev, false);
 
             if (try_run_next_job(jid, success, IN_FG))
                 return;
@@ -341,8 +332,8 @@ static void handle_fg_event(job_event *jev) {
             reclaim_terminal();
         }
 
+        free_job_event(jev);
         plan_done(jid);
-
     } else if (jev->type == JSTOPPED) {
         if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
             err_exit("tcsetpgrp");
@@ -385,15 +376,14 @@ static void handle_bg_event(job_event *jev) {
         return;
     }
 
-    job_plan *plan = lookup_plan(jev->jid, NULL);
-    *linc_array_push(&plan->exit_events)  = *jev;
-
     if (jev->exit_type == JEXIT_NORMAL &&
         try_run_next_job(jev->jid, jev->success, IN_BG))
         return;
 
-    print_job_event(jev->jid, NULL, false);
+    print_job_event(jev->jid, jev, false);
+    free_job_event(jev);
     plan_done(jev->jid);
+
     input_on_new_line();
 
     return;

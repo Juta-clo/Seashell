@@ -1,11 +1,12 @@
 #ifndef SHELL_H
 #define SHELL_H
 
+#include <termios.h>
+
 #include "linc/string.h"
 #include "linc/array.h"
 #include "parser.h"
 #include "job_state.h"
-#include "utils.h"
 
 typedef struct job_plan job_plan;
 LINC_ARRAY_TYPE(da_plan, job_plan);
@@ -16,8 +17,6 @@ struct job_plan {
     struct termios tty_state;
     size_t index;
     ps_ast *ast;
-    da_jevent exit_events;
-    da_int exit_event_indexes;
 };
 
 extern da_plan plans;
