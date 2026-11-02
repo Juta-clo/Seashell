@@ -52,7 +52,7 @@ int main(void) {
         if (setenv("XMAKE_COLORTERM", "color8", 1) == -1)
             err_exit("setenv");
 
-        execlp("xmake", "xmake", (char *)NULL);
+        execlp("xmake", "xmake", "b", "seashell", (char *)NULL);
         err_exit("execlp");
     }
 
@@ -60,7 +60,8 @@ int main(void) {
     const char *add = "test/pty/test_bins";
 
     char new_path[PATH_MAX];
-    snprintf(new_path, PATH_MAX - 1, "%s:%s/%s", (path) ? path : "", seashell, add);
+    snprintf(new_path, PATH_MAX - 1, "%s:%s/%s",
+            (path) ? path : "", seashell, add);
 
     if (setenv("PATH", new_path, 1) == -1)
         err_exit("setenv");

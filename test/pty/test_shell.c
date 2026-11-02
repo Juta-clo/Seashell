@@ -852,12 +852,11 @@ TEST(shell, fg_builtin_part_of_job_plan) {
     verify_pstate("sleep", PSTATE_SLEEPING);
 
     vt_send_ch('c', VTERM_MOD_CTRL);
-    assert_term(5, PROMPT_LEN,
+    assert_term(4, PROMPT_LEN,
         PROMPT "echo x && fg %%1 || echo x",
         "x",
         "[1] running          sleep 100%s",
         "^C",
-        "x",
         PROMPT
     );
 }
@@ -901,10 +900,9 @@ TEST(shell, fg_bg_kill_regression) {
     );
 
     vt_send_str("true && kill %1\n");
-    assert_term_clear(3, PROMPT_LEN,
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "true && kill %%1",
-        PROMPT "%s",
-        "[1] Terminated       sleep 100",
+        "[1] Terminated       sleep 100%s",
         PROMPT
     );
 }
@@ -943,15 +941,18 @@ TEST(shell, multiple_fg_builtins_in_andor) {
     assert_pstate("cat", PSTATE_SLEEPING);
 
     vt_send_ch('c', VTERM_MOD_CTRL);
-    assert_term(6, PROMPT_LEN,
+    assert_term(5, PROMPT_LEN,
         PROMPT "fg %%1 || fg %%2 || echo x",
         "[1] running          sleep 100%s",
         "[1] Terminated       sleep 100%s",
         "[2] running          cat%s",
         "^C",
-        "x",
         PROMPT
     );
+}
+
+TEST(shell, async_andor_interactive_stop) {
+    // TODO: implement me
 }
 
 // NOLINTEND(bugprone-suspicious-missing-comma)

@@ -41,7 +41,7 @@ int get_wstat(wait_event *wev) {
         err_exit_imp("waitpid");
     }
 
-    if (cpid == 0 || errno == ECHILD)
+    if (cpid == 0 || (cpid == -1 && errno == ECHILD))
         return -1;
 
     wev->pid = cpid;

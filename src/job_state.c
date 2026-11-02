@@ -225,6 +225,9 @@ void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
 }
 
 void free_job_event(job_event *jev) {
+    if (!jev)
+        return;
+
     for (size_t i = 0; i < jev->pviews.size; ++i)
         free_argv(jev->pviews.data[i].argv);
     linc_array_free(&jev->pviews);
@@ -405,7 +408,7 @@ bool set_job_continue(pid_t jid, job_event *jev) {
     return change;
 }
 
-void queue_builtin_exit_event(pid_t jid, char **argv, int status) {
+void queue_builtin_exit(pid_t jid, char **argv, int status) {
     job_event jev = {
         .jid = jid,
         .type = JEXITED,
@@ -425,6 +428,22 @@ void queue_builtin_exit_event(pid_t jid, char **argv, int status) {
     add_job_event(jev);
 
     xkill(getpid(), SIGCHLD);
+}
+
+pid_t create_job_id(void) {
+    pid_t jid = 1;
+
+    for (size_t i = 0; i < jctl.jobs.size;) {
+        if (jid == jctl.jobs.data[i].jid) {
+            ++jid;
+            i = 0;
+            continue;
+        }
+
+        ++i;
+    }
+
+    return jid;
 }
 
 void add_job(pid_t jid, pline_data *pld) {

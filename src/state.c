@@ -185,9 +185,6 @@ void env_setup(int argc, char *const *argv) {
     mp_init(&sh_env.aliases, ALIAS_MAX);
     luart_init();
 
-    if (!opts[CLEAN].found)
-        config_init();
-
     sig_setup(&sh_env.og_mask);
 
     LOG_INFO("seashell PID(%d)", getpid());

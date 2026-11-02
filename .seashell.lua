@@ -25,23 +25,7 @@ return {
     prompt = function(ctx)
         prompt = ""
 
-        push(ccyan, ctx.cwd, coff)
-
-        if ctx.git then
-            push(" ", cmag, "(", coff, ctx.git.branch)
-
-            if ctx.git.dirty == 1 then
-                push(ccyan, "*", coff)
-            end
-
-            if ctx.git.untracked == 1 then
-                push(ccyan, "+", coff)
-            end
-
-            push(cmag, ")", coff)
-        end
-
-        push(" ")
+        push(ccyan .. "test " .. coff)
 
         if ctx.last.status == 0 then
             push(cmag, "> ", coff)

@@ -11,32 +11,35 @@
 #include "utils.h"
 #include "config.h"
 #include "variable.h"
+#include "state.h"
 
 #define PROMPT_DEFAULT "> "
 #define PROMPT_LUA "\x1b[36mlua\x1b[m \x1b[35m>\x1b[m "
 #define IN_BG 1
 #define IN_FG 2
 
-static ps_ast *line_to_ast(const char *line) {
+#define WAIT_EXIT 193 /* +1 highest signal exit status */
+#define PLINE_INTR -1
+
+static int line_to_ast(const char *line, ps_ast *ast) {
     if (strcmp("", line) == 0)
-        return NULL;
+        return -1;
 
     da_tok toks;
     int rv = lx_tokenize(line, &toks);
     if (rv != LX_OK) {
         err_msg(lx_errstr(rv));
-        return NULL;
+        return -1;
     }
 
-    ps_ast *ast = xmalloc(sizeof(ps_ast));
     if (ps_parse(&toks, ast) == -1) {
-        free(ast);
         lx_free(&toks);
-        return NULL;
+        return -1;
     }
 
     lx_free(&toks);
-    return ast;
+
+    return 0;
 }
 
 linc_string shell_get_prompt(void) {
@@ -185,73 +188,6 @@ pline_data exec_pline(const ps_pline *pline, bool bg) {
     return pld;
 }
 
-da_plan plans = {0};
-
-static pid_t create_job_id(void) {
-    pid_t jid = 1;
-
-    for (size_t i = 0; i < plans.size;) {
-        if (jid == plans.data[i].jid) {
-            ++jid;
-            i = 0;
-            continue;
-        }
-
-        ++i;
-    }
-
-    return jid;
-}
-
-ps_andor *plan_next(job_plan *plan) {
-    if (plan->index >= plan->ast->andors.size)
-        return NULL;
-
-    return &plan->ast->andors.data[plan->index++];
-}
-
-job_plan *add_plan(ps_ast *ast) {
-    job_plan *plan = linc_array_push(&plans);
-    *plan = (job_plan){0};
-
-    plan->jid = create_job_id();
-    plan->ast = ast;
-
-    LOG_INFO("added plan jid=%d", plan->jid);
-
-    return plan;
-}
-
-void remove_plan(size_t index) {
-    LOG_INFO("removed plan jid=%d", plans.data[index].jid);
-
-    ps_free(plans.data[index].ast);
-    free(plans.data[index].ast);
-
-    linc_array_delete(&plans, index, 1);
-}
-
-void plan_done(pid_t jid) {
-    size_t plan_i;
-    job_plan *plan = lookup_plan(jid, &plan_i);
-    if (!plan)
-        return;
-
-    remove_plan(plan_i);
-}
-
-job_plan *lookup_plan(pid_t jid, size_t *index) {
-    for (size_t i = 0; i < plans.size; ++i) {
-        if (jid == plans.data[i].jid) {
-            if (index)
-                *index = i;
-            return &plans.data[i];
-        }
-    }
-
-    return NULL;
-}
-
 int shell_run_pline(ps_pline *pline, bool bg, pid_t jid) {
     if (expand_pline(pline) == -1)
         return -1;
@@ -279,7 +215,7 @@ int shell_run_pline(ps_pline *pline, bool bg, pid_t jid) {
              * when the job that was fg'd exits (or stops) */
             if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE) {
                 LOG_INFO("queued \"%s\" exit event", builtin->name);
-                queue_builtin_exit_event(jid, pline->cmds.data[0].argv, status);
+                queue_builtin_exit(jid, pline->cmds.data[0].argv, status);
             } else {
                 sh_env.fg_pending = jid;
             }
@@ -299,32 +235,6 @@ int shell_run_pline(ps_pline *pline, bool bg, pid_t jid) {
     return 0;
 }
 
-static bool try_run_next_job(pid_t jid, bool success, int how) {
-    bool bg = (how == IN_BG);
-    bool execed_pline = false;
-
-    job_plan *plan = lookup_plan(jid, NULL);
-    if (!plan)
-        return false;
-
-    ps_andor *andor;
-    while ((andor = plan_next(plan))) {
-        if (success && andor->op == PS_OR_IF)
-            continue;
-
-        if (!success && andor->op == PS_AND_IF)
-            continue;
-
-        if (shell_run_pline(&andor->pline, bg, plan->jid) == -1)
-            return false;
-
-        execed_pline = true;
-        break;
-    }
-
-    return execed_pline;
-}
-
 static void reclaim_terminal(void) {
     if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");
@@ -332,38 +242,20 @@ static void reclaim_terminal(void) {
     sh_env.fg_jid = NOFG;
 }
 
-static bool fg_event(job_event *jev) {
-    return sh_env.fg_jid  == jev->jid;
-}
+static void handle_job_event(job_event *jev) {
+    if (sh_env.fg_jid != jev->jid) {
+        print_job_event(jev->jid, jev, false);
+        input_on_new_line();
+    } else if (jev->type == JEXITED) {
+        reclaim_terminal();
 
-static void handle_fg_event(job_event *jev) {
-    int jid = jev->jid;
-    bool success = jev->success;
-
-    if (jev->type == JEXITED) {
-        if (jev->exit_type == JEXIT_INTR) {
-            reclaim_terminal();
+        if (jev->exit_type == JEXIT_INTR)
             printf("\n");
 
-            if (jev->signaled)
-                print_job_event(jid, jev, false);
-        } else {
-            if (jev->signaled)
-                print_job_event(jid, jev, false);
-
-            if (try_run_next_job(jid, success, IN_FG))
-                return;
-
-            reclaim_terminal();
-        }
-
-        free_job_event(jev);
-        plan_done(jid);
+        if (jev->signaled)
+            print_job_event(jev->jid, jev, false);
     } else if (jev->type == JSTOPPED) {
-        if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
-            err_exit("tcsetpgrp");
-
-        sh_env.fg_jid = NOFG;
+        reclaim_terminal();
 
         jc_job *job = xjob_lookup(jev->jid);
         xtcgetattr(sh_env.tty_fd, &job->tio);
@@ -374,77 +266,52 @@ static void handle_fg_event(job_event *jev) {
         if (jev->intr_stop)
             printf("\n");
 
-        print_job_event(jid, jev, false);
-        free_job_event(jev);
-    }
-
-    if (sh_env.fg_pending) {
-        int pending_jid = sh_env.fg_pending;
-        sh_env.fg_pending = false;
-
-        if (try_run_next_job(pending_jid, success, IN_FG)) {
-            LOG_INFO("continued 'fg' plan (still pending=%d)",
-                    sh_env.fg_pending);
-            return;
-        }
-
-        LOG_INFO("'fg' plan done");
-        plan_done(pending_jid);
+        print_job_event(jev->jid, jev, false);
     }
 }
 
-static void handle_bg_event(job_event *jev) {
-    if (jev->type != JEXITED) {
-        print_job_event(jev->jid, jev, false);
+void flush_wait_events(void) {
+    wait_event wev;
+    while (get_wstat(&wev) != -1)
+        update_job_proc(wev);
+}
+
+void flush_job_events(void) {
+    job_event *jev;
+
+    while ((jev = pop_job_event())) {
+        if (sh_env.subsh == SUBSH_NONE)
+            handle_job_event(jev);
+
         free_job_event(jev);
-        input_on_new_line();
-
-        return;
     }
-
-    if (jev->exit_type == JEXIT_NORMAL &&
-        try_run_next_job(jev->jid, jev->success, IN_BG))
-        return;
-
-    print_job_event(jev->jid, jev, false);
-    free_job_event(jev);
-    plan_done(jev->jid);
-
-    input_on_new_line();
-
-    return;
 }
 
 void process_signals(void) {
     if (sigchld_caught) {
         LOG_INFO("SIGCHLD caught");
+        sigchld_caught = false;
 
-        wait_event wev;
+        flush_wait_events();
 
-        while (get_wstat(&wev) != -1)
-            update_job_proc(wev);
-
-        job_event *jev;
-        while ((jev = pop_job_event())) {
-            if (fg_event(jev)) {
-                handle_fg_event(jev);
-            } else
-                handle_bg_event(jev);
-        }
+        if (sh_env.fg_jid == NOFG && sh_env.subsh == SUBSH_NONE)
+            flush_job_events();
     }
 
     if (sigint_caught) {
         LOG_INFO("SIGINT caught");
+        sigint_caught = false;
+
         printf("^C\n");
         input_reset_line_state();
     }
 
     if (sighup_caught) {
         LOG_INFO("SIGHUP caught");
+        sighup_caught = false;
+
         exit(EXIT_FAILURE);
     }
-
-    reset_sig_flags();
 }
 
 void shell_wait(void) {
@@ -465,90 +332,151 @@ static bool andor_should_run(ps_andor *andor, int status) {
     return true;
 }
 
-int shell_wait_pline(int jid) {
-    int status;
+int shell_wait_pline(int jid, int *status) {
     job_event *jev;
+    int rv;
 
     while (true) {
+        sigsuspend(&sh_env.og_mask);
+        process_signals();
+
         while ((jev = pop_job_event())) {
-            if (sh_env.subsh == SUBSH_NONE) {
-                if (fg_event(jev)) {
-                    handle_fg_event(jev);
-                } else {
-                    handle_bg_event(jev);
+            if (sh_env.subsh == SUBSH_NONE)
+                handle_job_event(jev);
+
+            if (jev->jid == jid) {
+                if (jev->type == JEXITED) {
+                    if (jev->last->stat == PROC_EXIT) {
+                        *status = jev->last->exit_stat;
+                    } else if (jev->last->stat == PROC_SIG) {
+                        *status = jev->last->term_sig + 128;
+                    }
+
+                    if (jev->exit_type == JEXIT_INTR) {
+                        rv = PLINE_INTR;
+                    } else {
+                        rv = 0;
+                    }
+
+                    goto cleanup;
                 }
-            }
 
-            if (jev->jid == jid && jev->type == JEXITED) {
-                if (jev->last->stat == PROC_EXIT) {
-                    status = jev->last->exit_stat;
-                } else {
-                    status = jev->last->term_sig;
+                if (sh_env.subsh == SUBSH_NONE && jev->type == JSTOPPED) {
+                    if (jev->last->stat == PROC_STOP) {
+                        *status = jev->last->stop_sig + 128;
+                    } else {
+                        *status = WAIT_EXIT;
+                    }
+
+                    rv = 0;
+
+                    goto cleanup;
                 }
-
-                goto cleanup;
-            }
-
-            if (sh_env.subsh != SUBSH_NONE) {
-                free_job_event(jev);
-                continue;
-            }
-
-            if (jev->jid == jid && jev->type == JSTOPPED) {
-                status = jev->last->stop_sig + 128;
-                goto cleanup;
             }
 
             free_job_event(jev);
+            jev = nullptr;
         }
-
-        sigsuspend(&sh_env.og_mask);
-        process_signals();
     }
 
 cleanup:
     free_job_event(jev);
-    return status;
+    flush_job_events();
+    return rv;
 }
 
-void shell_run_andor(ps_ast *ast) {
+int shell_run_andor(ps_ast *ast) {
     int status = EXIT_SUCCESS;
 
     for (size_t i = 0; i < ast->andors.size; ++i) {
         ps_andor *andor = &ast->andors.data[i];
-        int jid = create_job_id();
 
         if (andor_should_run(andor, status)) {
-            if (shell_run_pline(&andor->pline, ast->bg, jid) == -1) {
+            sh_env.fg_jid = create_job_id();
+
+            if (shell_run_pline(&andor->pline, ast->bg, sh_env.fg_jid) == -1) {
                 status = EXIT_FAILURE;
+                sh_env.fg_jid = NOFG;
                 continue;
             }
 
-            status = shell_wait_pline(jid);
+            int rv = shell_wait_pline(sh_env.fg_jid, &status);
             update_status_variable(status);
+
+            sh_env.fg_jid = NOFG;
+
+            if (rv == PLINE_INTR)
+                break;
         }
     }
+
+    return status;
 }
 
-int shell_run(const char *line) {
-    ps_ast *ast = line_to_ast(line);
-    if (!ast)
-        return -1;
+int shell_fork(void) {
+    int cpid = xfork();
+    int rv = setpgid(cpid, cpid);
 
-    job_plan *plan = add_plan(ast);
+    if (cpid != 0) {
+        if (rv == -1 && errno != EACCES)
+            err_exit("setpgid");
 
-    if (shell_run_pline(&plan_next(plan)->pline, ast->bg, plan->jid) == -1) {
-        plan_done(plan->jid);
-        return -1;
+        return cpid;
     }
 
-    if (ast->bg) {
-        printf("[%d] %d\n", plan->jid , lookup_job_pgrp(plan->jid));
-        return 0;
+    sh_env.subsh |= SUBSH_ASYNC;
+
+    clear_job_events();
+    clear_job_table();
+
+    sig_restore(&sh_env.og_mask);
+
+    sig_block(SIGCHLD);
+    sig_set_handler(SIGCHLD, sigchld_handler);
+
+    return 0;
+}
+
+int shell_run(const char *cmd) {
+    ps_ast ast = {0};
+    char *line = xstrdup(cmd);
+    int status = -1;
+
+    if (line_to_ast(line, &ast) == -1)
+        goto cleanup;
+
+    if (!ast.bg) {
+        status = shell_run_andor(&ast);
+        goto cleanup;
     }
 
-    while (sh_env.fg_jid != NOFG)
-        shell_wait();
+    int jid = create_job_id();
 
-    return get_last_status();
+    if (ast.andors.size == 1) {
+        if (shell_run_pline(&ast.andors.data[0].pline, true, jid) == -1)
+            goto cleanup;
+    } else {
+        int subsh_pgid = shell_fork();
+        if (subsh_pgid == 0)
+            _exit(shell_run_andor(&ast));
+
+        pline_data pld = { .pgid = subsh_pgid };
+
+        *linc_array_push(&pld.procs) = (pline_proc) {
+            .argv = copy_argv((char *[]){ line, NULL }),
+            .pid = subsh_pgid
+        };
+
+        add_job(jid, &pld);
+    }
+
+    status = EXIT_SUCCESS;
+
+    pid_t pgrp = lookup_job_pgrp(jid);
+    printf("[%d] %d\n", jid, pgrp);
+
+cleanup:
+    ps_free(&ast);
+    free(line);
+    return status;
 }

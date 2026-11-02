@@ -363,7 +363,9 @@ static int run_reload_builtin(char **argv, shell_env *_) {
         return EXIT_FAILURE;
     }
 
+    int jid = sh_env.fg_jid;
     parse_config();
+    sh_env.fg_jid = jid;
 
     if (fclose(config) == EOF)
         xfatal("fclose");

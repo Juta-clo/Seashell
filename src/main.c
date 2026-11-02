@@ -1,3 +1,4 @@
+#include "config.h"
 #include "linc/string.h"
 #include "input.h"
 #include "state.h"
@@ -10,6 +11,9 @@ int main(int argc, char *const *argv) {
 
     input_set_suspend_mask(sh_env.og_mask);
     input_sig_cb = process_signals;
+
+    if (!opts[CLEAN].found)
+        config_init();
 
     while (true) {
         char *line;

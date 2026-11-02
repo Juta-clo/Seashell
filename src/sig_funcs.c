@@ -56,12 +56,6 @@ sigset_t sig_block(int sig) {
     return oset;
 }
 
-void reset_sig_flags(void) {
-    sigchld_caught = false;
-    sighup_caught = false;
-    sigint_caught = false;
-}
-
 void sig_restore(sigset_t *og_mask) {
     xsigprocmask(SIG_SETMASK, og_mask, NULL);
 

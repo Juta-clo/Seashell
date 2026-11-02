@@ -127,7 +127,9 @@ struct pline_data;
 
 jc_job *job_lookup(pid_t jid);
 pid_t lookup_job_pgrp(pid_t jid);
-void queue_builtin_exit_event(pid_t jid, char **argv, int status);
+void queue_builtin_exit(pid_t jid, char **argv, int status);
+
+pid_t create_job_id(void);
 void add_job(pid_t jid, struct pline_data *pld);
 
 #endif
