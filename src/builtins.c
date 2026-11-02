@@ -11,7 +11,6 @@
 #include "job_state.h"
 #include "builtins.h"
 #include "utils.h"
-#include "shell.h"
 
 #include <linc/args.h>
 
@@ -84,35 +83,30 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
         return EXIT_FAILURE;
     }
 
-    pid_t pgid = lookup_job_pgrp(jid);
-    if (pgid == -1) {
+    jc_job *job = job_lookup(jid);
+    if (!job) {
         fprintf(stderr, "%s: no such job: %s\n", argv[0], argv[1]);
         return EXIT_FAILURE;
     }
 
     /* Save current tty state then apply saved tty state for the
      * job if one was saved (it was a foreground job) */
-    job_plan *plan = lookup_plan(jid, NULL);
-    ASSERT(plan);
 
-    if (tcgetattr(sh_env->tty_fd, &sh_env->tty_state) == -1) {
+    if (tcgetattr(sh_env->tty_fd, &sh_env->tio) == -1) {
         fprintf(stderr, "%s: tcgetattr: %m", argv[0]);
         return EXIT_FAILURE;
     }
 
-    /* a jobs terminal state wouldn't be saved if it is a bg job. If
-     * a bg job is stopped it never owned the terminal so it doesn't
-     * make sense to save it */
-    if (plan && plan->tty_state_saved) {
-        if (tcsetattr(sh_env->tty_fd, TCSANOW, &plan->tty_state) == -1) {
+    if (job->tio_saved) {
+        if (tcsetattr(sh_env->tty_fd, TCSANOW, &job->tio) == -1) {
             fprintf(stderr, "%s: tcsetattr: %m", argv[0]);
             return EXIT_FAILURE;
         }
 
-        plan->tty_state_saved = false;
+        job->tio_saved = false;
     }
 
-    if (tcsetpgrp(sh_env->tty_fd, pgid) == -1) {
+    if (tcsetpgrp(sh_env->tty_fd, job->pgrp.pgid) == -1) {
         fprintf(stderr, "%s: tcsetpgrp: %m\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -123,7 +117,7 @@ static int run_fg_builtin(char **argv, shell_env *sh_env) {
         free_job_event(&jev);
     }
 
-    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {
+    if (killpg(job->pgrp.pgid, SIGCONT) == -1 && errno != ESRCH) {
         tcsetpgrp(sh_env->tty_fd, getpgid(0));
         return EXIT_FAILURE;
     }

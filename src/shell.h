@@ -13,8 +13,6 @@ LINC_ARRAY_TYPE(da_plan, job_plan);
 
 struct job_plan {
     pid_t jid;
-    bool tty_state_saved;
-    struct termios tty_state;
     size_t index;
     ps_ast *ast;
 };

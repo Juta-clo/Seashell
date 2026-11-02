@@ -89,11 +89,14 @@ static size_t get_job_index(pid_t jid) {
         if (jid == jctl.jobs.data[i].jid)
             return i;
 
-    xfatal("tried to get job index of non-existant job\n");
+    return SIZE_MAX;
 }
 
 static void remove_job (pid_t jid) {
     size_t i = get_job_index(jid);
+    if (i == SIZE_MAX)
+        xfatal("bad jctl state");
+
     free_job(&jctl.jobs.data[i]);
     linc_array_delete(&jctl.jobs, i, 1);
 }
@@ -192,6 +195,14 @@ static void cursor_left_anchor(void) {
         xfatal("ioctl");
 
     printf("%*s\x1b[1G", ws.ws_col, "");
+}
+
+jc_job *job_lookup(pid_t jid) {
+    size_t i = get_job_index(jid);
+    if (i == SIZE_MAX)
+        return NULL;
+
+    return &jctl.jobs.data[i];
 }
 
 void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
@@ -374,6 +385,9 @@ int update_job_proc(wait_event wev) {
 
 bool set_job_continue(pid_t jid, job_event *jev) {
     size_t i = get_job_index(jid);
+    if (i == SIZE_MAX)
+        xfatal("bad jctl state");
+
     jc_job *job = &jctl.jobs.data[i];
     bool change = job->stat == JOB_STOP;
 

@@ -1,9 +1,18 @@
 #ifndef JOB_STATE_H
 #define JOB_STATE_H
 
-#include <linc/array.h>
+#include <termios.h>
 
+#include "linc/array.h"
 #include "wait_stat.h"
+
+#define xjob_lookup(_jid) \
+    ({ \
+        jc_job *job_lookup_job = job_lookup(_jid); \
+        if (!job_lookup_job) \
+            xfatal("bad jctl state"); \
+        job_lookup_job; \
+    })
 
 typedef enum {
     JOB_EXIT,
@@ -65,6 +74,9 @@ struct jc_job {
     jc_pgrp pgrp;
     job_stat stat;
     jc_proc *last;
+
+    struct termios tio;
+    bool tio_saved;
 };
 
 struct job_table {
@@ -113,6 +125,7 @@ void clear_job_events(void);
 
 struct pline_data;
 
+jc_job *job_lookup(pid_t jid);
 pid_t lookup_job_pgrp(pid_t jid);
 void queue_builtin_exit_event(pid_t jid, char **argv, int status);
 void add_job(pid_t jid, struct pline_data *pld);

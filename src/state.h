@@ -29,7 +29,7 @@ typedef struct {
     int log_fd;
     map_t vars;
     map_t aliases;
-    struct termios tty_state;
+    struct termios tio;
     linc_log shell_log;
     linc_log assert_log;
     int fg_pending;

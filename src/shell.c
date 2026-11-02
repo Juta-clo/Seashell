@@ -225,16 +225,7 @@ int launch_job(ps_pline *pline, bool bg, pid_t jid) {
 
     if (!bg) {
         sh_env.fg_jid = jid;
-
-        xtcgetattr(sh_env.tty_fd, &sh_env.tty_state);
-
-        job_plan *plan = lookup_plan(jid, NULL);
-        ASSERT(plan);
-
-        if (plan->tty_state_saved) {
-            xtcsetattr(sh_env.tty_fd, TCSANOW, &plan->tty_state);
-            plan->tty_state_saved = false;
-        }
+        xtcgetattr(sh_env.tty_fd, &sh_env.tio);
     }
 
     bool handled = false;
@@ -337,13 +328,14 @@ static void handle_fg_event(job_event *jev) {
     } else if (jev->type == JSTOPPED) {
         if (xtcsetpgrp(sh_env.tty_fd, getpgrp()) == -1)
             err_exit("tcsetpgrp");
+
         sh_env.fg_jid = NOFG;
 
-        job_plan *plan = lookup_plan(jid, NULL);
-        xtcgetattr(sh_env.tty_fd, &plan->tty_state);
-        plan->tty_state_saved = true;
+        jc_job *job = xjob_lookup(jev->jid);
+        xtcgetattr(sh_env.tty_fd, &job->tio);
+        job->tio_saved = true;
 
-        xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tty_state);
+        xtcsetattr(sh_env.tty_fd, TCSANOW, &sh_env.tio);
 
         if (jev->intr_stop)
             printf("\n");
