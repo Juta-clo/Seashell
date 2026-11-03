@@ -6,9 +6,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <linc/array.h>
-#include <linc/string.h>
-#include <linc/xsys.h>
+#include "linc/array.h"
+#include "linc/xsys.h"
 
 #include "state.h"
 #include "utils.h"
@@ -30,70 +29,38 @@ static void output_err(const char *fmt, va_list *va, bool print_err) {
         fprintf(stderr, "seashell: %s\n", user_msg);
 }
 
-void fatal(const char *fmt, ...) {
+void fatal_imp(const char *fmt, ...) {
     if (fmt) {
         va_list va;
+
         va_start(va, fmt);
         output_err(fmt, &va, false);
         va_end(va);
     }
 
-    if (sh_env.subsh != SUBSH_NONE)
-        _exit(EXIT_FAILURE);
-    else
+    if (env.subsh == SUBSH_NONE) {
         exit(EXIT_FAILURE);
-}
-
-void err_assert_eq_int(int a, int b, const char *p1, const char *p2,
-        linc_site site) {
-    if (a != b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
-                "%s == %s, %s = %d, %s = %d",
-                p1, p2, p1, a, p2, b);
-
-        fatal(NULL);
+    } else {
+        _exit(EXIT_FAILURE);
     }
 }
 
-void err_assert_not_eq_int(int a, int b, const char *p1, const char *p2,
-        linc_site site) {
-    if (a == b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
-                "%s != %s, %s = %d, %s = %d",
-                p1, p2, p1, a, p2, b);
+void assert_bool_imp(linc_site site, ...) {
+    va_list va;
 
-        fatal(NULL);
-    }
-}
+    va_start(va, site);
+    bool a = va_arg(va, int);
+    char *ap = va_arg(va, char *);
+    va_end(va);
 
-void err_assert_g_int(int a, int b, const char *p1, const char *p2,
-        linc_site site) {
-    if (a <= b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
-                "%s > %s, %s = %d, %s = %d",
-                p1, p2, p1, a, p2, b);
+    if (!a) {
+        linc_log_write(
+            env.assert_log, LINC_LOG_ERROR, site,
+            "%s",
+            ap
+        );
 
-        fatal(NULL);
-    }
-}
-
-void err_assert_ge_int(int a, int b, const char *p1, const char *p2,
-        linc_site site) {
-    if (a < b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
-                "%s >= %s, %s = %d, %s = %d",
-                p1, p2, p1, a, p2, b);
-
-        fatal(NULL);
-    }
-}
-
-void err_assert(bool b, const char *text, linc_site site) {
-    if (!b) {
-        linc_log_write(sh_env.assert_log, LINC_LOG_ERROR, site,
-                "%s", text);
-
-        fatal(NULL);
+        fatal_imp(nullptr);
     }
 }
 
@@ -103,7 +70,7 @@ void err_exit_imp(const char *fmt, ...) {
     output_err(fmt, &va, true);
     va_end(va);
 
-    fatal(NULL);
+    fatal(nullptr);
 }
 
 void err_msg(const char *fmt, ...) {
@@ -113,25 +80,6 @@ void err_msg(const char *fmt, ...) {
     va_end(va);
 }
 
-void errno_msg(const char *fmt, ...) {
-    va_list va;
-    va_start(va, fmt);
-    output_err(fmt, &va, true);
-    va_end(va);
-}
-
-void usage_err(const char *fmt, ...) {
-    fprintf(stderr, "Usage: ");
-
-    va_list va;
-    va_start(va, fmt);
-    vfprintf(stderr, fmt, va);
-    va_end(va);
-
-    fprintf(stderr, "\n");
-    exit(EXIT_FAILURE);
-}
-
 /* general */
 
 int get_int(const char *arg) {
@@ -139,7 +87,7 @@ int get_int(const char *arg) {
         return -1;
 
     char *endptr;
-    pid_t num = (int) strtol(&arg[0], &endptr, 10);
+    int num = (int) strtol(&arg[0], &endptr, 10);
 
     if (*endptr != '\0')
         return -1;
@@ -155,7 +103,7 @@ bool is_dir(const char *path) {
     return S_ISDIR(sb.st_mode);
 }
 
-void free_charp_arr(da_charp *arr) {
+void argv_free_free(da_charp *arr) {
     for (size_t i = 0; i < arr->size; ++i)
         free(arr->data[i]);
 
@@ -166,20 +114,20 @@ void free_charp_arr(da_charp *arr) {
 
 size_t argv_len(char **argv) {
     size_t len = 0;
-    for (char **arg = argv; *arg != NULL; ++arg)
+    for (char **arg = argv; *arg != nullptr; ++arg)
         ++len;
     return len;
 }
 
-void free_argv(char **argv) {
-    for (char **arg = argv; *arg != NULL; ++arg)
+void argv_free(char **argv) {
+    for (char **arg = argv; *arg != nullptr; ++arg)
         free(*arg);
     free(argv);
 }
 
-char **copy_argv(char **argv) {
+char **argv_copy(char **argv) {
     int argc = 0;
-    for (char **arg = argv; *arg != NULL; ++arg)
+    for (char **arg = argv; *arg != nullptr; ++arg)
         ++argc;
 
     char **out = xcalloc(argc + 1, sizeof(char *));

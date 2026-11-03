@@ -116,7 +116,7 @@ static void end_part(lx_scanner *scanner) {
     memcpy(part->raw, scanner->part_start, len);
     part->raw[len] = '\0';
 
-    scanner->part_start = NULL;
+    scanner->part_start = nullptr;
 }
 
 static void clear_part(lx_scanner *scanner) {
@@ -134,7 +134,7 @@ static void clear_empty_part(lx_scanner *scanner) {
     part->raw = xmalloc(1);
     part->raw[0] = '\0';
 
-    scanner->part_start = NULL;
+    scanner->part_start = nullptr;
 }
 
 static void handle_single_quote(lx_scanner *scanner) {
@@ -196,16 +196,16 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
         }
     } else if (*scanner->cur_char == ' ') {
         clear_part(scanner);
-        scanner->cur_tok = NULL;
+        scanner->cur_tok = nullptr;
     } else {
         lx_kind kind = get_kind(scanner->cur_char);
 
         if (kind_is_delim(kind)) {
             clear_part(scanner);
-            scanner->cur_tok = NULL;
+            scanner->cur_tok = nullptr;
 
             ensure_tok(tokens, kind, scanner);
-            scanner->cur_tok = NULL;
+            scanner->cur_tok = nullptr;
 
             if (kind_is_double_char_op(kind))
                 ++scanner->cur_char;
@@ -285,7 +285,7 @@ int lx_tokenize(const char *cmd, da_tok *tokens) {
     }
 
     clear_part(&scanner);
-    scanner.cur_tok = NULL;
+    scanner.cur_tok = nullptr;
 
     return status;
 

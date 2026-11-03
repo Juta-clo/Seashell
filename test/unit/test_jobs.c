@@ -4,8 +4,8 @@
 
 #include "unity_fixture.h"
 #include "job_state.h"
-#include "exec_funcs.h"
 #include "wait_stat.h"
+#include "shell.h"
 
 TEST_GROUP(jobs);
 
@@ -119,7 +119,7 @@ typedef struct {
 } exp_pgrp;
 
 typedef struct {
-    pid_t jid;
+    int jid;
     exp_pgrp pgrp;
     job_stat stat;
 } exp_job;
@@ -204,7 +204,7 @@ void validate_job_events(da_jevent *exp) {
             TEST_ASSERT_NOT_EQUAL(-1, update_job_proc(wevs->data[i])); \
     } while (false)
 
-void add_one_proc_job(pid_t jid, pid_t pid) {
+void add_one_proc_job(int jid, pid_t pid) {
     pline_data pdata = { .pgid = pid };
     *linc_array_push(&pdata.procs) = PPROC(pid);
 
@@ -213,7 +213,7 @@ void add_one_proc_job(pid_t jid, pid_t pid) {
     TEST_ASSERT_NULL(pop_job_event());
 }
 
-void add_two_proc_job(pid_t jid, pid_t pid) {
+void add_two_proc_job(int jid, pid_t pid) {
     pline_data pdata = { .pgid = pid };
     *linc_array_push(&pdata.procs) = PPROC(pid);
     *linc_array_push(&pdata.procs) = PPROC(pid + 1);

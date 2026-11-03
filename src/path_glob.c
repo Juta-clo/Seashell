@@ -14,11 +14,11 @@ static int cmp_match(const void *p1, const void *p2) {
 static void get_path_components(char *str, da_charp *comps) {
     char *tok = strtok(str, "/");
     if (!tok)
-        xfatal("unexpected strtok return value");
+        fatal("unexpected strtok return value");
 
     do {
         *linc_array_push(comps) = tok;
-    } while ((tok = strtok(NULL, "/")));
+    } while ((tok = strtok(nullptr, "/")));
 }
 
 static da_charp get_substrs(const char *comp, size_t *pre_n, size_t *suf_n,
@@ -195,7 +195,7 @@ static void filter_dents(const char *glob, da_charp *dents) {
         free(dent_cpy);
     }
 
-    free_charp_arr(&substrs);
+    argv_free_free(&substrs);
 
     LOG_INFO("filtered dents; new size %ld [%s]", dents->size, glob);
 }
@@ -255,7 +255,7 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
 
 cleanup:
     free(glob_text);
-    free_charp_arr(&dents);
+    argv_free_free(&dents);
     linc_array_free(&comps);
 
     return rv;

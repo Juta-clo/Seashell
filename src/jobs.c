@@ -1,12 +1,12 @@
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
 
+#include "jobs.h"
 #include "shell.h"
-#include "job_state.h"
 #include "wait_stat.h"
 #include "utils.h"
-#include "state.h"
 
 #include <linc/xsys.h>
 #include <linc/array.h>
@@ -17,7 +17,7 @@ static da_jevent jevs = {0};
 
 static void free_job(jc_job *job) {
     for (size_t i = 0; i < job->pgrp.procs.size; ++i)
-        free_argv(job->pgrp.procs.data[i].argv);
+        argv_free(job->pgrp.procs.data[i].argv);
 
     linc_array_free(&job->pgrp.procs);
     *job = (jc_job){0};
@@ -41,7 +41,7 @@ static job_stat calc_job_stat(jc_job *job) {
     return stopped ? JOB_STOP : JOB_EXIT;
 }
 
-static bool identify_proc(pid_t pid, jc_job **job, jc_proc** proc) {
+static bool identify_proc(int pid, jc_job **job, jc_proc** proc) {
     ASSERT(job && proc);
 
     for (size_t i = 0; i < jctl.jobs.size; ++i) {
@@ -83,7 +83,7 @@ static void update_proc(jc_proc *proc, wait_event wev) {
     }
 }
 
-static size_t get_job_index(pid_t jid) {
+static size_t get_job_index(int jid) {
     for (size_t i = 0; i < jctl.jobs.size; ++i)
         if (jid == jctl.jobs.data[i].jid)
             return i;
@@ -91,10 +91,10 @@ static size_t get_job_index(pid_t jid) {
     return SIZE_MAX;
 }
 
-static void remove_job (pid_t jid) {
+static void remove_job (int jid) {
     size_t i = get_job_index(jid);
     if (i == SIZE_MAX)
-        xfatal("bad jctl state");
+        fatal("bad jctl state");
 
     free_job(&jctl.jobs.data[i]);
     linc_array_delete(&jctl.jobs, i, 1);
@@ -127,113 +127,30 @@ static bool job_signaled(jc_job *job) {
     return false;
 }
 
-static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
-    return (p1->stat == p2->stat) &&
-        (p2->stat == PROC_RUN ||
-        (p2->stat == PROC_EXIT && p1->exit_stat == p2->exit_stat) ||
-        (p1->stat == PROC_SIG && p1->term_sig == p2->term_sig) ||
-        (p1->stat == PROC_STOP && p1->stop_sig == p2->stop_sig));
-}
-
-static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
-        bool verbose)
-{
-    linc_string out = LINC_STRING_INIT;
-    int min_offset = 1;
-
-    for (size_t y = 0; y < jev->pviews.size; ++y) {
-        proc_view *pview = &jev->pviews.data[y];
-        size_t prev_len = out.len;
-
-        if (verbose || y == 0 || !same_ev_type(pview, &pview[-1])) {
-            if (pview->stat == PROC_EXIT) {
-                if (pview->exit_stat == 0)
-                    linc_string_appendf(&out, "done");
-                else
-                    linc_string_appendf(&out, "exit %d", pview->exit_stat);
-            } else if (pview->stat == PROC_RUN) {
-                linc_string_append(&out, "running");
-            } else if (pview->stat == PROC_SIG) {
-                linc_string_appendf(&out, "%s", strsignal(pview->term_sig));
-            } else if (pview->stat == PROC_STOP) {
-                linc_string_appendf(&out, "%s", strsignal(pview->stop_sig));
-            } else
-                argv_off -= 1;
-
-            int len = off + (out.len - prev_len);
-            int off = MAX(argv_off - len, min_offset);
-            linc_string_appendf(&out, "%*s", off, "");
-        }
-
-        if (verbose)
-            linc_string_appendf(&out, "%d ", pview->pid);
-
-        size_t len = argv_len(pview->argv);
-
-        for (size_t i = 0; i < len; ++i) {
-            linc_string_append(&out, pview->argv[i]);
-            if (i != len - 1)
-                linc_string_append(&out, " ");
-        }
-
-        if (y != jev->pviews.size - 1) {
-            if (!verbose && same_ev_type(pview, &pview[1])) {
-                linc_string_appendf(&out, " | ");
-            } else {
-                linc_string_appendf(&out, " |\n%*s", off, "");
-            }
-        }
-    }
-
-    return out;
-}
-
-static void cursor_left_anchor(void) {
-    struct winsize ws;
-    if (ioctl(sh_env.tty_fd, TIOCGWINSZ, &ws) == -1)
-        xfatal("ioctl");
-
-    printf("%*s\x1b[1G", ws.ws_col, "");
-}
-
-jc_job *job_lookup(pid_t jid) {
+jc_job *job_lookup(int jid) {
     size_t i = get_job_index(jid);
     if (i == SIZE_MAX)
-        return NULL;
+        return nullptr;
 
     return &jctl.jobs.data[i];
 }
 
-void print_job_event(pid_t jid, const job_event *jev, bool verbose) {
-    if (sh_env.subsh != SUBSH_NONE)
-        return;
-
-    linc_string msg = LINC_STRING_INIT;
-    linc_string_appendf(&msg, "[%d] ", jid);
-
-    int offset = msg.len;
-
-    linc_string s = get_pline_str(jev, offset, 21, verbose);
-    linc_string_append(&msg, s.cstr);
-    linc_string_free(&s);
-
-    cursor_left_anchor();
-    printf("%s\n", msg.cstr);
-
-    LOG_INFO("%s", msg.cstr);
-    linc_string_free(&msg);
-}
-
-void free_job_event(job_event *jev) {
+void job_event_free(job_event *jev) {
     if (!jev)
         return;
 
     for (size_t i = 0; i < jev->pviews.size; ++i)
-        free_argv(jev->pviews.data[i].argv);
+        argv_free(jev->pviews.data[i].argv);
     linc_array_free(&jev->pviews);
 }
 
-void clear_job_table(void) {
+void job_clear(void) {
+    job_event *jev;
+    while ((jev = job_event_pop()))
+        job_event_free(jev);
+
+    linc_array_free(&jevs);
+
     for (size_t i = 0; i < jctl.jobs.size; ++i) {
         LOG_INFO("[%d] removed", jctl.jobs.data[i].jid);
         free_job(&jctl.jobs.data[i]);
@@ -242,19 +159,11 @@ void clear_job_table(void) {
     linc_array_free(&jctl.jobs);
 }
 
-void clear_job_events(void) {
-    job_event *jev;
-    while ((jev = pop_job_event()))
-        free_job_event(jev);
-
-    linc_array_free(&jevs);
-}
-
-job_table *get_jctl(void) {
+job_table *job_get_table(void) {
     return &jctl;
 }
 
-pid_t lookup_job_pgrp(pid_t jid) {
+pid_t job_lookup_pgrp(int jid) {
     for (size_t i = 0; i < jctl.jobs.size; ++i)
         if (jid == jctl.jobs.data[i].jid)
             return jctl.jobs.data[i].pgrp.pgid;
@@ -262,11 +171,11 @@ pid_t lookup_job_pgrp(pid_t jid) {
     return -1;
 }
 
-job_event *pop_job_event(void) {
+job_event *job_event_pop(void) {
     static job_event jev;
 
     if (jevs.size == 0)
-        return NULL;
+        return nullptr;
 
     jev = jevs.data[0];
 
@@ -275,11 +184,12 @@ job_event *pop_job_event(void) {
     return &jev;
 }
 
-void add_job_event(job_event jev) {
+static void add_job_event(job_event jev) {
     *linc_array_push(&jevs) = jev;
 }
 
-void capture_job_state(jc_job *job, job_event *jev) {
+static void capture_job_state(jc_job *job, job_event *jev) {
+    jev->jid = job->jid;
     jev->pviews = (da_proc_view){0};
 
     for (size_t i = 0; i < job->pgrp.procs.size; ++i) {
@@ -288,19 +198,43 @@ void capture_job_state(jc_job *job, job_event *jev) {
 
         pview->pid = proc->pid;
         pview->stat = proc->stat;
-        pview->argv = copy_argv(proc->argv);
+        pview->argv = argv_copy(proc->argv);
 
-        if (proc->stat == PROC_EXIT)      pview->exit_stat = proc->exit_stat;
-        else if (proc->stat == PROC_SIG)  pview->term_sig = proc->term_sig;
-        else if (proc->stat == PROC_STOP) pview->stop_sig = proc->stop_sig;
+        if (proc->stat == PROC_EXIT) {
+            pview->exit_stat = proc->exit_stat;
+        } else if (proc->stat == PROC_SIG) {
+            pview->term_sig = proc->term_sig;
+        } else if (proc->stat == PROC_STOP) {
+            pview->stop_sig = proc->stop_sig;
+        }
+
+        if (i == jev->pviews.size - 1)
+            jev->last = pview;
     }
-
-    jev->jid = job->jid;
-    jev->stat = job->stat;
-    jev->last = &jev->pviews.data[jev->pviews.size - 1];
 }
 
-da_jevent get_job_info(void) {
+void job_hangup(void) {
+    for (size_t i = 0; i < jctl.jobs.size; ++i) {
+        jc_job *job = &jctl.jobs.data[i];
+
+        if (getpgrp() == job->pgrp.pgid || job->pgrp.pgid <= 1) {
+            LOG_ERR("unexpected pgid %d", job->pgrp.pgid);
+            break;
+        }
+
+        if (kill(-job->pgrp.pgid, SIGHUP) == -1) {
+            LOG_ERR("kill: %m");
+            break;
+        }
+
+        if (kill(-job->pgrp.pgid, SIGCONT) == -1 && errno != ESRCH) {
+            LOG_ERR("kill: %m");
+            break;
+        }
+    }
+}
+
+da_jevent job_get_snapshot(void) {
     da_jevent jevs = {0};
 
     for (size_t i = 0; i < jctl.jobs.size; ++i) {
@@ -319,77 +253,45 @@ da_jevent get_job_info(void) {
     return jevs;
 }
 
-void push_continue_event(jc_job *job) {
-    job_event *jev = linc_array_push(&jevs);
-    *jev = (job_event){0};
-
-    jev->type = JCONTINUED;
-
-    capture_job_state(job, jev);
-}
-
-void push_stop_event(jc_job *job) {
-    job_event *jev = linc_array_push(&jevs);
-    *jev = (job_event){0};
-
-    jev->type = JSTOPPED;
-    jev->intr_stop = job_inter_stopped(job);;
-
-    capture_job_state(job, jev);
-}
-
-void push_exit_event(jc_job *job) {
-    job_event *jev = linc_array_push(&jevs);
-    *jev = (job_event){0};
-
-    jev->type = JEXITED;
-    jev->signaled = job_signaled(job);
-
-    if (job_interrupted(job)) {
-        jev->exit_type = JEXIT_INTR;
-        jev->success = false;
-
-    } else {
-        jev->exit_type = JEXIT_NORMAL;
-
-        if (job->last->stat == PROC_EXIT) {
-            jev->success = (job->last->exit_stat == EXIT_SUCCESS);
-        } else
-            jev->success = false;
-    }
-
-    capture_job_state(job, jev);
-}
-
-int update_job_proc(wait_event wev) {
+int job_update(wait_event wev) {
     jc_job *job;
     jc_proc *proc;
 
     if (!identify_proc(wev.pid, &job, &proc))
-        xfatal("bad jctl state");
+        fatal("bad jctl state");
 
     update_proc(proc, wev);
 
     job_stat stat = calc_job_stat(job);
+    job_event jev;
 
     if (job->stat == JOB_RUN && stat == JOB_STOP) {
-        job->stat = stat;
-        push_stop_event(job);
+        jev.type = JSTOPPED;
+        jev.intr_sig = job_inter_stopped(job);;
     } else if (job->stat == JOB_STOP && stat == JOB_RUN) {
-        job->stat = stat;
-        push_continue_event(job);
+        jev.type = JCONTINUED;
     } else if (stat == JOB_EXIT) {
-        push_exit_event(job);
-        remove_job(job->jid);
+        jev.type = JEXITED;
+        jev.signaled = job_signaled(job);
+        jev.intr_sig = job_interrupted(job);
     }
+
+    if (stat != job->stat) {
+        job->stat = stat;
+        capture_job_state(job, &jev);
+        add_job_event(jev);
+    }
+
+    if (job->stat == JOB_EXIT)
+        remove_job(job->jid);
 
     return 0;
 }
 
-bool set_job_continue(pid_t jid, job_event *jev) {
+bool job_set_running(int jid, job_event *jev) {
     size_t i = get_job_index(jid);
     if (i == SIZE_MAX)
-        xfatal("bad jctl state");
+        fatal("bad jctl state");
 
     jc_job *job = &jctl.jobs.data[i];
     bool change = job->stat == JOB_STOP;
@@ -408,13 +310,10 @@ bool set_job_continue(pid_t jid, job_event *jev) {
     return change;
 }
 
-void queue_builtin_exit(pid_t jid, char **argv, int status) {
+void job_queue_builtin_exit(int jid, char **argv, int status) {
     job_event jev = {
         .jid = jid,
-        .type = JEXITED,
-        .stat = JOB_EXIT,
-        .success = (status == EXIT_SUCCESS),
-        .exit_type = JEXIT_NORMAL,
+        .type = JEXITED
     };
 
     proc_view* pview = linc_array_push(&jev.pviews);
@@ -423,15 +322,15 @@ void queue_builtin_exit(pid_t jid, char **argv, int status) {
         .exit_stat = status
     };
 
-    pview->argv = copy_argv(argv);
+    pview->argv = argv_copy(argv);
     jev.last = &jev.pviews.data[0];
     add_job_event(jev);
 
     xkill(getpid(), SIGCHLD);
 }
 
-pid_t create_job_id(void) {
-    pid_t jid = 1;
+int job_new_id(void) {
+    int jid = 1;
 
     for (size_t i = 0; i < jctl.jobs.size;) {
         if (jid == jctl.jobs.data[i].jid) {
@@ -446,11 +345,11 @@ pid_t create_job_id(void) {
     return jid;
 }
 
-void add_job(pid_t jid, pline_data *pld) {
+void job_add(int jid, pline_data *pld) {
     ASSERT(pld);
 
     if (pld->procs.size == 0)
-        xfatal("empty pline proc array");
+        fatal("empty pline proc array");
 
     jc_job *job = linc_array_push(&jctl.jobs);
     *job = (jc_job){0};

@@ -257,10 +257,6 @@ TEST(config, prompt_len_zero) {
     );
 }
 
-IGNORE_TEST(config, history_does_not_duplicate_colored_prompt) {
-    // Requires, hot reloading of config file to change prompt
-}
-
 TEST(config, simple_alias_expansion) {
     set_aliases("p = 'echo'");
     assert_term(0, PROMPT_LEN,
@@ -379,7 +375,6 @@ TEST_GROUP_RUNNER(config) {
     RUN_TEST_CASE(config, pasting_incomplete_csi);
     RUN_TEST_CASE(config, paste_csi_that_enters_pager);
     RUN_TEST_CASE(config, prompt_len_zero);
-    RUN_TEST_CASE(config, history_does_not_duplicate_colored_prompt);
     RUN_TEST_CASE(config, simple_alias_expansion);
     RUN_TEST_CASE(config, alias_with_multiple_words);
     RUN_TEST_CASE(config, alias_expands_after_pipe_from_alias);

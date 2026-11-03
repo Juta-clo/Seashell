@@ -8,23 +8,21 @@
 
 #undef basename
 
+#include "linc/xsys.h"
+#include "linc/hda.h"
+#include "linc/hds.h"
+
+#include "input.h"
+#include "input_internal.h"
 #include "expander.h"
 #include "linc/string.h"
 #include "input.h"
-#include "input_object.h"
 #include "state.h"
 #include "utils.h"
 #include "printty.h"
 #include "variable.h"
 #include "path_glob.h"
 #include "lexer.h"
-
-#include <linc/xsys.h>
-#include <linc/hda.h>
-#include <linc/hds.h>
-
-#define MIN(a, b) ((a) < (b)) ? (a) : (b)
-#define MAX(a, b) ((a) > (b)) ? (a) : (b)
 
 #define DELETE_CURSOR 1
 #define DELETE_WORD   2
@@ -42,7 +40,7 @@
 
 typedef char * linc_hds;
 
-static Printty *pt;
+static Printty *pt = nullptr;
 
 typedef enum {
     COMP_CMD,
@@ -164,8 +162,8 @@ static int input_current_tok(comp_tok *comp, int *start, int *end) {
 }
 
 static void ncol_cell(int *crow, int *ccol, int start_row, int col_n) {
-    ASSERT_GE_INT(col_n, 0);
-    ASSERT_GE_INT(llen(), col_n);
+    ASSERT_(GEQ, col_n, 0);
+    ASSERT_(GEQ, llen(), col_n);
     ASSERT(crow && ccol);
 
     *crow = start_row;
@@ -194,8 +192,8 @@ static void new_start_pos(void) {
     input.start_row = row;
 
     LOG_INFO("new start pos: [%d,%d]", row, col);
-    ASSERT_GE_INT(input.start_row, 0);
-    ASSERT_G_INT(input.rows, input.start_row);
+    ASSERT_(GEQ, input.start_row, 0);
+    ASSERT_(G, input.rows, input.start_row);
 }
 
 static void update_start_pos(void) {
@@ -217,7 +215,7 @@ static void update_start_pos(void) {
     }
 
     LOG_INFO("new start row = %d", input.start_row);
-    ASSERT_G_INT(input.rows, input.start_row);
+    ASSERT_(G, input.rows, input.start_row);
 }
 
 static void input_draw_ch(char c) {
@@ -319,8 +317,8 @@ static void input_draw(int rows, int start_row, da_cell cells) {
 }
 
 static void input_update(void) {
-    ASSERT_NEQ_INT(input.rows, 0);
-    ASSERT_NEQ_INT(input.cols, 0);
+    ASSERT_(NEQ, input.rows, 0);
+    ASSERT_(NEQ, input.cols, 0);
 
     int rows = input.rows;
     da_cell cells = get_cells(&input.prompt_len);
@@ -337,7 +335,7 @@ static void input_update(void) {
         if (--rows != 0)
             start_row = (rows * ((req_row - input.rows) / rows)) + input.rows;
 
-        ASSERT_GE_INT(req_row, start_row);
+        ASSERT_(GEQ, req_row, start_row);
 
         while (input.start_row > 0) {
             xprintty_cursor_move(pt, input.rows - 1, 0);
@@ -401,8 +399,8 @@ static void input_move(int offset) {
 }
 
 static void input_delete(int type, input_del_ctx *ctx) {
-    ASSERT_GE_INT(input.off, 0);
-    ASSERT_GE_INT(line_len(), input.off);
+    ASSERT_(GEQ, input.off, 0);
+    ASSERT_(GEQ, line_len(), input.off);
     ASSERT(input.insert_mode || input.off < line_len() || line_len() == 0);
 
     if (line_len() == 0)
@@ -410,8 +408,8 @@ static void input_delete(int type, input_del_ctx *ctx) {
 
     if (type == DELETE_RANGE) {
         ASSERT(ctx);
-        ASSERT_GE_INT(line_len() - input.off, ctx->n);
-        ASSERT_GE_INT(ctx->start_i, 0);
+        ASSERT_(GEQ, (size_t)line_len() - input.off, ctx->n);
+        ASSERT_(GEQ, (int)ctx->start_i, 0);
 
         linc_hda_delete(input.line, input.start_i + ctx->start_i, ctx->n);
     } else if (input.insert_mode) {
@@ -525,16 +523,16 @@ static void get_path_entries(da_charp *pents) {
     ASSERT(pents);
     *pents = (da_charp){0};
 
-    sh_var *var = lookup_var(&sh_env.vars, "PATH");
+    sh_var *var = lookup_var(&env.vars, "PATH");
     char *path_str = xstrdup(var->value);
 
     char *tok = strtok(path_str, ":");
     if (!tok)
-        xfatal("unexpected strtok return value");
+        fatal("unexpected strtok return value");
 
     do {
         *linc_array_push(pents) = xstrdup(tok);
-    } while ((tok = strtok(NULL, ":")));
+    } while ((tok = strtok(nullptr, ":")));
 
     free(path_str);
 }
@@ -566,7 +564,7 @@ static void history_push(void) {
 static void history_prev(void) {
     if (input.hist.i == 0) {
         if (input.hist.saved) {
-            input_delete(DELETE_ALL, NULL);
+            input_delete(DELETE_ALL, nullptr);
             input_insert(INSERT_STR, input.hist.saved);
 
             free(input.hist.saved);
@@ -579,7 +577,7 @@ static void history_prev(void) {
     char *line = xstrdup(input.hist.lines[--input.hist.i]);
     LOG_INFO("history_prev: input.line = \"%s\"", input.line);
 
-    input_delete(DELETE_ALL, NULL);
+    input_delete(DELETE_ALL, nullptr);
     input_insert(INSERT_STR, line);
 
     free(line);
@@ -600,7 +598,7 @@ static void history_next(void) {
     char *line = xstrdup(input.hist.lines[input.hist.i]);
     LOG_INFO("history_next: input.line = \"%s\"", input.line);
 
-    input_delete(DELETE_ALL, NULL);
+    input_delete(DELETE_ALL, nullptr);
     input_insert(INSERT_STR, line);
 
     free(line);
@@ -611,7 +609,7 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
         if (input.comp.glob)
             input_reset_comp();
 
-        input_delete(DELETE_CURSOR, NULL);
+        input_delete(DELETE_CURSOR, nullptr);
     } else if (key == PRINTTY_LEFT) {
         input_move(input.off - 1);
     } else if (key == PRINTTY_RIGHT) {
@@ -632,9 +630,9 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
     } else if (codepoint == 1/*C-a*/) {
         input_move(0);
     } else if (codepoint == 11/*C-k*/) {
-        input_delete(DELETE_END, NULL);
+        input_delete(DELETE_END, nullptr);
     } else if (codepoint == 21/*C-u*/) {
-        input_delete(DELETE_START, NULL);
+        input_delete(DELETE_START, nullptr);
     } else if (codepoint == 12/*C-l*/) {
         xprintty_write(pt, unibi_clear_screen);
         new_start_pos();
@@ -683,9 +681,9 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
                     break;
             }
 
-            free_charp_arr(&pents);
+            argv_free_free(&pents);
         } else if (tok == COMP_ARG || tok == COMP_REDIR) {
-            linc_string result = expand_seg(input.comp.glob, NULL);
+            linc_string result = expand_seg(input.comp.glob, nullptr);
             glob_pattern(result.cstr, result.len, &matches);
             LOG_INFO("File glob: %s", result.cstr);
 
@@ -725,7 +723,7 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         input_move(input.comp.start_i);
         input_delete(DELETE_RANGE, &(input_del_ctx){ tstart, tend - tstart });
         input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
-        free_charp_arr(&matches);
+        argv_free_free(&matches);
     } else {
         input_insert(INSERT_CHAR, &utf8[0]);
     }
@@ -742,9 +740,9 @@ static void normal_mode_feed_key(PrinttyInputKey key) {
 static void operator_pending_feed_unicode(uint32_t codepoint, int op) {
     if (op == OP_DEL) {
         if (codepoint == 'd')
-            input_delete(DELETE_ALL, NULL);
+            input_delete(DELETE_ALL, nullptr);
         else if (codepoint == 'w')
-            input_delete(DELETE_WORD, NULL);
+            input_delete(DELETE_WORD, nullptr);
     }
 }
 
@@ -768,7 +766,7 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
     } else if (codepoint == 'l') {
         input_move(input.off + 1);
     } else if (codepoint == 'x') {
-        input_delete(DELETE_CURSOR, NULL);
+        input_delete(DELETE_CURSOR, nullptr);
     } else if (codepoint == 'A') {
         enter_mode_insert();
         input_move(line_len());
@@ -818,14 +816,14 @@ void input_deinit(void) {
         printty_destroy(pt);
     }
 
-    pt = NULL;
+    pt = nullptr;
 }
 
 void input_init(void) {
-    if (!(pt = printty_create(NULL)))
-        xfatal("printty_create");
+    if (!(pt = printty_create(nullptr)))
+        fatal("printty_create");
     if (printty_cbreak(pt) == PRINTTY_ERR)
-        xfatal("printty_cbreak");
+        fatal("printty_cbreak");
 
     printty_set_esc_delay(pt, 25);
 }
@@ -866,7 +864,7 @@ void input_clear_history(void) {
 
 char *input_get_line(const char *prompt) {
     if (printty_start(pt) != PRINTTY_OK)
-        return NULL;
+        return nullptr;
 
     linc_hds_append(input.line, prompt);
     input.start_i = linc_hda_size(input.line) - 1;
@@ -878,7 +876,7 @@ char *input_get_line(const char *prompt) {
         int rv = printty_get_event(pt, &pev);
 
         if (rv == PRINTTY_EOF || rv == PRINTTY_ERR)
-            return NULL;
+            return nullptr;
 
         else if (rv == PRINTTY_SIG)
             input_sig_cb();
@@ -931,7 +929,7 @@ char *input_get_line(const char *prompt) {
     LOG_INFO("parsed line: %s", lstart());
 
     if (printty_stop(pt) != PRINTTY_OK)
-        return NULL;
+        return nullptr;
 
     char *out = xstrdup(lstart());
 

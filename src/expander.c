@@ -54,7 +54,7 @@ static void ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob) {
             /* sanity check. not really necessary, lexer ensures
              * segment can not end with \ */
             if (*c == '\0')
-                xfatal("bad segment contents");
+                fatal("bad segment contents");
 
             continue;
         }
@@ -99,7 +99,7 @@ linc_string expand_seg(const char *seg, bool *has_glob) {
     for (size_t i = 0; i < toks.size; ++i) {
         ex_tok *tok = &toks.data[i];
         if (tok->type == EXT_KEY) {
-            sh_var *var = lookup_var_n(&sh_env.vars, tok->str, tok->str_len);
+            sh_var *var = lookup_var_n(&env.vars, tok->str, tok->str_len);
             if (var) {
                 LOG_INFO("expanded varaible %s -> %.*s", var->value,
                         (int)tok->str_len, tok->str);
@@ -110,7 +110,7 @@ linc_string expand_seg(const char *seg, bool *has_glob) {
             linc_string_append_n(&out, tok->str, tok->str_len);
 
         } else
-            xfatal("unexpected ex_tok type");
+            fatal("unexpected ex_tok type");
     }
 
     linc_array_free(&toks);
@@ -139,7 +139,7 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
             linc_string_append(&arg, exp_seg.cstr);
 
         } else {
-            exp_seg = expand_seg(seg->raw, NULL);
+            exp_seg = expand_seg(seg->raw, nullptr);
             linc_string_append(&arg, exp_seg.cstr);
         }
 
@@ -164,11 +164,11 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
         if (redir) {
             if (matches.size > 1) {
                 err_msg("ambiguous redirect");
-                free_charp_arr(&matches);
+                argv_free_free(&matches);
                 return -1;
             } else if (matches.size == 1) {
                 word->arg = strdup_alloc(matches.data[0], &allo);
-                free_charp_arr(&matches);
+                argv_free_free(&matches);
             }
 
         } else if (!redir) {
@@ -177,7 +177,7 @@ static int expand_word(ps_word *word, da_charp *argv, bool redir) {
             for (size_t i = 0; i < matches.size; ++i)
                 *linc_array_push(argv) = strdup_alloc(matches.data[i], &allo);
 
-            free_charp_arr(&matches);
+            argv_free_free(&matches);
         }
     } else {
         word->arg = strdup_alloc(arg.cstr, &allo);
@@ -196,7 +196,7 @@ static int create_argv(ps_cmd *cmd) {
         if (expand_word(&cmd->words.data[i], &argv, false) == -1)
             return -1;
 
-    *linc_array_push(&argv) = NULL;
+    *linc_array_push(&argv) = nullptr;
     cmd->argv = argv.data;
 
     return 0;
@@ -211,7 +211,7 @@ int expand_pline(const ps_pline *pline) {
 
         for (size_t k = 0; k < cmd->redirs.size; ++k) {
             ps_redir *redir = &cmd->redirs.data[k];
-            if (expand_word(&redir->target, NULL, true) == -1)
+            if (expand_word(&redir->target, nullptr, true) == -1)
                 return -1;
         }
     }

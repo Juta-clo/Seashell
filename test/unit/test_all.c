@@ -68,8 +68,8 @@ int main(int argc, const char **argv) {
     dup2(fd, STDERR_FILENO);
     close(fd);
 
-    sh_env.shell_log = unit_shell_log;
-    sh_env.assert_log = unit_assert_log;
+    env.shell_log = unit_shell_log;
+    env.assert_log = unit_assert_log;
 
     return UnityMain(argc, argv, run_all);
 }

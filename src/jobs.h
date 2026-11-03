@@ -6,14 +6,6 @@
 #include "linc/array.h"
 #include "wait_stat.h"
 
-#define xjob_lookup(_jid) \
-    ({ \
-        jc_job *job_lookup_job = job_lookup(_jid); \
-        if (!job_lookup_job) \
-            xfatal("bad jctl state"); \
-        job_lookup_job; \
-    })
-
 typedef enum {
     JOB_EXIT,
     JOB_STOP,
@@ -34,11 +26,6 @@ typedef enum {
     JINFO,
 } job_event_type;
 
-typedef enum {
-    JEXIT_NORMAL,
-    JEXIT_INTR,
-} job_exit_type;
-
 typedef struct jc_proc jc_proc;
 typedef struct jc_pgrp jc_pgrp;
 typedef struct jc_job jc_job;
@@ -47,10 +34,13 @@ typedef struct job_event job_event;
 typedef struct proc_view proc_view;
 
 LINC_ARRAY_TYPE(da_proc, jc_proc);
-LINC_ARRAY_TYPE(da_pgrp, jc_pgrp);
 LINC_ARRAY_TYPE(da_job, jc_job);
 LINC_ARRAY_TYPE(da_jevent, job_event);
 LINC_ARRAY_TYPE(da_proc_view, proc_view);
+
+struct job_table {
+    da_job jobs;
+};
 
 struct jc_proc {
     pid_t pid;
@@ -70,7 +60,7 @@ struct jc_pgrp {
 };
 
 struct jc_job {
-    pid_t jid;
+    int jid;
     jc_pgrp pgrp;
     job_stat stat;
     jc_proc *last;
@@ -79,8 +69,14 @@ struct jc_job {
     bool tio_saved;
 };
 
-struct job_table {
-    da_job jobs;
+struct job_event {
+    job_event_type type;
+    bool signaled;
+    bool intr_sig;
+
+    int jid;
+    proc_view *last;
+    da_proc_view pviews;
 };
 
 struct proc_view {
@@ -95,41 +91,24 @@ struct proc_view {
     };
 };
 
-struct job_event {
-    pid_t jid;
-    job_event_type type;
-    job_exit_type exit_type;
-
-    bool success;
-    bool signaled;
-    bool intr_stop;
-
-    job_stat stat;
-    proc_view *last;
-    da_proc_view pviews;
-};
-
-void print_job_event(pid_t jid, const job_event *jev, bool verbose);
-
-job_table *get_jctl(void);
-da_jevent get_job_info(void);
-job_event *pop_job_event(void);
-
-int update_job_proc(wait_event wev);
-void add_job_event(job_event jev);
-bool set_job_continue(pid_t jid, job_event *jev);
-void free_job_event(job_event *jev);
-
-void clear_job_table(void);
-void clear_job_events(void);
-
 struct pline_data;
 
-jc_job *job_lookup(pid_t jid);
-pid_t lookup_job_pgrp(pid_t jid);
-void queue_builtin_exit(pid_t jid, char **argv, int status);
+void job_hangup(void);
+da_jevent job_get_snapshot(void);
+job_table *job_get_table(void);
 
-pid_t create_job_id(void);
-void add_job(pid_t jid, struct pline_data *pld);
+job_event *job_event_pop(void);
+void job_event_free(job_event *jev);
+void job_clear(void);
+
+int job_update(wait_event wev);
+bool job_set_running(int jid, job_event *jev);
+
+int job_new_id(void);
+void job_add(int jid, struct pline_data *pld);
+
+jc_job *job_lookup(int jid);
+pid_t job_lookup_pgrp(int jid);
+void job_queue_builtin_exit(int jid, char **argv, int status);
 
 #endif

@@ -33,7 +33,7 @@ static void *lookup_index(map_t *map, void *key, size_t *index) {
         }
     }
 
-    return NULL;
+    return nullptr;
 }
 
 static int mp_add(map_t *map, void *key, void *value, key_func func) {
@@ -68,10 +68,10 @@ static int mp_lookup(map_t *map, const void *key, void **value, key_func func) {
     if (!canon_key)
         return -1;
 
-    void *map_value = lookup_index(map, canon_key, NULL);
+    void *map_value = lookup_index(map, canon_key, nullptr);
     if (!map_value) {
         free(canon_key);
-        *value = NULL;
+        *value = nullptr;
         return 0;
     }
 
@@ -110,7 +110,7 @@ static void *str_canon_key(map_t *map, const void *key) {
 
     void *canon_key = calloc(map->key_size, 1);
     if (!canon_key)
-        return NULL;
+        return nullptr;
 
     strcpy(canon_key, key);
 
@@ -143,7 +143,7 @@ static void *num_canon_key(map_t *map, const void *key) {
 
     int *canon_key = calloc(map->key_size, 1);
     if (!canon_key)
-        return NULL;
+        return nullptr;
 
     *canon_key = *(int *)key;
 

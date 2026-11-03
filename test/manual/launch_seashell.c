@@ -31,7 +31,7 @@ static void errExit(const char *fmt, ...) {
 /* I have a sway (wm) bind to launch this program with foot (tty). That
  * gives seashell a fresh sessoin and default termios structure. */
 
-int main(void) {
+int main(int argc, char **_) {
     int cpid = fork();
     if (cpid == -1)
         errExit("fork: %m");
@@ -73,15 +73,25 @@ int main(void) {
     if (!WIFEXITED(wstat) || WEXITSTATUS(wstat) != 0)
         errExit("make process exited abnormally");
 
-    execlp("valgrind",
+    if (argc > 1) {
+        execlp("valgrind",
             "valgrind",
-                "--vgdb=no", "--enable-debuginfod=no", "--quiet",
+                "--vgdb=no", "--enable-debuginfod=no",
                 "--leak-check=full",
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
                 "--track-fds=bad", "--modify-fds=high",
             "./seashell", "--config=./.seashell.lua", "--log-file=/tmp/shlog",
-            (char *)NULL);
+            (char *)NULL
+        );
+    } else {
+        execlp("./seashell",
+            "./seashell",
+                "--config=./.seashell.lua",
+                "--log-file=/tmp/shlog",
+            (char *)NULL
+        );
+    }
 
     errExit("execl: %m");
 }

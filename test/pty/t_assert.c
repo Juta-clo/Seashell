@@ -47,7 +47,6 @@ bool verify_kill(int sig, const char *name) {
                     xtest_fatal("kill: %m");
 
                 linc_array_free(&pstats);
-
                 return true;
             }
         }

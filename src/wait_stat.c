@@ -25,7 +25,7 @@ char *get_wstat_str(pid_t pid, int wstat) {
     } else if (WIFCONTINUED(wstat)) {
         snprintf(buf, 4096, "%d continued", pid);
     } else
-        xfatal("unexpected wstat");
+        fatal("unexpected wstat");
 
     return buf;
 }

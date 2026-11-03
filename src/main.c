@@ -1,29 +1,23 @@
-#include "config.h"
 #include "linc/string.h"
+#include "linc/xsys.h"
 #include "input.h"
-#include "state.h"
 #include "utils.h"
 #include "shell.h"
 #include "luart.h"
 
 int main(int argc, char *const *argv) {
-    env_setup(argc, argv);
-
-    input_set_suspend_mask(sh_env.og_mask);
-    input_sig_cb = process_signals;
-
-    if (!opts[CLEAN].found)
-        config_init();
+    xatexit(seashell_shutdown);
+    env_init(argc, argv);
 
     while (true) {
         char *line;
         linc_string prompt = shell_get_prompt();
 
         if (!(line = input_get_line(prompt.cstr)))
-            xfatal("input_get_line: EOF/Error");
+            fatal("input_get_line: EOF/Error");
 
-        if (sh_env.lua_mode) {
-            luart_run_string(line);
+        if (env.lua) {
+            luart_run(line);
         } else {
             shell_run(line);
         }

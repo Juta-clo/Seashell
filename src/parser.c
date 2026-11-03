@@ -78,7 +78,7 @@ static void queue_redir(lx_kind kind, int append, ps_scanner *scanner) {
     case LX_TOK_RDR_ERR: redir->io_num = 2; break;
     case LX_TOK_APPEND:  redir->io_num = 1; break;
     default:
-        xfatal("unexpected paraser state");
+        fatal("unexpected paraser state");
     }
 
     scanner->queued_redir = redir;
@@ -122,7 +122,7 @@ static int expand_alias(ps_scanner *scanner, da_tok *toks, size_t i) {
     /* Is there an actual defined alias match? */
     char *alias = scanner->cur_tok->parts.data[0].raw;
     void *value;
-    mp_str_lookup(&sh_env.aliases, alias, &value);
+    mp_str_lookup(&env.aliases, alias, &value);
     if (!value)
         return 0;
 
@@ -209,7 +209,7 @@ int ps_parse(da_tok *toks, ps_ast *ast) {
                     &scanner
                 );
 
-                scanner.queued_redir = NULL;
+                scanner.queued_redir = nullptr;
                 continue;
             }
 
@@ -233,16 +233,16 @@ int ps_parse(da_tok *toks, ps_ast *ast) {
             break;
         }
         case LX_TOK_PIPE:
-            scanner.cur_cmd = NULL;
+            scanner.cur_cmd = nullptr;
             break;
         case LX_TOK_AND_IF:
-            scanner.cur_cmd = NULL;
-            scanner.cur_pline = NULL;
+            scanner.cur_cmd = nullptr;
+            scanner.cur_pline = nullptr;
             scanner.andor_op = PS_AND_IF;
             break;
         case LX_TOK_OR_IF:
-            scanner.cur_cmd = NULL;
-            scanner.cur_pline = NULL;
+            scanner.cur_cmd = nullptr;
+            scanner.cur_pline = nullptr;
             scanner.andor_op = PS_OR_IF;
             break;
         case LX_TOK_BG: {

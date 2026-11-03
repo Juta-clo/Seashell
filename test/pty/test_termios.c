@@ -84,10 +84,9 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
     assert_termios(changed_tio);
 
     vt_send_ch('z', VTERM_MOD_CTRL);
-    assert_term_clear(4, PROMPT_LEN,
+    assert_term_clear(3, PROMPT_LEN,
         PROMPT "change_tio 100",
         "x",
-        "",
         "[1] Stopped          change_tio 100%s",
         PROMPT
     );
@@ -117,10 +116,9 @@ TEST(termios, stopped_job_termios_saved_and_restored) {
     assert_termios(changed_tio);
 
     vt_send_ch('c', VTERM_MOD_CTRL);
-    assert_term_clear(3, PROMPT_LEN,
+    assert_term_clear(2, PROMPT_LEN,
         PROMPT "fg %%1",
         "[1] running          change_tio 100%s",
-        "",
         PROMPT
     );
     assert_termios(printty_cbreak_tio(changed_tio));

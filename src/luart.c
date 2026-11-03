@@ -15,7 +15,7 @@
     static const luaL_Reg math_functions[] = {
         {"add", l_add},
         {"multiply", l_multiply},
-        {NULL, NULL}
+        {nullptr, nullptr}
     };
 
     void register_math(lua_State *L) {
@@ -34,12 +34,19 @@ static int l_run(lua_State *state) {
     return 1;
 }
 
+static int l_lua(lua_State *_) {
+    env.lua = false;
+
+    return 0;
+}
+
 static const luaL_Reg core_funcs[] = {
     { "run", l_run },
-    { NULL, NULL }
+    { "lua", l_lua },
+    { nullptr, nullptr }
 };
 
-void luart_run_string(const char *s) {
+void luart_run(const char *s) {
     if (luaL_dostring(L, s) != LUA_OK) {
         fprintf(stderr, "lua: %s\n", lua_tostring(L, -1));
         lua_pop(L, 1);
@@ -52,7 +59,7 @@ void luart_run_string(const char *s) {
 void luart_init(void) {
     L = luaL_newstate();
     if (!L)
-        xfatal("luaL_newstate");
+        fatal("luaL_newstate");
 
     luaL_openlibs(L);
 

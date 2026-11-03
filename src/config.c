@@ -65,48 +65,48 @@ static int push_ctx_table(lua_State *state) {
 FILE *config_file_open(void) {
     int n;
 
-    if (opts[CONFIG].found) {
-        n = snprintf(config_path, PATH_MAX - 1, "%s", opts[CONFIG].val_str);
+    if (opts[OPT_CONFIG].found) {
+        n = snprintf(config_path, PATH_MAX - 1, "%s", opts[OPT_CONFIG].val_str);
     } else {
         const char *home = getenv("HOME");
         if (!home)
-            return NULL;
+            return nullptr;
 
         n = snprintf(config_path, PATH_MAX - 1,
                 "%s/.seashell.lua", home);
     }
 
     if (n < 0 || n >= PATH_MAX - 1)
-        return NULL;
+        return nullptr;
 
     int fd = open(config_path, O_RDONLY);
 
     if (fd == -1) {
-        if (opts[CONFIG].found)
-            xfatal("--config-file=%s: %m", opts[CONFIG].val_str);
+        if (opts[OPT_CONFIG].found)
+            fatal("--config-file=%s: %m", opts[OPT_CONFIG].val_str);
 
         if (errno != ENOENT)
-            return NULL;
+            return nullptr;
 
         void *saved_cb = input_sig_cb;
-        input_sig_cb = NULL;
+        input_sig_cb = nullptr;
 
         char *line = input_get_line(CONFIG_PROMPT);
         if (!line)
-            return NULL;
+            return nullptr;
 
         input_sig_cb = saved_cb;
 
         if (strcmp(line, "y") == 0) {
             if ((fd = open(config_path, O_RDWR | O_CREAT, 0600)) == -1) {
-                errno_msg("failed to create config file");
+                err_msg("open: error creating config: %m");
             } else {
                 printf("Successfully created '%s'!\n", CONFIG_PATH);
 
                 FILE *config = fdopen(fd, "r+");
 
                 if (fprintf(config, "return {}\n") < 0)
-                    xfatal("fprintf() falied()");
+                    fatal("fprintf() falied()");
 
                 if (fclose(config) == EOF)
                     err_exit_imp("fclose");
@@ -114,12 +114,12 @@ FILE *config_file_open(void) {
         }
 
         free(line);
-        return NULL;
+        return nullptr;
     }
 
     FILE *config = fdopen(fd, "r");
     if (!config)
-        return NULL;
+        return nullptr;
 
     return config;
 }
@@ -128,14 +128,14 @@ void parse_config() {
     ASSERT(lua_gettop(L) == 0);
 
     if (luaL_dofile(L, config_path) != LUA_OK)
-        xfatal("Lua: %s\n", lua_tostring(L, -1));
+        fatal("Lua: %s\n", lua_tostring(L, -1));
 
     if (!lua_istable(L, -1))
-        xfatal("config did not return a table: %s", config_path);
+        fatal("config did not return a table: %s", config_path);
 
     if (lua_getfield(L, -1, "prompt") != LUA_TNIL) {
         if (!lua_isfunction(L, -1))
-            xfatal("config.prompt not a function");
+            fatal("config.prompt not a function");
 
         if (ref_field_prompt != LUA_NOREF)
             luaL_unref(L, LUA_REGISTRYINDEX, ref_field_prompt);
@@ -155,7 +155,7 @@ void parse_config() {
                 char *key = xstrdup(lua_tostring(L, -2));
                 char *value = xstrdup(lua_tostring(L, -1));
 
-                add_var(&sh_env.vars, key, value, true);
+                add_var(&env.vars, key, value, true);
 
                 free(key);
                 free(value);
@@ -177,7 +177,7 @@ void parse_config() {
                 char *key = xstrdup(lua_tostring(L, -2));
                 char *value = xstrdup(lua_tostring(L, -1));
 
-                mp_str_add(&sh_env.aliases, key, value);
+                mp_str_add(&env.aliases, key, value);
 
                 free(key);
             }
@@ -195,7 +195,7 @@ void parse_config() {
 char *get_git_branch(void) {
     FILE *git_pipe = popen("git branch --show-current 2>/dev/null", "r");
     if (!git_pipe)
-        return NULL;
+        return nullptr;
 
     char *branch = nullptr;
     size_t n = 0;
@@ -250,15 +250,15 @@ int config_field_prompt(linc_string *string) {
     ASSERT(lua_gettop(L) == 0);
 
     if (lua_rawgeti(L, LUA_REGISTRYINDEX, ref_field_prompt) != LUA_TFUNCTION)
-        xfatal("unexpected lua reference");
+        fatal("unexpected lua reference");
 
-    char *cwd = xgetcwd(NULL, 0);
+    char *cwd = xgetcwd(nullptr, 0);
     char *home = getenv("HOME");
     if (!home)
         home = "";
 
     int last_status = 0;
-    sh_var *var = lookup_var(&sh_env.vars, "?");
+    sh_var *var = lookup_var(&env.vars, "?");
     if (var->value) {
         char *endptr;
         long l = strtol(var->value, &endptr, 10);
@@ -279,13 +279,13 @@ int config_field_prompt(linc_string *string) {
     lua_pushlightuserdata(L, &git_untracked);
 
     if (lua_pcall(L, 6, 1, 0) != LUA_OK)
-        xfatal("Lua: %s", lua_tostring(L, -1));
+        fatal("Lua: %s", lua_tostring(L, -1));
 
     if (lua_pcall(L, 1, 1, 0) != LUA_OK)
-        xfatal("Lua: %s", lua_tostring(L, -1));
+        fatal("Lua: %s", lua_tostring(L, -1));
 
     if (lua_type(L, -1) != LUA_TSTRING)
-        xfatal("config.prompt did not return a string");
+        fatal("config.prompt did not return a string");
 
     const char *prompt = lua_tostring(L, -1);
     linc_string_append(string, prompt);
@@ -300,12 +300,11 @@ int config_field_prompt(linc_string *string) {
 
 void config_init(void) {
     FILE *config = config_file_open();
-
     if (!config)
         return;
 
     parse_config();
 
     if (fclose(config) == EOF)
-        xfatal("fclose");
+        fatal("fclose");
 }

@@ -1,5 +1,4 @@
 #include <stdarg.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <linux/limits.h>
@@ -8,72 +7,42 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include <linc.h>
-#include <linc/args.h>
-#include <linc/xsys.h>
+#include "config.h"
+#include "linc.h"
+#include "linc/args.h"
+#include "linc/xsys.h"
 #include "input.h"
-#include "job_state.h"
+#include "shell.h"
 #include "variable.h"
 #include "map.h"
 #include "state.h"
 #include "sig_funcs.h"
 #include "utils.h"
-#include "config.h"
 #include "luart.h"
 
 #define ALIAS_MAX 4096
 
-static void linc_fatal(const linc_fatal_ctx *ctx, void *_) {
-    char err_buf[BUFSIZ];
-
-    if (ctx->type == LINC_FATAL_OOM) {
-        snprintf(err_buf, BUFSIZ, "%s:%d %s: out of memory",
-                ctx->site.file, ctx->site.line, ctx->msg);
-    } else {
-        int n = snprintf(err_buf, BUFSIZ, "%s", ctx->msg);
-
-        if (n > 0 && n < BUFSIZ && ctx->type == LINC_FATAL_SYS) {
-            snprintf(
-                err_buf + n,
-                BUFSIZ - n,
-                ": %s",
-                strerror(ctx->saved_errno)
-            );
-        }
-
-        linc_log_write(
-            sh_env.shell_log,
-            LINC_LOG_ERROR,
-            ctx->site,
-            "Linc: %s",
-            err_buf
-        );
-    }
-
-    fatal("%s", err_buf);
-}
-
-linc_fatal_target linc_target = { .handler = linc_fatal };
+shell_env env = {0};
 
 linc_args opts[OPT_MAX + 1] = {
-    [LOGFD] = {
+    [OPT_LOG_FD] = {
         .long_name = "log-fd",
         .short_name = 'l',
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_INT
     },
-    [LOGFILE] = {
+    [OPT_LOG_FILE] = {
         .long_name = "log-file",
         .short_name = 'f',
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_STR
     },
-    [CLEAN] = {
+    [OPT_CLEAN] = {
         .long_name = "clean",
         .short_name = 'q',
         .has_arg = LINC_ARGS_ARG_NONE
     },
-    [CONFIG] = {
+    [OPT_CONFIG] = {
         .long_name = "config-file",
         .short_name = 'e',
         .has_arg = LINC_ARGS_ARG_REQ,
@@ -82,110 +51,119 @@ linc_args opts[OPT_MAX + 1] = {
     (linc_args){0}
 };
 
-static void seashell_shutdown(void) {
-    input_deinit();
+volatile sig_atomic_t sigchld_caught = false;
+volatile sig_atomic_t sighup_caught = false;
+volatile sig_atomic_t sigint_caught = false;
 
-    for (size_t i = 0; i < get_jctl()->jobs.size; ++i) {
-        jc_job *job = &get_jctl()->jobs.data[i];
+void linc_init(int argc, char *const *argv) {
+    if (linc_args_parse(argc, argv, opts, LINC_ARGS_NO_NON_OPTS) == -1)
+        exit(EXIT_FAILURE);
 
-        if (getpgrp() == job->pgrp.pgid || job->pgrp.pgid <= 1) {
-            xfatal("unexpected pgid %d", job->pgrp.pgid);
-            fprintf(stderr, "unexpected pgid %d\n", job->pgrp.pgid);
-            _exit(EXIT_FAILURE);
-        }
+    env.shell_fatal = (linc_fatal_target){ .handler = shell_fatal_handler };
+    env.shell_log = (linc_log){ .sink = shell_log_sink };
+    env.assert_log = (linc_log){ .sink = assert_log_sink };
 
-        if (kill(-job->pgrp.pgid, SIGHUP) == -1 && errno != ESRCH) {
-            LOG_ERR("kill: %m");
-            perror("kill");
-            _exit(EXIT_FAILURE);
-        }
-
-        if (kill(-job->pgrp.pgid, SIGCONT) == -1 && errno != ESRCH) {
-            LOG_ERR("kill: %m");
-            perror("kill");
-            _exit(EXIT_FAILURE);
-        }
-    }
-
-    while (get_wstat(&(wait_event){0}) != -1)
-        continue;
-
-    clear_job_events();
-    clear_job_table();
-
-    LOG_INFO("seashell shutting down");
+    linc_fatal_set_target(env.shell_fatal);
+    linc_log_set_default(env.shell_log);
 }
 
-static void log_setup(int *log_fd) {
-    if (opts[LOGFD].found) {
-        if (fcntl(opts[LOGFD].val_int, F_GETFD) == -1) {
+void sigchld_handler(int _) { sigchld_caught = true; }
+void sighup_handler(int _) { sighup_caught = true; }
+void sigint_handler(int _) { sigint_caught = true; }
+
+void sig_restore(sigset_t *og_mask) {
+    xsigprocmask(SIG_SETMASK, og_mask, nullptr);
+
+    sig_set_handler(SIGTTOU, SIG_DFL);
+    sig_set_handler(SIGTTIN, SIG_DFL);
+    sig_set_handler(SIGTSTP, SIG_DFL);
+    sig_set_handler(SIGQUIT, SIG_DFL);
+    sig_set_handler(SIGTERM, SIG_DFL);
+
+    sig_set_handler(SIGCHLD, SIG_DFL);
+    sig_set_handler(SIGHUP, SIG_DFL);
+    sig_set_handler(SIGINT, SIG_DFL);
+}
+
+static void sig_init(void) {
+    sig_set_handler(SIGTTOU, SIG_IGN);
+    sig_set_handler(SIGTTIN, SIG_IGN);
+    sig_set_handler(SIGTSTP, SIG_IGN);
+    sig_set_handler(SIGQUIT, SIG_IGN);
+    sig_set_handler(SIGTERM, SIG_IGN);
+
+    sig_set_handler(SIGCHLD, sigchld_handler);
+    sig_set_handler(SIGHUP, sighup_handler);
+    sig_set_handler(SIGINT, sigint_handler);
+
+    env.og_mask = sig_block(SIGCHLD);
+    sig_block(SIGHUP);
+    sig_block(SIGINT);
+}
+
+static void log_init(void) {
+    if (opts[OPT_LOG_FD].found) {
+        if (fcntl(opts[OPT_LOG_FD].val_int, F_GETFD) == -1) {
             perror("Error using log fd");
             exit(EXIT_FAILURE);
         }
 
-        *log_fd = opts[LOGFD].val_int;
-    } else if (opts[LOGFILE].found) {
-        *log_fd = open(opts[LOGFILE].val_str, O_WRONLY|O_CREAT|O_APPEND, 0666);
-        if (*log_fd == -1) {
+        env.log_fd = opts[OPT_LOG_FD].val_int;
+    } else if (opts[OPT_LOG_FILE].found) {
+        env.log_fd = open(opts[OPT_LOG_FILE].val_str,
+                O_WRONLY | O_CREAT | O_APPEND, 0666);
+        if (env.log_fd == -1) {
             perror("Failed to open log file");
             exit(EXIT_FAILURE);
         }
     } else {
-        *log_fd = -1;
+        env.log_fd = -1;
     }
-
-    sh_env.shell_log = (linc_log){ .sink = shell_log_sink };
-    sh_env.assert_log = (linc_log){ .sink = assert_log_sink };
-
-    linc_log_set_default(sh_env.shell_log);
 }
 
-static void var_setup(shell_env *env) {
-    mp_init(&env->vars, VAR_KEY_SIZE);
+static void var_init(void) {
+    mp_init(&env.vars, VAR_KEY_SIZE);
 
-    for (char **ep = environ; *ep != NULL; ++ep) {
+    for (char **ep = environ; *ep != nullptr; ++ep) {
         char *match = strchr(*ep, '=');
         if (!match)
-            xfatal("invalid environ entry");
+            fatal("invalid environ entry");
 
         char *lhs = strndup(*ep, match - *ep);
         char *rhs = xstrdup(match + 1);
                 /* no need to re-export, already in env */
-        if (add_var(&sh_env.vars, lhs, rhs, false) == -1)
+        if (add_var(&env.vars, lhs, rhs, false) == -1)
             LOG_ERR("Failed to add environment variable");
 
         free(lhs);
         free(rhs);
     }
 
-    add_var(&sh_env.vars, "?", "0", false);
+    add_var(&env.vars, "?", "0", false);
 }
 
-shell_env sh_env = {0};
+void env_init(int argc, char *const *argv) {
+    xsetvbuf(stdin, nullptr, _IONBF, 0);
+    xsetvbuf(stdout, nullptr, _IONBF, 0);
+    xsetvbuf(stderr, nullptr, _IONBF, 0);
 
-void env_setup(int argc, char *const *argv) {
-    linc_fatal_set_target(linc_target);
+    env.fg_jid = NOFG;
+    env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
 
-    if (linc_args_parse(argc, argv, opts, LINC_ARGS_NO_NON_OPTS) == -1)
-        exit(EXIT_FAILURE);
+    linc_init(argc, argv);
+    mp_init(&env.aliases, ALIAS_MAX);
 
-    xatexit(seashell_shutdown);
-
-    sh_env.subsh = SUBSH_NONE;
-    sh_env.fg_jid = NOFG;
-    sh_env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
-
-    xsetvbuf(stdin, NULL, _IONBF, 0);
-    xsetvbuf(stdout, NULL, _IONBF, 0);
-    xsetvbuf(stderr, NULL, _IONBF, 0);
-
-    log_setup(&sh_env.log_fd);
-    var_setup(&sh_env);
+    log_init();
+    var_init();
     input_init();
-    mp_init(&sh_env.aliases, ALIAS_MAX);
     luart_init();
+    sig_init();
 
-    sig_setup(&sh_env.og_mask);
+    input_set_suspend_mask(env.og_mask);
+    input_sig_cb = process_signals;
+
+    if (!opts[OPT_CLEAN].found)
+        config_init();
 
     LOG_INFO("seashell PID(%d)", getpid());
 }

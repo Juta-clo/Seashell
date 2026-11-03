@@ -3,7 +3,6 @@
 
 #include <linc/xsys.h>
 #include "utils.h"
-#include "job_state.h"
 #include "variable.h"
 #include "map.h"
 #include "utils.h"
@@ -43,13 +42,13 @@ int add_var(map_t *vars, char *key, char *value, bool export) {
     var->export = export;
 
     if (mp_str_add(vars, key, var) == -1)
-        xfatal("mp_str_add");
+        fatal("mp_str_add");
 
     return 0;
 }
 
 int get_last_status(void) {
-    sh_var *var = lookup_var(&sh_env.vars, "?");
+    sh_var *var = lookup_var(&env.vars, "?");
     if (!var)
         return -1;
 
@@ -59,14 +58,14 @@ int get_last_status(void) {
 void update_status_variable(int status) {
     char exit_stat[64];
     snprintf(exit_stat, 64, "%d", status);
-    add_var(&sh_env.vars, "?", exit_stat, false);
+    add_var(&env.vars, "?", exit_stat, false);
 }
 
 sh_var *lookup_var(map_t *vars, const char *key) {
     void *value;
 
     if (mp_str_lookup(vars, key, &value) == -1)
-        xfatal("mp_str_lookup");
+        fatal("mp_str_lookup");
 
     return value;
 }
@@ -79,7 +78,7 @@ sh_var *lookup_var_n(map_t *vars, const char *key, size_t key_len) {
     key_buf[key_len] = '\0';
 
     if (mp_str_lookup(vars, key_buf, &value) == -1)
-        xfatal("mp_str_lookup");
+        fatal("mp_str_lookup");
 
     return value;
 }
