@@ -91,7 +91,7 @@ struct proc_view {
     };
 };
 
-struct pline_data;
+struct sh_pgrp;
 
 void job_hangup(void);
 da_jevent job_get_snapshot(void);
@@ -105,7 +105,7 @@ int job_update(wait_event wev);
 bool job_set_running(int jid, job_event *jev);
 
 int job_new_id(void);
-void job_add(int jid, struct pline_data *pld);
+void job_add(int jid, struct sh_pgrp *pld);
 
 jc_job *job_lookup(int jid);
 pid_t job_lookup_pgrp(int jid);

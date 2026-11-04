@@ -7,17 +7,17 @@
 #include "linc/array.h"
 #include "jobs.h"
 
-typedef struct pline_data pline_data;
-typedef struct pline_proc pline_proc;
+typedef struct sh_pgrp sh_pgrp;
+typedef struct sh_proc sh_proc;
 
-LINC_ARRAY_TYPE(da_pline_proc, pline_proc);
+LINC_ARRAY_TYPE(da_sh_proc, sh_proc);
 
-struct pline_data {
+struct sh_pgrp {
     pid_t pgid;
-    da_pline_proc procs;
+    da_sh_proc procs;
 };
 
-struct pline_proc {
+struct sh_proc {
     pid_t pid;
     char **argv;
 };

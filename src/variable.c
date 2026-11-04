@@ -52,7 +52,12 @@ int get_last_status(void) {
     if (!var)
         return -1;
 
-    return get_int(var->value);
+    int status;
+
+    if (get_int(var->value, &status) == -1)
+        return EXIT_FAILURE;
+
+    return status;
 }
 
 void update_status_variable(int status) {

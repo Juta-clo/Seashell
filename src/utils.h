@@ -112,7 +112,7 @@ size_t argv_len(char **argv);
 void argv_free(char **argv);
 void argv_free_free(da_charp *arr);
 
-int get_int(const char *arg);
+int get_int(const char *arg, int *num);
 bool is_dir(const char *file);
 char *strdup_alloc(const char *str, linc_allo *allo);
 

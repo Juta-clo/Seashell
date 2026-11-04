@@ -82,17 +82,19 @@ void err_msg(const char *fmt, ...) {
 
 /* general */
 
-int get_int(const char *arg) {
+int get_int(const char *arg, int *num) {
+    ASSERT(num);
+
     if (arg[0] == '\0')
         return -1;
 
     char *endptr;
-    int num = (int) strtol(&arg[0], &endptr, 10);
+    *num = (int) strtol(&arg[0], &endptr, 10);
 
     if (*endptr != '\0')
         return -1;
 
-    return num;
+    return 0;
 }
 
 bool is_dir(const char *path) {

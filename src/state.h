@@ -43,11 +43,11 @@ enum {
     OPT_LOG_FILE,
     OPT_CLEAN,
     OPT_CONFIG,
-    OPT_MAX
+    OPT_MAX,
 };
 
 extern shell_env env;
-extern linc_args opts[OPT_MAX + 1];
+extern linc_args opts[];
 
 extern volatile sig_atomic_t sigchld_caught;
 extern volatile sig_atomic_t sighup_caught;

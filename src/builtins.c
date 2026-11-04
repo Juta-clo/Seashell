@@ -79,13 +79,15 @@ static int run_fg_builtin(char **argv, shell_env *env) {
         return EXIT_FAILURE;
     }
 
-    int jid = get_int(&argv[1][1]);
-    if (jid == -1) {
+    int jid;
+
+    if (get_int(&argv[1][1], &jid) == -1) {
         fprintf(stderr, "%s: job not found: %s\n", argv[0], argv[1]);
         return EXIT_FAILURE;
     }
 
     jc_job *job = job_lookup(jid);
+
     if (!job) {
         fprintf(stderr, "%s: no such job: %s\n", argv[0], argv[1]);
         return EXIT_FAILURE;
@@ -143,8 +145,9 @@ static int run_bg_builtin(char **argv, shell_env *env) {
         return EXIT_FAILURE;
     }
 
-    int jid = get_int(&argv[1][1]);
-    if (jid == -1) {
+    int jid;
+
+    if (get_int(&argv[1][1], &jid) == -1) {
         fprintf(stderr, "%s: job not found: %s\n", argv[0], argv[1]);
         return EXIT_FAILURE;
     }
@@ -200,8 +203,7 @@ static int run_kill_builtin(char **argv, shell_env *env) {
     }
 
     if (target_arg[0] == '%') {
-        jid = get_int(&target_arg[1]);
-        if (jid == -1) {
+        if (get_int(&target_arg[1], &jid) == -1) {
             fprintf(stderr, "%s: invalid job: %s\n", argv[0], target_arg);
             return EXIT_FAILURE;
         }
@@ -217,8 +219,7 @@ static int run_kill_builtin(char **argv, shell_env *env) {
             return EXIT_FAILURE;
         }
     } else {
-        pid = get_int(target_arg);
-        if (pid == -1) {
+        if (get_int(target_arg, &pid) == -1) {
             fprintf(stderr, "%s: illegal pid: %s\n", argv[0], target_arg);
             return EXIT_FAILURE;
         }

@@ -24,7 +24,7 @@
 
 shell_env env = {0};
 
-linc_args opts[OPT_MAX + 1] = {
+linc_args opts[] = {
     [OPT_LOG_FD] = {
         .long_name = "log-fd",
         .short_name = 'l',
@@ -48,7 +48,7 @@ linc_args opts[OPT_MAX + 1] = {
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_STR
     },
-    (linc_args){0}
+    {0}
 };
 
 volatile sig_atomic_t sigchld_caught = false;

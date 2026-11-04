@@ -345,7 +345,7 @@ int job_new_id(void) {
     return jid;
 }
 
-void job_add(int jid, pline_data *pld) {
+void job_add(int jid, sh_pgrp *pld) {
     ASSERT(pld);
 
     if (pld->procs.size == 0)
@@ -360,7 +360,7 @@ void job_add(int jid, pline_data *pld) {
 
     for (size_t i = 0; i < pld->procs.size; ++i) {
         jc_proc *proc = linc_array_push(&job->pgrp.procs);
-        pline_proc *pproc = &pld->procs.data[i];
+        sh_proc *pproc = &pld->procs.data[i];
 
         proc->pid = pproc->pid;
         proc->stat = PROC_RUN;

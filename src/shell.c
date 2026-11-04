@@ -93,14 +93,14 @@ static void child_redir_setup(da_redir *redirs) {
     }
 }
 
-static pline_data exec_pline(const ps_pline *pline, bool bg) {
+static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
     if (!pline)
         ASSERT(pline);
 
     int next_pipe[2];
     int prev_rfd;
 
-    pline_data pld = {0};
+    sh_pgrp pld = {0};
 
     for (size_t i = 0; i < pline->cmds.size; ++i) {
         ps_cmd *cur_cmd = &pline->cmds.data[i];
@@ -164,7 +164,7 @@ static pline_data exec_pline(const ps_pline *pline, bool bg) {
             xclose(next_pipe[1]);
         }
 
-        pline_proc *pproc = linc_array_push(&pld.procs);
+        sh_proc *pproc = linc_array_push(&pld.procs);
         pproc->pid = cpid;
         pproc->argv = argv_copy(cur_cmd->argv);
     }
@@ -196,8 +196,7 @@ static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
 }
 
 static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
-        bool verbose)
-{
+        bool verbose) {
     linc_string out = LINC_STRING_INIT;
     int min_offset = 1;
 
@@ -207,18 +206,20 @@ static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
 
         if (verbose || y == 0 || !same_ev_type(pview, &pview[-1])) {
             if (pview->stat == PROC_EXIT) {
-                if (pview->exit_stat == 0)
+                if (pview->exit_stat == 0) {
                     linc_string_appendf(&out, "done");
-                else
+                } else {
                     linc_string_appendf(&out, "exit %d", pview->exit_stat);
+                }
             } else if (pview->stat == PROC_RUN) {
                 linc_string_append(&out, "running");
             } else if (pview->stat == PROC_SIG) {
                 linc_string_appendf(&out, "%s", strsignal(pview->term_sig));
             } else if (pview->stat == PROC_STOP) {
                 linc_string_appendf(&out, "%s", strsignal(pview->stop_sig));
-            } else
+            } else {
                 argv_off -= 1;
+            }
 
             int len = off + (out.len - prev_len);
             int off = MAX(argv_off - len, min_offset);
@@ -302,18 +303,18 @@ static void flush_job_events(void) {
 }
 
 static int shell_run_pline(ps_pline *pline, bool bg, int jid) {
-    if (expand_pline(pline) == -1)
-        return -1;
-
-    if (!bg && env.subsh == SUBSH_NONE) {
-        env.fg_jid = jid;
-        xtcgetattr(env.tty_fd, &env.tio);
-    }
-
     bool handled = false;
-    bool try_builtin = pline->cmds.size == 1 &&
-                       pline->cmds.data[0].redirs.size == 0 &&
-                       (!bg || env.subsh != SUBSH_NONE);
+
+    /* Only run builtin inside the main shell (or subshell) if the process:
+     * 1) is a single command pipeline.
+     * 2) has no redirections
+     * 3) is in the foreground, unless it is an async subshell. */
+
+    bool try_builtin = (
+        pline->cmds.size == 1 &&
+        pline->cmds.data[0].redirs.size == 0 &&
+        (!bg || env.subsh == SUBSH_ASYNC)
+    );
 
     if (try_builtin) {
         sh_builtin *builtin = get_builtin(pline->cmds.data[0].argv[0]);
@@ -336,7 +337,7 @@ static int shell_run_pline(ps_pline *pline, bool bg, int jid) {
     }
 
     if (!handled) {
-        pline_data pld = exec_pline(pline, bg);
+        sh_pgrp pld = exec_pline(pline, bg);
         job_add(jid, &pld);
 
         LOG_INFO("[%d] Started %s %d", jid, pline->cmds.data[0].argv[0],
@@ -406,13 +407,17 @@ static int shell_run_andor(ps_ast *ast) {
         ps_andor *andor = &ast->andors.data[i];
 
         if (andor_should_run(andor, status)) {
-            env.fg_jid = job_new_id();
-
-            if (shell_run_pline(&andor->pline, ast->bg, env.fg_jid) == -1) {
+            if (expand_pline(&andor->pline) == -1) {
                 status = EXIT_FAILURE;
-                env.fg_jid = NOFG;
                 continue;
             }
+
+            env.fg_jid = job_new_id();
+
+            if (!ast->bg && env.subsh == SUBSH_NONE)
+                xtcgetattr(env.tty_fd, &env.tio);
+
+            shell_run_pline(&andor->pline, ast->bg, env.fg_jid);
 
             if (env.subsh == SUBSH_NONE && ast->bg) {
                 pid_t pgrp = job_lookup_pgrp(env.fg_jid);
@@ -547,9 +552,9 @@ int shell_run(const char *cmd) {
     }
 
     int jid = job_new_id();
-    pline_data pld = { .pgid = subsh_pgid };
+    sh_pgrp pld = { .pgid = subsh_pgid };
 
-    *linc_array_push(&pld.procs) = (pline_proc) {
+    *linc_array_push(&pld.procs) = (sh_proc) {
         .argv = argv_copy((char *[]){ line, nullptr }),
         .pid = subsh_pgid
     };
