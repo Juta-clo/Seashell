@@ -30,6 +30,17 @@
         } \
     } while (false)
 
+#define ERR_EOL() \
+    do { \
+        if (scan->print_err) { \
+            if (scan->ast->nested) {  \
+                err_msg("parse error near ')'"); \
+            } else { \
+                err_msg("parse error near '\\n'"); \
+            } \
+        } \
+    } while (false)
+
 typedef struct {
     int paren_n;
     bool print_err;
@@ -200,10 +211,11 @@ static int parse_subshell(ps_scanner *scan, da_tok *toks, size_t *ind) {
         return -1;
     }
 
+    size_t i = *ind + 1;
     size_t n = 0;
     int paren_count = 1;
 
-    for (size_t i = *ind + 1; i < toks->size; ++i, ++n) {
+    for (; i < toks->size; ++i, ++n) {
         lx_kind kind = toks->data[i].kind;
 
         if (kind == LX_TOK_LPAREN)
@@ -216,8 +228,15 @@ static int parse_subshell(ps_scanner *scan, da_tok *toks, size_t *ind) {
             break;
     }
 
-    if (paren_count != 0)
+    if (paren_count != 0 || n == 0) {
+        if (i == toks->size) {
+            ERR_EOL();
+        } else {
+            ERR_TOK(&toks->data[i]);
+        }
+
         return -1;
+    }
 
     lx_tok tok;
     da_tok subsh_toks = {0};
@@ -272,10 +291,8 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
         .print_err = print_err
     };
 
-    if (!toks || !ast || toks->size == 0) {
-        ERR_MSG("bad input");
+    if (!toks || !ast || toks->size == 0)
         goto fail;
-    }
 
     for (size_t i = 0; i < toks->size; ++i, ++scan->cur_tok) {
         lx_kind kind = scan->cur_tok->kind;
@@ -342,7 +359,7 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
             scan->need_tok = false;
             break;
         case LX_TOK_RPAREN:
-            goto fail;
+            goto fail_tok;
         case LX_TOK_PIPE:
             scan->cur_cmd = nullptr;
             scan->need_tok = true;
@@ -385,7 +402,7 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
     }
 
     if (scan->queued_redir || scan->need_tok) {
-        ERR_TOK(&toks->data[toks->size - 1]);
+        ERR_EOL();
         goto fail;
     }
 
