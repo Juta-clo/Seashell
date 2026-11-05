@@ -33,6 +33,8 @@
         ((max_a) > (max_b)) ? (max_a) : (max_b); \
     })
 
+#define STRINGIFY(_str) #_str
+
 #define fatal(...) \
     do { \
         LOG_ERR(__VA_ARGS__); \
@@ -54,54 +56,41 @@ void err_exit_imp(const char *fmt, ...);
 __attribute__ ((__format__(printf, 1, 2)))
 void err_msg(const char *fmt, ...);
 
-#define assert_imp(_site, _type, _a, _b, _ap, _bp) \
+#define ASSERT_OP_EQ  ==
+#define ASSERT_OP_NEQ !=
+#define ASSERT_OP_G   >
+#define ASSERT_OP_GEQ >=
+#define ASSERT_OP_L   <
+#define ASSERT_OP_LEQ <=
+
+#define assert_imp(_op, _a, _b, _ap, _bp) \
     ({ \
-        bool result; \
-        char *op; \
-        \
-        switch (_type) { \
-        case ASSERT_EQ:  result = (_a == _b); op = "=="; break; \
-        case ASSERT_NEQ: result = (_a != _b); op = "!="; break; \
-        case ASSERT_G:   result = (_a > _b);  op = ">";  break; \
-        case ASSERT_GEQ: result = (_a >= _b); op = ">="; break; \
-        case ASSERT_L:   result =  (_a < _b);  op = "<";  break; \
-        case ASSERT_LEQ: result = (_a <= _b); op = "<="; break; \
-        default: \
-            fatal("bad assertion type"); \
-        } \
-        \
-        if (!result) { \
+        if (!(_a _op _b)) { \
             linc_log_write( \
-                env.assert_log, LINC_LOG_ERROR, _site, \
+                env.assert_log, LINC_LOG_ERROR, LINC_SITE, \
                 "%s %s %s, %s = %Lg, %s = %Lg", \
-                _ap, op, _bp, _ap, (long double)_a, _bp, (long double)_b \
+                _ap, STRINGIFY(_op), _bp, \
+                _ap, (long double)_a, _bp, (long double)_b \
             ); \
         \
             fatal_imp(nullptr); \
         } \
     })
 
-#define ASSERT_(_type, _a, _b) \
+#define ASSERT_(_op, _a, _b) \
     ({ \
-        assert_op assert_kind = (ASSERT_##_type); \
-        __auto_type assert_a = (_a); \
-        __auto_type assert_b = (_b); \
+        __auto_type assert_value_a = (_a); \
+        __auto_type assert_value_b = (_b); \
         \
-        assert_imp(LINC_SITE, assert_kind, assert_a, assert_b, #_a, #_b); \
+        assert_imp( \
+            ASSERT_OP_##_op, \
+            assert_value_a, assert_value_b, \
+            #_a, #_b \
+        ); \
     })
 
 #define ASSERT(_a) \
     assert_bool_imp(LINC_SITE, _a, #_a);
-
-typedef enum {
-    ASSERT_BOOL,
-    ASSERT_EQ,
-    ASSERT_NEQ,
-    ASSERT_G,
-    ASSERT_GEQ,
-    ASSERT_L,
-    ASSERT_LEQ,
-} assert_op;
 
 void assert_bool_imp(linc_site site, ...);
 

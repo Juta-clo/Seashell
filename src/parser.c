@@ -195,12 +195,12 @@ static int expand_alias(ps_scanner *scan, da_tok *toks, size_t i) {
         alias_toks.size * sizeof(lx_tok)
     );
 
-    linc_array_free(&alias_toks);
-    scan->cur_tok = &toks->data[i];
-
     LOG_INFO("expanded alias {");
     log_tokens(&alias_toks);
     LOG_INFO("}");
+
+    linc_array_free(&alias_toks);
+    scan->cur_tok = &toks->data[i];
 
     return 0;
 }
@@ -274,7 +274,7 @@ void ps_free(ps_ast *ast) {
 int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
     ASSERT(toks && ast);
 
-    if (!ast->andors.allo.alloc) {
+    if (!ast->allo.alloc) {
         ast->allo = (linc_allo){
             .alloc = arena_alloc,
             .free = arena_free,
