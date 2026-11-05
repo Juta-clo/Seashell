@@ -52,10 +52,24 @@ TEST_GROUP(parser);
     EXP_DA(exp_da_redir, exp_redir, __VA_ARGS__)
 
 #define CMD_R(WORDS, REDIRS) \
-    ((exp_cmd){ .words = (WORDS), .redirs = (REDIRS) })
+    ((exp_cmd){ \
+        .kind = PS_CMD_SIMPLE, \
+        .words = (WORDS), \
+        .redirs = (REDIRS) \
+     })
 
 #define CMD(...) \
-    ((exp_cmd){ .words = WORDS(__VA_ARGS__), .redirs = NO_REDIRS })
+    CMD_R(WORDS(__VA_ARGS__), NO_REDIRS)
+
+#define SUBSH_R(_ast, ...) \
+    ((exp_cmd){ \
+        .kind = PS_CMD_SUBSH, \
+        .subsh = (_ast), \
+        .redirs = (__VA_ARGS__), \
+    })
+
+#define SUBSH(_ast) \
+    SUBSH_R(_ast, NO_REDIRS)
 
 #define SIMPLE_CMD(RAW) \
     CMD(WORDS(PLAIN_WORD(RAW)))
@@ -81,14 +95,37 @@ TEST_GROUP(parser);
 #define BG_OFF 0
 #define BG_ON  1
 
-#define JOB(...) \
-    ((exp_job){ .andors = ANDORS(__VA_ARGS__), .bg = BG_OFF })
+#define AST(...) \
+    ((exp_ast){ .andors = ANDORS(__VA_ARGS__), .bg = BG_OFF })
 
-#define JOB_BG(...) \
-    ((exp_job){ .andors = ANDORS(__VA_ARGS__), .bg = BG_ON })
+#define AST_BG(...) \
+    ((exp_ast){ .andors = ANDORS(__VA_ARGS__), .bg = BG_ON })
 
-#define JOB_SIMPLE(...) \
-    JOB(NOIF(CMD(__VA_ARGS__)))
+#define AST_SIMPLE(...) \
+    AST(NOIF(CMD(__VA_ARGS__)))
+
+#define add_alias(_alias, _value) \
+    do { \
+        char *add_alias_value = strdup(_value); \
+        if (!add_alias_value) \
+            TEST_FAIL_MESSAGE("strdup() failed"); \
+        \
+        if (mp_str_add(&env.aliases, _alias, add_alias_value) == -1) \
+            TEST_FAIL_MESSAGE("mp_str_add() failed"); \
+    } while (false)
+
+
+typedef struct exp_andor exp_andor;
+
+typedef struct {
+    exp_andor *data;
+    size_t size;
+} exp_da_andor;
+
+typedef struct {
+    exp_da_andor andors;
+    bool bg;
+} exp_ast;
 
 typedef struct {
     char *raw;
@@ -121,8 +158,12 @@ typedef struct {
 } exp_da_word;
 
 typedef struct {
+    ps_cmd_kind kind;
+
     exp_da_word words;
     exp_da_redir redirs;
+
+    exp_ast subsh;
 } exp_cmd;
 
 typedef struct {
@@ -134,20 +175,12 @@ typedef struct {
     exp_da_cmd cmds;
 } exp_pipeline;
 
-typedef struct {
+struct exp_andor {
     exp_pipeline pipeline;
     ps_andor_op op;
-} exp_andor;
+};
 
-typedef struct {
-    exp_andor *data;
-    size_t size;
-} exp_da_andor;
-
-typedef struct {
-    exp_da_andor andors;
-    bool bg;
-} exp_job;
+static void validate_job(const exp_ast *exp, const ps_ast *job);
 
 static void validate_segment(const exp_segment *exp, const ps_segment *segment) {
     TEST_ASSERT_EQUAL_STRING(exp->raw, segment->raw);
@@ -192,8 +225,15 @@ static void validate_words(const exp_da_word *exp, const da_word *words) {
 }
 
 static void validate_cmd(const exp_cmd *exp, const ps_cmd *cmd) {
-    validate_words(&exp->words, &cmd->words);
-    validate_redirs(&exp->redirs, &cmd->redirs);
+    if (exp->kind == PS_CMD_SIMPLE) {
+        TEST_ASSERT_EQUAL(PS_CMD_SIMPLE, cmd->kind);
+        validate_words(&exp->words, &cmd->words);
+        validate_redirs(&exp->redirs, &cmd->redirs);
+    } else {
+        TEST_ASSERT_EQUAL(PS_CMD_SUBSH, cmd->kind);
+        validate_job(&exp->subsh, &cmd->subsh);
+        validate_redirs(&exp->redirs, &cmd->redirs);
+    }
 }
 
 static void validate_cmds(const exp_da_cmd *exp, const da_cmd *cmds) {
@@ -223,22 +263,37 @@ static void validate_andors(const exp_da_andor *exp, const da_andor *andors) {
     }
 }
 
-static void validate_job(const exp_job *exp, const ps_ast *job) {
+static void validate_job(const exp_ast *exp, const ps_ast *job) {
     TEST_ASSERT_EQUAL_INT(exp->bg, job->bg);
     validate_andors(&exp->andors, &job->andors);
 }
 
-static void validate(const char *shell_cmd, const exp_job *exp) {
+static void validate(const char *shell_cmd, const exp_ast *exp) {
     da_tok tokens = {0};
     TEST_ASSERT_NOT_EQUAL_INT(-1, lx_tokenize(shell_cmd, &tokens));
 
     ps_ast job = {0};
-    TEST_ASSERT_NOT_EQUAL_INT(-1, ps_parse(&tokens, &job));
+    TEST_ASSERT_NOT_EQUAL_INT(-1, ps_parse(&tokens, &job, true));
 
     validate_job(exp, &job);
 
     lx_free(&tokens);
     ps_free(&job);
+}
+
+static void validate_fail(const char *shell_cmd) {
+    da_tok tokens = {0};
+    ps_ast ast = {0};
+
+    if (lx_tokenize(shell_cmd, &tokens) == -1)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    if (ps_parse(&tokens, &ast, false) != -1) {
+        ps_free(&ast);
+        TEST_FAIL_MESSAGE("ps_parse() didn't fail");
+    }
+
+    lx_free(&tokens);
 }
 
 /************ Fixture ************/
@@ -254,67 +309,31 @@ TEST_TEAR_DOWN(parser) {
 /************ Tests ************/
 
 TEST(parser, bg_not_final_token_should_fail) {
-    da_tok tokens;  /* Start with 'a' so we don't short circuit */
-    TEST_ASSERT_EQUAL_INT(0, lx_tokenize("a & b", &tokens));
-
-    ps_ast job;
-    TEST_ASSERT_EQUAL_INT(-1, ps_parse(&tokens, &job));
-
-    lx_free(&tokens);
+    validate_fail("a & b");
 }
 
 TEST(parser, redirect_with_no_target_fails) {
-    da_tok tokens;
-    TEST_ASSERT_EQUAL_INT(0, lx_tokenize("echo hi >", &tokens));
-
-    ps_ast job;
-    TEST_ASSERT_EQUAL_INT(-1, ps_parse(&tokens, &job));
-
-    lx_free(&tokens);
+    validate_fail("echo hi >");
 }
 
 TEST(parser, pipe_is_final_token_should_fail) {
-    da_tok tokens;
-    TEST_ASSERT_EQUAL_INT(0, lx_tokenize("cmd |", &tokens));
-
-    ps_ast job;
-    TEST_ASSERT_EQUAL_INT(-1, ps_parse(&tokens, &job));
-
-    lx_free(&tokens);
+    validate_fail("cmd |");
 }
 
 TEST(parser, andif_is_final_token_should_fail) {
-    da_tok tokens;
-    TEST_ASSERT_EQUAL_INT(0, lx_tokenize("cmd &&", &tokens));
-
-    ps_ast job;
-    TEST_ASSERT_EQUAL_INT(-1, ps_parse(&tokens, &job));
-
-    lx_free(&tokens);
+    validate_fail("cmd &&");
 }
 
 TEST(parser, orif_is_final_token_should_fail) {
-    da_tok tokens;
-    TEST_ASSERT_EQUAL_INT(0, lx_tokenize("cmd ||", &tokens));
-
-    ps_ast job;
-    TEST_ASSERT_EQUAL_INT(-1, ps_parse(&tokens, &job));
-
-    lx_free(&tokens);
+    validate_fail("cmd ||");
 }
 
 TEST(parser, no_cmd_redir_should_fail) {
-    da_tok tokens = {0};
-    TEST_ASSERT_EQUAL_INT(0, lx_tokenize("echo > |", &tokens));
-
-    ps_ast ast = {0};
-    TEST_ASSERT_EQUAL_INT(-1, ps_parse(&tokens, &ast));
-
-    lx_free(&tokens);
+    validate_fail("echo > |");
 }
 
 TEST(parser, bg_is_final_token_should_pass) {
-    exp_job exp = JOB_BG(
+    exp_ast exp = AST_BG(
         NOIF(
             CMD(
                 PLAIN_WORD("a")
@@ -325,14 +344,14 @@ TEST(parser, bg_is_final_token_should_pass) {
 }
 
 TEST(parser, cmd_one_word) {
-    exp_job exp = JOB_SIMPLE(
+    exp_ast exp = AST_SIMPLE(
         PLAIN_WORD("a")
     );
     validate("a", &exp);
 }
 
 TEST(parser, cmd_two_word) {
-    exp_job exp = JOB_SIMPLE(
+    exp_ast exp = AST_SIMPLE(
         PLAIN_WORD("a"),
         PLAIN_WORD("b")
     );
@@ -340,7 +359,7 @@ TEST(parser, cmd_two_word) {
 }
 
 TEST(parser, cmd_many_word) {
-    exp_job exp = JOB_SIMPLE(
+    exp_ast exp = AST_SIMPLE(
         PLAIN_WORD("command"),
         PLAIN_WORD("arg1"),
         PLAIN_WORD("arg2"),
@@ -351,7 +370,7 @@ TEST(parser, cmd_many_word) {
 }
 
 TEST(parser, two_cmd_pipeline) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD(PLAIN_WORD("a")),
             CMD(PLAIN_WORD("b"))
@@ -361,7 +380,7 @@ TEST(parser, two_cmd_pipeline) {
 }
 
 TEST(parser, three_cmd_pipeline) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD(PLAIN_WORD("a")),
             CMD(PLAIN_WORD("b")),
@@ -372,7 +391,7 @@ TEST(parser, three_cmd_pipeline) {
 }
 
 TEST(parser, two_pipeline_and_if) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD(PLAIN_WORD("a"))
         ),
@@ -384,7 +403,7 @@ TEST(parser, two_pipeline_and_if) {
 }
 
 TEST(parser, two_pipeline_or_if) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD(PLAIN_WORD("a"))
         ),
@@ -396,7 +415,7 @@ TEST(parser, two_pipeline_or_if) {
 }
 
 TEST(parser, container_control_flow) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD(
                 PLAIN_WORD("wc"),
@@ -421,7 +440,7 @@ TEST(parser, container_control_flow) {
 }
 
 TEST(parser, and_if_with_redirects) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD(PLAIN_WORD("a"))
         ),
@@ -443,7 +462,7 @@ TEST(parser, and_if_with_redirects) {
 }
 
 TEST(parser, or_if_then_and_if) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD(PLAIN_WORD("a"))
         ),
@@ -458,7 +477,7 @@ TEST(parser, or_if_then_and_if) {
 }
 
 TEST(parser, redir_in) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD_R(
                 WORDS(
@@ -477,7 +496,7 @@ TEST(parser, redir_in) {
 }
 
 TEST(parser, redir_out) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD_R(
                 WORDS(
@@ -496,7 +515,7 @@ TEST(parser, redir_out) {
 }
 
 TEST(parser, redir_err) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD_R(
                 WORDS(
@@ -516,7 +535,7 @@ TEST(parser, redir_err) {
 }
 
 TEST(parser, redir_append) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD_R(
                 WORDS(
@@ -536,7 +555,7 @@ TEST(parser, redir_append) {
 }
 
 TEST(parser, multiple_redirects) {
-    exp_job exp = JOB(
+    exp_ast exp = AST(
         NOIF(
             CMD_R(
                 WORDS(
@@ -560,6 +579,258 @@ TEST(parser, multiple_redirects) {
         )
     );
     validate("syslog > output > output2 2> errors", &exp);
+}
+
+TEST(parser, subshell_not_in_command_position_should_fail) {
+    validate_fail("a (b && c)");
+}
+
+TEST(parser, subshell_after_redirect_should_fail) {
+    validate_fail("a > (b && c)");
+}
+
+TEST(parser, subshell_nested_syntax_error_should_fail) {
+    validate_fail("(a |)");
+}
+
+TEST(parser, subshell_simple_command) {
+    exp_ast subsh = AST_SIMPLE(
+        PLAIN_WORD("echo"),
+        PLAIN_WORD("x")
+    );
+
+    exp_ast exp = AST(NOIF(SUBSH(subsh)));
+
+    validate("(echo x)", &exp);
+}
+
+TEST(parser, subshell_with_pipeline) {
+    exp_ast subsh = AST(
+        NOIF(
+            CMD(PLAIN_WORD("a")),
+            CMD(PLAIN_WORD("b"))
+        )
+    );
+
+    exp_ast exp = AST(NOIF(SUBSH(subsh)));
+
+    validate("(a | b)", &exp);
+}
+
+TEST(parser, subshell_with_andors) {
+    exp_ast subsh = AST(
+        NOIF(
+            CMD(PLAIN_WORD("a"))
+        ),
+        ANDIF(
+            CMD(PLAIN_WORD("b"))
+        )
+    );
+
+    exp_ast exp = AST(NOIF(SUBSH(subsh)));
+
+    validate("(a && b)", &exp);
+}
+
+TEST(parser, subshell_in_end_of_pipeline) {
+    exp_ast subsh = AST_SIMPLE(PLAIN_WORD("b"));
+
+    exp_ast exp = AST(
+        NOIF(
+            CMD(PLAIN_WORD("a")),
+            SUBSH(subsh)
+        )
+    );
+
+    validate("a | (b)", &exp);
+}
+
+TEST(parser, subshell_in_beginning_of_pipeline) {
+    exp_ast subsh = AST_SIMPLE(PLAIN_WORD("a"));
+
+    exp_ast exp = AST(
+        NOIF(
+            SUBSH(subsh),
+            CMD(PLAIN_WORD("b"))
+        )
+    );
+
+    validate("(a) | b", &exp);
+}
+
+TEST(parser, subshell_in_end_of_andor) {
+    exp_ast subsh = AST_SIMPLE(PLAIN_WORD("b"));
+
+    exp_ast exp = AST(
+        NOIF(
+            CMD(PLAIN_WORD("a")),
+        ),
+        ANDIF(
+            SUBSH(subsh)
+        )
+    );
+
+    validate("a && (b)", &exp);
+}
+
+TEST(parser, subshell_in_beginning_of_andor) {
+    exp_ast subsh = AST_SIMPLE(PLAIN_WORD("a"));
+
+    exp_ast exp = AST(
+        NOIF(
+            SUBSH(subsh)
+        ),
+        ANDIF(
+            CMD(PLAIN_WORD("b")),
+        )
+    );
+
+    validate("(a) && b", &exp);
+}
+
+TEST(parser, subshell_with_complex_command) {
+    exp_ast subsh = AST_BG(
+        NOIF(CMD(PLAIN_WORD("a"))),
+        ANDIF(CMD(PLAIN_WORD("b")), CMD(PLAIN_WORD("c"))),
+        ORIF(CMD_R(
+            WORDS(PLAIN_WORD("d")),
+            REDIRS(REDIR(PLAIN_WORD("e"), 1, false)))
+        ),
+    );
+
+    exp_ast exp = AST(NOIF(SUBSH(subsh)));
+
+    validate("(a && b | c || d > e &)", &exp);
+}
+
+TEST(parser, subshell_within_a_subshell) {
+    exp_ast exp = AST(NOIF(SUBSH(
+        AST(NOIF(SUBSH(
+            AST_SIMPLE(PLAIN_WORD("a"))))
+        )
+    )));
+
+    validate("((a))", &exp);
+}
+
+TEST(parser, subshell_within_a_pipeline_in_a_subshell) {
+    exp_ast exp = AST(NOIF(SUBSH(
+        AST(NOIF(
+            SUBSH(AST_SIMPLE(PLAIN_WORD("a"))),
+            CMD(PLAIN_WORD("b"))
+        ))
+    )));
+
+    validate("((a) | b)", &exp);
+}
+
+TEST(parser, subshell_with_redirect) {
+    exp_ast exp = AST(
+        NOIF(SUBSH_R(
+            AST_SIMPLE(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("b"), 1, false))
+        ))
+    );
+
+    validate("(a) > b", &exp);
+}
+
+TEST(parser, subshell_with_multiple_redirects) {
+    exp_ast exp = AST(
+        NOIF(SUBSH_R(
+            AST_SIMPLE(PLAIN_WORD("a")),
+            REDIRS(
+                REDIR(PLAIN_WORD("b"), 1, false),
+                REDIR(PLAIN_WORD("c"), 2, false),
+                REDIR(PLAIN_WORD("d"), 1, true)
+            )
+        ))
+    );
+
+    validate("(a) > b 2> c >> d", &exp);
+}
+
+TEST(parser, subshell_with_alias_expansion) {
+    if (mp_str_add(&env.aliases, "p", strdup("echo hello")) == -1)
+        TEST_FAIL_MESSAGE("mp_str_add() failed");
+
+    exp_ast exp = AST(
+        NOIF(SUBSH(
+            AST_SIMPLE(PLAIN_WORD("echo"), PLAIN_WORD("hello"))
+        ))
+    );
+
+    validate("(p)", &exp);
+}
+
+TEST(parser, alias_simple_word) {
+    add_alias("foo", "bar");
+    exp_ast exp = AST_SIMPLE(PLAIN_WORD("bar"));
+    validate("foo", &exp);
+}
+
+TEST(parser, alias_multiple_words) {
+    add_alias("foo", "bar bee boo");
+    exp_ast exp = AST_SIMPLE(
+        PLAIN_WORD("bar"),
+        PLAIN_WORD("bee"),
+        PLAIN_WORD("boo"),
+    );
+    validate("foo", &exp);
+}
+
+TEST(parser, alias_with_redirection) {
+    add_alias("foo", "bar > bee");
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("bar")),
+            REDIRS(REDIR(PLAIN_WORD("bee"), 1, false))
+        )
+    ));
+    validate("foo", &exp);
+}
+
+TEST(parser, alias_with_multiple_redirections) {
+    add_alias("foo", "bar > bee 2> boo");
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("bar")),
+            REDIRS(
+                REDIR(PLAIN_WORD("bee"), 1, false),
+                REDIR(PLAIN_WORD("boo"), 2, false)
+            )
+        )
+    ));
+    validate("foo", &exp);
+}
+
+TEST(parser, alias_with_pipeline) {
+    add_alias("foo", "bar | bee");
+    exp_ast exp = AST(
+        NOIF(
+            CMD(PLAIN_WORD("bar")),
+            CMD(PLAIN_WORD("bee"))
+        )
+    );
+    validate("foo", &exp);
+}
+
+TEST(parser, alias_with_andor) {
+    add_alias("foo", "bar && bee");
+    exp_ast exp = AST(
+        NOIF(CMD(PLAIN_WORD("bar"))),
+        ANDIF(CMD(PLAIN_WORD("bee")))
+    );
+    validate("foo", &exp);
+}
+
+TEST(parser, alias_that_expands_into_pipeline) {
+    add_alias("bar", "| bee");
+    exp_ast exp = AST(NOIF(CMD(
+        PLAIN_WORD("foo"),
+        PLAIN_WORD("bar")
+    )));
+    validate("foo bar", &exp);
 }
 
 /************ Test runner ************/
@@ -587,4 +858,29 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, redir_err);
     RUN_TEST_CASE(parser, redir_append);
     RUN_TEST_CASE(parser, multiple_redirects);
+
+    RUN_TEST_CASE(parser, subshell_not_in_command_position_should_fail);
+    RUN_TEST_CASE(parser, subshell_after_redirect_should_fail);
+    RUN_TEST_CASE(parser, subshell_nested_syntax_error_should_fail);
+    RUN_TEST_CASE(parser, subshell_simple_command);
+    RUN_TEST_CASE(parser, subshell_with_pipeline);
+    RUN_TEST_CASE(parser, subshell_with_andors);
+    RUN_TEST_CASE(parser, subshell_in_end_of_pipeline);
+    RUN_TEST_CASE(parser, subshell_in_beginning_of_pipeline);
+    RUN_TEST_CASE(parser, subshell_in_end_of_andor);
+    RUN_TEST_CASE(parser, subshell_in_beginning_of_andor);
+    RUN_TEST_CASE(parser, subshell_with_complex_command);
+    RUN_TEST_CASE(parser, subshell_within_a_subshell);
+    RUN_TEST_CASE(parser, subshell_within_a_pipeline_in_a_subshell);
+    RUN_TEST_CASE(parser, subshell_with_redirect);
+    RUN_TEST_CASE(parser, subshell_with_multiple_redirects);
+    RUN_TEST_CASE(parser, subshell_with_alias_expansion);
+
+    RUN_TEST_CASE(parser, alias_simple_word);
+    RUN_TEST_CASE(parser, alias_multiple_words);
+    RUN_TEST_CASE(parser, alias_with_redirection);
+    RUN_TEST_CASE(parser, alias_with_multiple_redirections);
+    RUN_TEST_CASE(parser, alias_with_pipeline);
+    RUN_TEST_CASE(parser, alias_with_andor);
+    RUN_TEST_CASE(parser, alias_that_expands_into_pipeline);
 }

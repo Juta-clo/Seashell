@@ -48,6 +48,10 @@ static lx_kind get_kind(const char *cur_char) {
         return LX_TOK_RDR_IN;
     if (strncmp(">", cur_char, 1) == 0)
         return LX_TOK_RDR_OUT;
+    if (strncmp("(", cur_char, 1) == 0)
+        return LX_TOK_LPAREN;
+    if (strncmp(")", cur_char, 1) == 0)
+        return LX_TOK_RPAREN;
 
     return LX_TOK_UNKNOWN;
 }
@@ -62,6 +66,8 @@ static bool kind_is_delim(lx_kind kind) {
     case LX_TOK_APPEND:
     case LX_TOK_AND_IF:
     case LX_TOK_OR_IF:
+    case LX_TOK_LPAREN:
+    case LX_TOK_RPAREN:
         return true;
     default:
         return false;
@@ -225,6 +231,18 @@ static int handle_normal(da_tok *tokens, lx_scanner *scanner) {
     }
 
     return 0;
+}
+
+void lx_tok_copy(lx_tok *dest, lx_tok *src) {
+   *dest = (lx_tok){ .kind = src->kind };
+
+   for (size_t i = 0; i < src->parts.size; ++i) {
+       lx_part *src_part = &src->parts.data[i];
+       lx_part *dest_part = linc_array_push(&dest->parts);
+
+       *dest_part = *src_part;
+       dest_part->raw = xstrdup(src_part->raw);
+   }
 }
 
 void lx_free_tok(lx_tok *tok) {

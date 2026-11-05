@@ -19,165 +19,11 @@
 #define WAIT_EXIT 193 /* +1 highest signal exit status */
 #define PLINE_INTR -1
 
-static int line_to_ast(const char *line, ps_ast *ast) {
-    if (strcmp("", line) == 0)
-        return -1;
-
-    da_tok toks;
-    int rv = lx_tokenize(line, &toks);
-    if (rv != LX_OK) {
-        err_msg("%s", lx_errstr(rv));
-        return -1;
-    }
-
-    if (ps_parse(&toks, ast) == -1) {
-        lx_free(&toks);
-        return -1;
-    }
-
-    lx_free(&toks);
-
-    return 0;
-}
-
-static void move_fd(int fd1, int fd2) {
-    if (fd1 == fd2)
-        return;
-
-    xdup2(fd1, fd2);
-    xclose(fd1);
-}
-
-static void child_fd_setup(bool first, bool last, int next_pipe[2], int prev_rfd) {
-    if (!first)
-        move_fd(prev_rfd, STDIN_FILENO);
-
-    if (!last) {
-        move_fd(next_pipe[1], STDOUT_FILENO);
-
-        if (close(next_pipe[0]) == -1)
-            err_exit("close");
-    }
-}
-
-static void child_redir_setup(da_redir *redirs) {
-    for (size_t i = 0; i < redirs->size; ++i) {
-        ps_redir *redir = &redirs->data[i];
-        const char *arg = redir->target.arg;
-
-        int rfd;
-
-        if (redir->io_num == STDIN_FILENO) {
-            rfd = open(arg, O_RDONLY);
-            if (rfd == -1)
-                err_exit("open");
-        } else {
-            if (redir->append) {
-                rfd = open(arg, O_WRONLY | O_CREAT | O_EXCL, 0600);
-                if (rfd == -1) {
-                    if (errno == EEXIST) {
-                        rfd = open(arg, O_WRONLY | O_APPEND);
-                        if (rfd == -1)
-                            err_exit("open");
-                    } else
-                        err_exit("open");
-                }
-            } else {
-                rfd = open(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-                if (rfd == -1)
-                    err_exit("open");
-            }
-        }
-
-        move_fd(rfd, redir->io_num);
-    }
-}
-
-static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
-    if (!pline)
-        ASSERT(pline);
-
-    int next_pipe[2];
-    int prev_rfd;
-
-    sh_pgrp pld = {0};
-
-    for (size_t i = 0; i < pline->cmds.size; ++i) {
-        ps_cmd *cur_cmd = &pline->cmds.data[i];
-        bool first = (i == 0);
-        bool last = (i == pline->cmds.size - 1);
-
-        if (!last)
-            xpipe(next_pipe);
-
-        int cpid = xfork();
-
-        if (first)
-            pld.pgid = (env.subsh != SUBSH_NONE) ? getpgrp() : cpid;
-
-        if (cpid == 0) {
-            xsetpgid(0, pld.pgid);
-
-            if (!bg && first && env.subsh == SUBSH_NONE)
-                xtcsetpgrp(env.tty_fd, getpgrp());
-
-            env.subsh |= SUBSH_PIPE;
-
-            child_fd_setup(first, last, next_pipe, prev_rfd);
-            child_redir_setup(&cur_cmd->redirs);
-            export_vars(&env.vars);
-
-            sig_restore(&env.og_mask);
-
-            /* is it a builtin? */
-
-            int status;
-            if (try_run_builtin(cur_cmd->argv, &status))
-                _exit(status);
-
-            /* exec program */
-
-            execvp(cur_cmd->argv[0], cur_cmd->argv);
-
-            if (errno == ENOENT) {
-                err_msg("command not found: %s", cur_cmd->argv[0]);
-                _exit(127);
-            } else {
-                LOG_ERR("execvp: %m");
-                err_exit("execvp");
-            }
-        }
-
-        if (setpgid(cpid, pld.pgid) == -1 && errno != EACCES) {
-            LOG_ERR("setpgid: %m");
-            err_exit("setpgid");
-        }
-
-        if (!bg && first && env.subsh == SUBSH_NONE)
-            xtcsetpgrp(env.tty_fd, pld.pgid);
-
-        if (!first)
-            xclose(prev_rfd);
-
-        if (!last) {
-            prev_rfd = next_pipe[0];
-            xclose(next_pipe[1]);
-        }
-
-        sh_proc *pproc = linc_array_push(&pld.procs);
-        pproc->pid = cpid;
-        pproc->argv = argv_copy(cur_cmd->argv);
-    }
-
-    return pld;
-}
-
-static void reclaim_terminal(void) {
-    if (xtcsetpgrp(env.tty_fd, getpgrp()) == -1)
-        err_exit("tcsetpgrp");
-
-    env.fg_jid = NOFG;
-}
+static int subshell_fork(void);
+static sh_pgrp exec_pline(const ps_pline *pline, bool bg);
+static int shell_start_pline(ps_pline *pline, bool bg, int jid);
+static int shell_wait_pline(int jid, int *status);
+static int shell_run_andor(ps_ast *ast);
 
 static void cursor_left_anchor(void) {
     struct winsize ws;
@@ -193,6 +39,84 @@ static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
         (p2->stat == PROC_EXIT && p1->exit_stat == p2->exit_stat) ||
         (p1->stat == PROC_SIG && p1->term_sig == p2->term_sig) ||
         (p1->stat == PROC_STOP && p1->stop_sig == p2->stop_sig));
+}
+
+static char *get_pline_str_ast(ps_ast *ast) {
+    ASSERT(ast && ast->andors.size > 0);
+
+    linc_string out = LINC_STRING_INIT;
+    linc_string_append(&out, "(");
+
+    for (size_t andor_i = 0; andor_i < ast->andors.size; ++andor_i) {
+        ps_andor *andor = &ast->andors.data[andor_i];
+
+        if (andor->op == PS_AND_IF) {
+            linc_string_append(&out, " && ");
+        } else if (andor->op == PS_OR_IF) {
+            linc_string_append(&out, " || ");
+        }
+
+        for (size_t cmd_i = 0; cmd_i < andor->pline.cmds.size; ++cmd_i) {
+            ps_cmd *cmd = &andor->pline.cmds.data[cmd_i];
+
+            if (cmd_i != 0)
+                linc_string_append(&out, " | ");
+
+            if (cmd->kind == PS_CMD_SUBSH) {
+                char *cmd_str = get_pline_str_ast(&cmd->subsh);
+                linc_string_append(&out, cmd_str);
+                free(cmd_str);
+            } else {
+                for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
+                    ps_word *word = &cmd->words.data[word_i];
+
+                    for (size_t seg_i = 0; seg_i < word->segments.size;
+                            ++seg_i) {
+                        ps_segment *seg = &word->segments.data[seg_i];
+
+                        if (seg->quote == PS_Q_NONE) {
+                            linc_string_append(&out, seg->raw);
+                        } else if (seg->quote == PS_Q_DOUBLE) {
+                            linc_string_appendf(&out, "\"%s\"", seg->raw);
+                        } else if (seg->quote == PS_Q_SINGLE) {
+                            linc_string_appendf(&out, "'%s'", seg->raw);
+                        }
+                    }
+
+                    if (word_i != cmd->words.size - 1)
+                        linc_string_appendf(&out, " ");
+                }
+            }
+
+            for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
+                ps_redir *redir = &cmd->redirs.data[redir_i];
+                da_segment *segs = &redir->target.segments;
+
+                if (redir->io_num == 0) {
+                    linc_string_append(&out, " <");
+                } if (redir->io_num == 1) {
+                    linc_string_append(&out, " >");
+                } else if (redir->io_num > 1) {
+                    linc_string_appendf(&out, " %d>", redir->io_num);
+                }
+
+                for (size_t seg_i = 0; seg_i < segs->size; ++seg_i) {
+                    ps_segment *seg = &segs->data[seg_i];
+
+                    if (seg->quote == PS_Q_NONE) {
+                        linc_string_append(&out, seg->raw);
+                    } else if (seg->quote == PS_Q_DOUBLE) {
+                        linc_string_appendf(&out, "\"%s\"", seg->raw);
+                    } else if (seg->quote == PS_Q_SINGLE) {
+                        linc_string_appendf(&out, "'%s'", seg->raw);
+                    }
+                }
+            }
+        }
+    }
+
+    linc_string_append(&out, ")");
+    return out.cstr;
 }
 
 static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
@@ -249,14 +173,11 @@ static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
     return out;
 }
 
-static bool andor_should_run(ps_andor *andor, int status) {
-    if (andor->op == PS_AND_IF && status != EXIT_SUCCESS)
-        return false;
+static void reclaim_terminal(void) {
+    if (xtcsetpgrp(env.tty_fd, getpgrp()) == -1)
+        err_exit("tcsetpgrp");
 
-    if (andor->op == PS_OR_IF && status == EXIT_SUCCESS)
-        return false;
-
-    return true;
+    env.fg_jid = NOFG;
 }
 
 static void handle_job_event(job_event *jev) {
@@ -302,18 +223,160 @@ static void flush_job_events(void) {
     }
 }
 
-static int shell_run_pline(ps_pline *pline, bool bg, int jid) {
+static bool andor_should_run(ps_andor *andor, int status) {
+    if (andor->op == PS_AND_IF && status != EXIT_SUCCESS)
+        return false;
+
+    if (andor->op == PS_OR_IF && status == EXIT_SUCCESS)
+        return false;
+
+    return true;
+}
+
+static void child_redir_setup(da_redir *redirs) {
+    for (size_t i = 0; i < redirs->size; ++i) {
+        ps_redir *redir = &redirs->data[i];
+        const char *arg = redir->target.arg;
+
+        int rfd;
+
+        if (redir->io_num == STDIN_FILENO) {
+            rfd = open(arg, O_RDONLY);
+            if (rfd == -1)
+                err_exit("open");
+        } else {
+            if (redir->append) {
+                rfd = open(arg, O_WRONLY | O_CREAT | O_EXCL, 0600);
+                if (rfd == -1) {
+                    if (errno == EEXIST) {
+                        rfd = open(arg, O_WRONLY | O_APPEND);
+                        if (rfd == -1)
+                            err_exit("open");
+                    } else
+                        err_exit("open");
+                }
+            } else {
+                rfd = open(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+                if (rfd == -1)
+                    err_exit("open");
+            }
+        }
+
+        move_fd(rfd, redir->io_num);
+    }
+}
+
+static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
+    if (!pline)
+        ASSERT(pline);
+
+    int next_pipe[2];
+    int prev_rfd;
+
+    sh_pgrp pld = {0};
+
+    for (size_t i = 0; i < pline->cmds.size; ++i) {
+        ps_cmd *cur_cmd = &pline->cmds.data[i];
+        bool first = (i == 0);
+        bool last = (i == pline->cmds.size - 1);
+
+        if (!last)
+            xpipe(next_pipe);
+
+        int cpid = xfork();
+
+        if (first)
+            pld.pgid = (env.subsh & SUBSH_ASYNC) ? getpgrp() : cpid;
+
+        if (cpid == 0) {
+            xsetpgid(0, pld.pgid);
+
+            if (!bg && first && env.subsh == SUBSH_NONE)
+                xtcsetpgrp(env.tty_fd, getpgrp());
+
+            env.subsh |= SUBSH_PIPE;
+
+            if (!first)
+                move_fd(prev_rfd, STDIN_FILENO);
+
+            if (!last) {
+                move_fd(next_pipe[1], STDOUT_FILENO);
+                xclose(next_pipe[0]);
+            }
+
+            child_redir_setup(&cur_cmd->redirs);
+            export_vars(&env.vars);
+            sig_restore(&env.og_mask);
+
+            if (cur_cmd->kind == PS_CMD_SUBSH) {
+                env.subsh |= SUBSH_ASYNC;
+                sig_block(SIGCHLD);
+                sig_set_handler(SIGCHLD, sigchld_handler);
+                _exit(shell_run_andor(&cur_cmd->subsh));
+            }
+
+            /* is it a builtin? */
+
+            int status;
+            if (try_run_builtin(cur_cmd->argv, &status))
+                _exit(status);
+
+            /* exec program */
+
+            execvp(cur_cmd->argv[0], cur_cmd->argv);
+
+            if (errno == ENOENT) {
+                err_msg("command not found: %s", cur_cmd->argv[0]);
+                _exit(127);
+            } else {
+                LOG_ERR("execvp: %m");
+                err_exit("execvp");
+            }
+        }
+
+        if (setpgid(cpid, pld.pgid) == -1 && errno != EACCES) {
+            LOG_ERR("setpgid: %m");
+            err_exit("setpgid");
+        }
+
+        if (!bg && first && env.subsh == SUBSH_NONE)
+            xtcsetpgrp(env.tty_fd, pld.pgid);
+
+        if (!first)
+            xclose(prev_rfd);
+
+        if (!last) {
+            prev_rfd = next_pipe[0];
+            xclose(next_pipe[1]);
+        }
+
+        sh_proc *pproc = linc_array_push(&pld.procs);
+        pproc->pid = cpid;
+
+        if (cur_cmd->kind == PS_CMD_SUBSH) {
+            char *cmd_str = get_pline_str_ast(&cur_cmd->subsh);
+            pproc->argv = argv_copy((char *[]){ cmd_str, nullptr });
+            free(cmd_str);
+        } else {
+            pproc->argv = argv_copy(cur_cmd->argv);
+        }
+    }
+
+    return pld;
+}
+
+static int shell_start_pline(ps_pline *pline, bool bg, int jid) {
     bool handled = false;
 
     /* Only run builtin inside the main shell (or subshell) if the process:
-     * 1) is a single command pipeline.
+     * 1) is a single command pipeline, not in a subshell.
      * 2) has no redirections
      * 3) is in the foreground, unless it is an async subshell. */
 
     bool try_builtin = (
-        pline->cmds.size == 1 &&
+        pline->cmds.size == 1 && pline->cmds.data[0].kind == PS_CMD_SIMPLE &&
         pline->cmds.data[0].redirs.size == 0 &&
-        (!bg || env.subsh == SUBSH_ASYNC)
+        (!bg || env.subsh & SUBSH_ASYNC)
     );
 
     if (try_builtin) {
@@ -339,9 +402,6 @@ static int shell_run_pline(ps_pline *pline, bool bg, int jid) {
     if (!handled) {
         sh_pgrp pld = exec_pline(pline, bg);
         job_add(jid, &pld);
-
-        LOG_INFO("[%d] Started %s %d", jid, pline->cmds.data[0].argv[0],
-                pld.pgid);
     }
 
     return 0;
@@ -417,7 +477,7 @@ static int shell_run_andor(ps_ast *ast) {
             if (!ast->bg && env.subsh == SUBSH_NONE)
                 xtcgetattr(env.tty_fd, &env.tio);
 
-            shell_run_pline(&andor->pline, ast->bg, env.fg_jid);
+            shell_start_pline(&andor->pline, ast->bg, env.fg_jid);
 
             if (env.subsh == SUBSH_NONE && ast->bg) {
                 pid_t pgrp = job_lookup_pgrp(env.fg_jid);
@@ -442,24 +502,41 @@ static int shell_run_andor(ps_ast *ast) {
     return status;
 }
 
-static int shell_fork(void) {
+static int subshell_fork(void) {
     int cpid = xfork();
-    int rv = setpgid(cpid, cpid);
 
-    if (cpid != 0) {
-        if (rv == -1 && errno != EACCES)
-            err_exit("setpgid");
+    setpgid(cpid, cpid);
 
+    if (cpid != 0)
         return cpid;
-    }
 
     env.subsh |= SUBSH_ASYNC;
 
     job_clear();
     sig_restore(&env.og_mask);
-
     sig_block(SIGCHLD);
     sig_set_handler(SIGCHLD, sigchld_handler);
+
+    return 0;
+}
+
+static int line_to_ast(const char *line, ps_ast *ast) {
+    if (strcmp("", line) == 0)
+        return -1;
+
+    da_tok toks;
+    int rv = lx_tokenize(line, &toks);
+    if (rv != LX_OK) {
+        err_msg("%s", lx_errstr(rv));
+        return -1;
+    }
+
+    if (ps_parse(&toks, ast, true) == -1) {
+        lx_free(&toks);
+        return -1;
+    }
+
+    lx_free(&toks);
 
     return 0;
 }
@@ -532,9 +609,9 @@ linc_string shell_get_prompt(void) {
 }
 
 int shell_run(const char *cmd) {
-    ps_ast ast = {0};
     char *line = xstrdup(cmd);
     int status = -1;
+    ps_ast ast = {0};
 
     if (line_to_ast(line, &ast) == -1)
         goto cleanup;
@@ -544,7 +621,7 @@ int shell_run(const char *cmd) {
         goto cleanup;
     }
 
-    int subsh_pgid = shell_fork();
+    int subsh_pgid = subshell_fork();
 
     if (subsh_pgid == 0) {
         status = shell_run_andor(&ast);
@@ -552,18 +629,19 @@ int shell_run(const char *cmd) {
     }
 
     int jid = job_new_id();
-    sh_pgrp pld = { .pgid = subsh_pgid };
+    char *cmd_str = get_pline_str_ast(&ast);
 
-    *linc_array_push(&pld.procs) = (sh_proc) {
-        .argv = argv_copy((char *[]){ line, nullptr }),
-        .pid = subsh_pgid
+    sh_pgrp pld = { .pgid = subsh_pgid };
+    *linc_array_push(&pld.procs) = (sh_proc){
+        .pid = subsh_pgid,
+        .argv = argv_copy((char *[]){ cmd_str, nullptr })
     };
 
+    free(cmd_str);
     job_add(jid, &pld);
-    status = EXIT_SUCCESS;
+    printf("[%d] %d\n", jid, subsh_pgid);
 
-    pid_t pgrp = job_lookup_pgrp(jid);
-    printf("[%d] %d\n", jid, pgrp);
+    status = EXIT_SUCCESS;
 
 cleanup:
     ps_free(&ast);

@@ -73,7 +73,6 @@ target("pty_test")
 target("unit_test")
     set_kind("binary")
     set_targetdir(".")
-    set_default(false)
 
     add_deps(linc_targets)
     add_packages("unibilium", "lua")

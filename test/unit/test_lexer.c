@@ -183,6 +183,13 @@ TEST(lexer, operator_two_char_op_after_whitespace) {
     assert_tokens(" >>", kind, NULL, NULL, 1, 0);
 }
 
+TEST(lexer, operator_left_and_right_paren) {
+    const lx_kind kind[4] = {
+        LX_TOK_LPAREN, LX_TOK_RPAREN, LX_TOK_RPAREN, LX_TOK_LPAREN
+    };
+    assert_tokens("())(", kind, NULL, NULL, 4, 0);
+}
+
 /* Words */
 
 TEST(lexer, word_single_letter) {
@@ -425,6 +432,7 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, operator_two_char_op_after_op);
     RUN_TEST_CASE(lexer, operator_two_char_op_before_whitespace);
     RUN_TEST_CASE(lexer, operator_two_char_op_after_whitespace);
+    RUN_TEST_CASE(lexer, operator_left_and_right_paren);
     RUN_TEST_CASE(lexer, word_single_letter);
     RUN_TEST_CASE(lexer, word_multiple_letter);
     RUN_TEST_CASE(lexer, word_before_operator);

@@ -14,6 +14,8 @@ typedef enum {
     LX_TOK_APPEND,
     LX_TOK_AND_IF,
     LX_TOK_OR_IF,
+    LX_TOK_LPAREN,
+    LX_TOK_RPAREN,
     LX_TOK_UNKNOWN,
     LX_TOK_WORD,
 } lx_kind;
@@ -56,7 +58,10 @@ typedef struct lx_tok lx_tok;
 LINC_ARRAY_TYPE(da_tok, lx_tok);
 
 char *lx_errstr(lx_status stat);
+
+void lx_tok_copy(lx_tok *dest, lx_tok *src);
 void lx_free_tok(lx_tok *tok);
+
 void lx_free(da_tok *tokens);
 int lx_tokenize(const char *cmd, da_tok *tokens);
 

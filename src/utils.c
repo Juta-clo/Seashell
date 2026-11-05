@@ -82,6 +82,14 @@ void err_msg(const char *fmt, ...) {
 
 /* general */
 
+void move_fd(int fd1, int fd2) {
+    if (fd1 == fd2)
+        return;
+
+    xdup2(fd1, fd2);
+    xclose(fd1);
+}
+
 int get_int(const char *arg, int *num) {
     ASSERT(num);
 

@@ -32,7 +32,7 @@ void shell_fatal_handler(const linc_fatal_ctx *ctx, void *_) {
         );
     }
 
-    fatal("%s", err_buf);
+    fatal_imp("%s", err_buf);
 }
 
 void assert_log_sink(const linc_log_ctx *ctx, void *_) {

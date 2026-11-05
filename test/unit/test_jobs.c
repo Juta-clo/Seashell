@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "unity_fixture.h"
-#include "job_state.h"
+#include "jobs.h"
 #include "wait_stat.h"
 #include "shell.h"
 
@@ -69,10 +69,10 @@ TEST_GROUP(jobs);
     ((exp_pgrp){ .pgid = _pgid, .procs = PROCS(__VA_ARGS__) })
 
 #define JOB(_jid, _stat, _pgrp) \
-    ((exp_job){ .jid = _jid, .stat = _stat, .pgrp = _pgrp })
+    ((exp_ast){ .jid = _jid, .stat = _stat, .pgrp = _pgrp })
 
 #define JOBS(...) \
-    EXP_DA(exp_da_job, exp_job, __VA_ARGS__)
+    EXP_DA(exp_da_job, exp_ast, __VA_ARGS__)
 
 #define JRUN_1P(_jid, _pid, ...) \
     JOB(_jid, JOB_RUN, PGRP(_pid, PROC(PID(_pid), PROC_RUN)))
@@ -122,10 +122,10 @@ typedef struct {
     int jid;
     exp_pgrp pgrp;
     job_stat stat;
-} exp_job;
+} exp_ast;
 
 typedef struct {
-    exp_job *data;
+    exp_ast *data;
     size_t size;
 } exp_da_job;
 
@@ -147,7 +147,7 @@ void validate_pgrp(exp_pgrp *exp, jc_pgrp *pgrp) {
         validate_proc(&exp->procs.data[i], &pgrp->procs.data[i]);
 }
 
-void validate_job(exp_job *exp, jc_job *job) {
+void validate_job(exp_ast *exp, jc_job *job) {
 
     TEST_ASSERT_EQUAL(exp->jid, job->jid);
     TEST_ASSERT_EQUAL(exp->stat, job->stat);
@@ -170,16 +170,16 @@ void validate_job_table(exp_job_table *exp, job_table *jctl) {
 void validate_job_events(da_jevent *exp) {
 
     for (size_t i = 0; i < exp->size; ++i) {
-        job_event *jev = pop_job_event();
+        job_event *jev = job_event_pop();
 
         TEST_ASSERT_NOT_NULL(jev);
         TEST_ASSERT_EQUAL(exp->data[i].jid, jev->jid);
         TEST_ASSERT_EQUAL(exp->data[i].type, jev->type);
 
-        free_job_event(jev);
+        job_event_free(jev);
     }
 
-    TEST_ASSERT_NULL(pop_job_event());
+    TEST_ASSERT_NULL(job_event_pop());
 }
 
 #define VA_COUNT_I(_1, _2,_3, _4, _5, _6, _7, _8, N, ...) N
@@ -188,7 +188,7 @@ void validate_job_events(da_jevent *exp) {
     VA_COUNT_I(__VA_ARGS__ __VA_OPT__(,) 8, 7, 6, 5, 4, 3, 2, 1, 0)
 
 #define PPROC(_pid) \
-    (pline_proc){ \
+    (sh_proc){ \
         .pid = _pid, \
         .argv = ({\
             char **p = calloc(1, sizeof(char *)); \
@@ -201,26 +201,26 @@ void validate_job_events(da_jevent *exp) {
     do { \
         da_wevent *wevs = &WEVS(__VA_ARGS__); \
         for (size_t i = 0; i < wevs->size; ++i) \
-            TEST_ASSERT_NOT_EQUAL(-1, update_job_proc(wevs->data[i])); \
+            TEST_ASSERT_NOT_EQUAL(-1, job_update(wevs->data[i])); \
     } while (false)
 
 void add_one_proc_job(int jid, pid_t pid) {
-    pline_data pdata = { .pgid = pid };
+    sh_pgrp pdata = { .pgid = pid };
     *linc_array_push(&pdata.procs) = PPROC(pid);
 
-    add_job(jid, &pdata);
-    validate_job_table(&TABLE(JRUN_1P(jid, pid)), get_jctl());
-    TEST_ASSERT_NULL(pop_job_event());
+    job_add(jid, &pdata);
+    validate_job_table(&TABLE(JRUN_1P(jid, pid)), job_get_table());
+    TEST_ASSERT_NULL(job_event_pop());
 }
 
 void add_two_proc_job(int jid, pid_t pid) {
-    pline_data pdata = { .pgid = pid };
+    sh_pgrp pdata = { .pgid = pid };
     *linc_array_push(&pdata.procs) = PPROC(pid);
     *linc_array_push(&pdata.procs) = PPROC(pid + 1);
 
-    add_job(jid, &pdata);
-    validate_job_table(&TABLE(JRUN_2P(jid, pid)), get_jctl());
-    TEST_ASSERT_NULL(pop_job_event());
+    job_add(jid, &pdata);
+    validate_job_table(&TABLE(JRUN_2P(jid, pid)), job_get_table());
+    TEST_ASSERT_NULL(job_event_pop());
 }
 
 /************ Fixture ************/
@@ -228,8 +228,7 @@ void add_two_proc_job(int jid, pid_t pid) {
 TEST_SETUP(jobs) {}
 
 TEST_TEAR_DOWN(jobs) {
-    clear_job_table();
-    clear_job_events();
+    job_clear();
 }
 
 /************ Tests ************/
@@ -238,15 +237,15 @@ TEST(jobs, continue_running_job) {
     add_one_proc_job(JID(1), PID(1));
     apply_wevs(PCONT(1));
 
-    validate_job_table(&TABLE(JRUN_1P(JID(1), PID(1))), get_jctl());
-    TEST_ASSERT_NULL(pop_job_event());
+    validate_job_table(&TABLE(JRUN_1P(JID(1), PID(1))), job_get_table());
+    TEST_ASSERT_NULL(job_event_pop());
 }
 
 TEST(jobs, one_proc_job_exit) {
     add_one_proc_job(JID(1), PID(1));
     apply_wevs(PEXIT_OK(1));
 
-    validate_job_table(&(exp_job_table){0}, get_jctl());
+    validate_job_table(&(exp_job_table){0}, job_get_table());
     validate_job_events(&JEVS(JEXIT(JID(1))));
 }
 
@@ -254,7 +253,7 @@ TEST(jobs, one_proc_job_stop) {
     add_one_proc_job(JID(1), PID(1));
     apply_wevs(PSTOP(1));
 
-    validate_job_table(&TABLE(JSTOP_1P(JID(1), PID(1))), get_jctl());
+    validate_job_table(&TABLE(JSTOP_1P(JID(1), PID(1))), job_get_table());
     validate_job_events(&JEVS(JSTOP(JID(1))));
 }
 
@@ -262,7 +261,7 @@ TEST(jobs, one_proc_job_cont) {
     add_one_proc_job(JID(1), PID(1));
     apply_wevs(PSTOP(1), PCONT(1));
 
-    validate_job_table(&TABLE(JRUN_1P(JID(1), PID(1))), get_jctl());
+    validate_job_table(&TABLE(JRUN_1P(JID(1), PID(1))), job_get_table());
     validate_job_events(&JEVS(JSTOP(JID(1)), JCONT(JID(1))));
 }
 
@@ -270,7 +269,7 @@ TEST(jobs, two_proc_job_exit) {
     add_two_proc_job(JID(1), PID(10));
     apply_wevs(PEXIT_OK(10), PEXIT_OK(11));
 
-    validate_job_table(&(exp_job_table){0}, get_jctl());
+    validate_job_table(&(exp_job_table){0}, job_get_table());
     validate_job_events(&JEVS(JEXIT(JID(1))));
 }
 
@@ -278,7 +277,7 @@ TEST(jobs, two_proc_job_stop) {
     add_two_proc_job(JID(1), PID(10));
     apply_wevs(PSTOP(10), PSTOP(11));
 
-    validate_job_table(&TABLE(JSTOP_2P(JID(1), PID(10))), get_jctl());
+    validate_job_table(&TABLE(JSTOP_2P(JID(1), PID(10))), job_get_table());
     validate_job_events(&JEVS(JSTOP(JID(1))));
 }
 
@@ -286,7 +285,7 @@ TEST(jobs, two_proc_job_cont) {
     add_two_proc_job(JID(1), PID(10));
     apply_wevs(PSTOP(10), PSTOP(11), PCONT(10), PCONT(11));
 
-    validate_job_table(&TABLE(JRUN_2P(JID(1), PID(10))), get_jctl());
+    validate_job_table(&TABLE(JRUN_2P(JID(1), PID(10))), job_get_table());
     validate_job_events(&JEVS(JSTOP(1), JCONT(1)));
 }
 

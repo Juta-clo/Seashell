@@ -5,6 +5,7 @@
 #include "state.h"
 
 static FILE *log_file;
+const char *test_group;
 
 static void unit_assert_sink(const linc_log_ctx *ctx, void *_) {
     char log_buf[BUFSIZ];
@@ -23,50 +24,34 @@ static void unit_assert_sink(const linc_log_ctx *ctx, void *_) {
 }
 
 static void unit_shell_sink(const linc_log_ctx *ctx, void *_) {
-    char log_buf[BUFSIZ];
-
-    int n = snprintf(log_buf, BUFSIZ, "%s: %s\n",
-        linc_log_level_str(ctx->level),
+    fprintf(log_file, "TEST_GROUP(%s): %s %s:%d %s(): %s\n",
+        test_group, linc_log_level_str(ctx->level),
+        ctx->site.file, ctx->site.line, ctx->site.func,
         ctx->msg
     );
-
-    if (n < 0)
-        return;
-
-    if (n >= BUFSIZ) {
-        log_buf[BUFSIZ - 2] = '\n';
-        log_buf[BUFSIZ - 1] = '\0';
-    }
-
-    fprintf(log_file, "%s", log_buf);
 }
 
 linc_log unit_shell_log = { .sink = unit_shell_sink };
 linc_log unit_assert_log = { .sink = unit_assert_sink };
 
 void run_all(void) {
-    fprintf(log_file, "--Starting test group: lexer--\n");
+    test_group = "lexer";
     RUN_TEST_GROUP(lexer);
-    fprintf(log_file, "\n--Starting test group: parser--\n");
+    test_group = "parser";
     RUN_TEST_GROUP(parser);
-    fprintf(log_file, "\n--Starting test group: jobs--\n");
+    test_group = "jobs";
     RUN_TEST_GROUP(jobs);
-    fprintf(log_file, "\n--Starting test group: input--\n");
+    test_group = "input";
     RUN_TEST_GROUP(input);
-    fprintf(log_file, "\n--Starting test group: glob--\n");
+    test_group = "glob";
     RUN_TEST_GROUP(glob);
 }
 
 int main(int argc, const char **argv) {
-    if (!(log_file = fopen("/tmp/seashell-log.unit", "w+"))) {
+    if (!(log_file = fopen("/tmp/shlog-unit", "a"))) {
         perror("fopen");
         exit(EXIT_FAILURE);
     }
-
-    /* We don't need parser error messages */
-    int fd = open("/dev/null", O_RDWR);
-    dup2(fd, STDERR_FILENO);
-    close(fd);
 
     env.shell_log = unit_shell_log;
     env.assert_log = unit_assert_log;

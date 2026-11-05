@@ -206,11 +206,13 @@ int expand_pline(const ps_pline *pline) {
     for (size_t j = 0; j < pline->cmds.size; ++j) {
         ps_cmd *cmd = &pline->cmds.data[j];
 
-        if (create_argv(cmd) == -1)
-            return -1;
+        if (cmd->kind == PS_CMD_SIMPLE)
+            if (create_argv(cmd) == -1)
+                return -1;
 
         for (size_t k = 0; k < cmd->redirs.size; ++k) {
             ps_redir *redir = &cmd->redirs.data[k];
+
             if (expand_word(&redir->target, nullptr, true) == -1)
                 return -1;
         }

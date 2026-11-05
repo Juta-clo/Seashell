@@ -308,7 +308,7 @@ TEST(config, alias_with_non_first_word) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "seashell: alias error: p -> '&& echo hi'",
+        "seashell: parse error on alias: p -> '&& echo hi'",
         PROMPT
     );
 }
@@ -322,7 +322,7 @@ TEST(config, alias_with_no_value) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "seashell: alias error: empty input",
+        "seashell: parse error on alias: empty input",
         PROMPT
     );
 }

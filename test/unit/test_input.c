@@ -2,8 +2,7 @@
 
 #include <linc/log.h>
 #include "unity_fixture.h"
-#include "input.h"
-#include "input_object.h"
+#include "input_internal.h"
 
 TEST_GROUP(input);
 
