@@ -9,6 +9,8 @@ TEST_GROUP(lexer);
 
 /************ Shared utils ************/
 
+#define STRINGIFY(str) #str
+
 void assert_tokens(
         const char *cmd,
         const lx_kind *exp_kind,
@@ -58,7 +60,7 @@ TEST_TEAR_DOWN(lexer) {}
 /************ Tests ************/
 
 TEST(lexer, all_operators) {
-    const lx_kind kind[8] = {
+    const lx_kind kind[7] = {
         LX_TOK_PIPE,
         LX_TOK_BG,
         LX_TOK_RDR_IN,
@@ -66,30 +68,29 @@ TEST(lexer, all_operators) {
         LX_TOK_RDR_OUT,
         LX_TOK_AND_IF,
         LX_TOK_OR_IF,
-        LX_TOK_RDR_ERR,
     };
 
-    assert_tokens("|&<>>>&&||2>", kind, NULL, NULL, 8, 0);
+    assert_tokens("|&<>>>&&||", kind, NULL, NULL, 7, 0);
 }
 
 TEST(lexer, shell_usage) {
-    const lx_kind kind[9] = {
-        LX_TOK_WORD, LX_TOK_WORD, LX_TOK_RDR_ERR, LX_TOK_WORD,
+    const lx_kind kind[7] = {
+        LX_TOK_WORD, LX_TOK_WORD,
         LX_TOK_RDR_OUT, LX_TOK_WORD, LX_TOK_BG, LX_TOK_WORD,
         LX_TOK_WORD
     };
-    const char *raw[10] = {
-        "solaar", "show", NULL, "file.txt", NULL,
+    const char *raw[8] = {
+        "solaar", "show", NULL,
         "weird file", "3", NULL, "cat", "./file.txt"
     };
-    const lx_quote quote[10] = {
-        LX_Q_NONE, LX_Q_NONE, LX_Q_NONE, LX_Q_NONE, LX_Q_NONE,
+    const lx_quote quote[8] = {
+        LX_Q_NONE, LX_Q_NONE, LX_Q_NONE,
         LX_Q_DOUBLE, LX_Q_NONE, LX_Q_NONE, LX_Q_NONE,
         LX_Q_NONE,
     };
 
-    assert_tokens("solaar show 2>file.txt >  \"weird file\"3& cat ./file.txt",
-            kind, raw, quote, 9, 0);
+    assert_tokens("solaar show > \"weird file\"3& cat ./file.txt",
+            kind, raw, quote, 7, 0);
 }
 
 TEST(lexer, quotes_galore) {
@@ -413,6 +414,155 @@ TEST(lexer, part_single_then_double) {
     assert_tokens("'a'\"b\"", kind, raw, quote, 1, 0);
 }
 
+TEST(lexer, classifies_words_that_are_numbers) {
+    da_tok toks;
+
+    if (lx_tokenize(
+        "123a a123 123 \"123\" \"123\"a 123\"a\" 123'5'",
+        &toks
+    ) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_size_t(7, toks.size);
+
+    for (size_t i = 0; i < 7; ++i)
+        TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[i].kind);
+
+    TEST_ASSERT_FALSE(toks.data[0].is_num);
+    TEST_ASSERT_FALSE(toks.data[1].is_num);
+    TEST_ASSERT(toks.data[2].is_num);
+    TEST_ASSERT_FALSE(toks.data[3].is_num);
+    TEST_ASSERT_FALSE(toks.data[4].is_num);
+    TEST_ASSERT_FALSE(toks.data[5].is_num);
+    TEST_ASSERT_FALSE(toks.data[6].is_num);
+
+    lx_free(&toks);
+}
+
+TEST(lexer, numbers_interspersed_with_tokens) {
+    da_tok toks;
+
+    if (lx_tokenize("|123&456||789&&", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_size_t(7, toks.size);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_PIPE, toks.data[0].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[1].kind);
+    TEST_ASSERT(toks.data[1].is_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_BG, toks.data[2].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[3].kind);
+    TEST_ASSERT(toks.data[3].is_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_OR_IF, toks.data[4].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[5].kind);
+    TEST_ASSERT(toks.data[5].is_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_AND_IF, toks.data[6].kind);
+
+    lx_free(&toks);
+}
+
+TEST(lexer, copied_number_tokens_maintain_data) {
+    lx_tok src = {
+        .kind = LX_TOK_WORD,
+        .is_num = true
+    };
+
+    lx_tok dest;
+    lx_tok_copy(&dest, &src);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, dest.kind);
+    TEST_ASSERT(dest.is_num);
+}
+
+TEST(lexer, io_number_tokens_only_created_before_redirect) {
+    da_tok toks;
+
+    if (lx_tokenize("123> >123 12>34 \"123\"> >\"123\"", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_size_t(11, toks.size);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[0].kind);
+    TEST_ASSERT_EQUAL_INT(123, toks.data[0].io_num);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[1].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[2].kind);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[3].kind);
+    TEST_ASSERT(toks.data[3].is_num);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[4].kind);
+    TEST_ASSERT_EQUAL_INT(12, toks.data[4].io_num);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[5].kind);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[6].kind);
+    TEST_ASSERT(toks.data[6].is_num);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[7].kind);
+    TEST_ASSERT_FALSE(toks.data[7].is_num);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[8].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[9].kind);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[10].kind);
+    TEST_ASSERT_FALSE(toks.data[10].is_num);
+
+    lx_free(&toks);
+}
+
+TEST(lexer, io_number_that_overflows_integer){
+    da_tok toks;
+
+    if (lx_tokenize("2147483648>", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[0].kind);
+    TEST_ASSERT(toks.data[0].is_num);
+    TEST_ASSERT_EQUAL_STRING("2147483648", toks.data[0].parts.data[0].raw);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[1].kind);
+
+    lx_free(&toks);
+}
+
+TEST(lexer, signed_io_numbers_are_rejected) {
+    da_tok toks;
+
+    if (lx_tokenize("-1> +1>", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[0].kind);
+    TEST_ASSERT_EQUAL_STRING("-1", toks.data[0].parts.data[0].raw);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[1].kind);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[2].kind);
+    TEST_ASSERT_EQUAL_STRING("+1", toks.data[2].parts.data[0].raw);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[3].kind);
+
+    lx_free(&toks);
+}
+
+TEST(lexer, redirect_in_with_arbitrary_io_numbers) {
+    da_tok toks;
+
+    if (lx_tokenize("1<file 2< 999", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[0].kind);
+    TEST_ASSERT_EQUAL_INT(1, toks.data[0].io_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_IN, toks.data[1].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[2].kind);
+    TEST_ASSERT_EQUAL_STRING("file", toks.data[2].parts.data[0].raw);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[3].kind);
+    TEST_ASSERT_EQUAL_INT(2, toks.data[3].io_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_IN, toks.data[4].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[5].kind);
+    TEST_ASSERT_EQUAL_STRING("999", toks.data[5].parts.data[0].raw);
+
+    lx_free(&toks);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(lexer) {
@@ -466,4 +616,10 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, part_single_then_single);
     RUN_TEST_CASE(lexer, part_double_then_single);
     RUN_TEST_CASE(lexer, part_single_then_double);
+    RUN_TEST_CASE(lexer, classifies_words_that_are_numbers);
+    RUN_TEST_CASE(lexer, copied_number_tokens_maintain_data);
+    RUN_TEST_CASE(lexer, io_number_tokens_only_created_before_redirect);
+    RUN_TEST_CASE(lexer, io_number_that_overflows_integer);
+    RUN_TEST_CASE(lexer, signed_io_numbers_are_rejected);
+    RUN_TEST_CASE(lexer, redirect_in_with_arbitrary_io_numbers);
 }

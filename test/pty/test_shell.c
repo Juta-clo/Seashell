@@ -1072,6 +1072,22 @@ TEST(shell, subshell_background_andif_chain) {
     );
 }
 
+TEST(shell, redirect_out_on_io_number_zero) {
+    vt_send_str("echo x 0>/tmp/seashell/test\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo x 0>/tmp/seashell/test",
+        "x",
+        PROMPT
+    );
+
+    vt_send_str("stat >/dev/null /tmp/seashell/test && echo found\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "stat >/dev/null /tmp/seashell/test && echo found",
+        "found",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1135,4 +1151,5 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, background_subshell_should_exit_immediately);
     RUN_TEST_CASE(shell, subshell_background_single_pipeline);
     RUN_TEST_CASE(shell, subshell_background_andif_chain);
+    RUN_TEST_CASE(shell, redirect_out_on_io_number_zero);
 }

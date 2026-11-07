@@ -92,12 +92,16 @@ static char *get_subsh_str(ps_ast *ast) {
                 ps_redir *redir = &cmd->redirs.data[redir_i];
                 da_segment *segs = &redir->target.segments;
 
-                if (redir->io_num == 0) {
-                    linc_string_append(&out, " <");
-                } if (redir->io_num == 1) {
-                    linc_string_append(&out, " >");
-                } else if (redir->io_num > 1) {
-                    linc_string_appendf(&out, " %d>", redir->io_num);
+                linc_string_append(&out, " ");
+
+                if (redir->rdr_in) {
+                    if (redir->io_num != 0)
+                        linc_string_appendf(&out, "%d", redir->io_num);
+                    linc_string_append(&out, "<");
+                } else {
+                    if (redir->io_num != 1)
+                        linc_string_appendf(&out, "%d", redir->io_num);
+                    linc_string_append(&out, ">");
                 }
 
                 for (size_t seg_i = 0; seg_i < segs->size; ++seg_i) {
@@ -241,31 +245,19 @@ static void child_redir_setup(da_redir *redirs) {
         ps_redir *redir = &redirs->data[i];
         const char *arg = redir->target.arg;
 
-        int rfd;
+        int fd;
 
-        if (redir->io_num == STDIN_FILENO) {
-            rfd = open(arg, O_RDONLY);
-            if (rfd == -1)
-                err_exit("open");
-        } else {
+        if (!redir->rdr_in) {
             if (redir->append) {
-                rfd = open(arg, O_WRONLY | O_CREAT | O_EXCL, 0600);
-                if (rfd == -1) {
-                    if (errno == EEXIST) {
-                        rfd = open(arg, O_WRONLY | O_APPEND);
-                        if (rfd == -1)
-                            err_exit("open");
-                    } else
-                        err_exit("open");
-                }
+                fd = xopen(arg, O_WRONLY | O_CREAT | O_APPEND, 0600);
             } else {
-                rfd = open(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-                if (rfd == -1)
-                    err_exit("open");
+                fd = xopen(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
             }
+        } else {
+            fd = xopen(arg, O_RDONLY);
         }
 
-        move_fd(rfd, redir->io_num);
+        xdup2_move(fd, redir->io_num);
     }
 }
 
@@ -300,10 +292,10 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             env.subsh |= SUBSH_PIPE;
 
             if (!first)
-                move_fd(prev_rfd, STDIN_FILENO);
+                xdup2_move(prev_rfd, STDIN_FILENO);
 
             if (!last) {
-                move_fd(next_pipe[1], STDOUT_FILENO);
+                xdup2_move(next_pipe[1], STDOUT_FILENO);
                 xclose(next_pipe[0]);
             }
 

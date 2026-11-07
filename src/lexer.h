@@ -10,14 +10,16 @@ typedef enum {
     LX_TOK_BG,
     LX_TOK_RDR_IN,
     LX_TOK_RDR_OUT,
-    LX_TOK_RDR_ERR,
     LX_TOK_APPEND,
     LX_TOK_AND_IF,
     LX_TOK_OR_IF,
     LX_TOK_LPAREN,
     LX_TOK_RPAREN,
+    LX_TOK_IO_NUM,
     LX_TOK_UNKNOWN,
     LX_TOK_WORD,
+    LX_WHITE_SPACE,
+    LX_EOL,
 } lx_kind;
 
 typedef enum {
@@ -51,7 +53,12 @@ LINC_ARRAY_TYPE(da_part, lx_part);
 
 struct lx_tok {
     lx_kind kind;
-    da_part parts;
+    bool is_num;
+
+    union {
+        da_part parts;
+        int io_num;
+    };
 };
 
 typedef struct lx_tok lx_tok;

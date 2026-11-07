@@ -58,6 +58,7 @@ struct ps_redir {
     ps_word target;
     int io_num;
     int append;
+    bool rdr_in;
 };
 
 struct ps_cmd {

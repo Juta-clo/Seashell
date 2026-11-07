@@ -833,6 +833,127 @@ TEST(parser, alias_that_expands_into_pipeline) {
     validate("foo bar", &exp);
 }
 
+TEST(parser, append_mode_is_set) {
+    exp_ast exp = AST(NOIF(CMD_R(
+        WORDS(PLAIN_WORD("echo"), PLAIN_WORD("x")),
+        REDIRS(REDIR(PLAIN_WORD("file"), 123, 1))
+    )));
+
+    validate("echo x 123>> file", &exp);
+}
+
+TEST(parser, arbitrary_io_numbers) {
+    exp_ast exp = AST(NOIF(
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 1, 0))),
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 2, 0))),
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 3, 0))),
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 9999, 0))),
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 1, 1))),
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 2, 1))),
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 3, 1))),
+        CMD_R(WORDS(PLAIN_WORD("a")),
+            REDIRS(REDIR(PLAIN_WORD("f"), 9999, 1))),
+    ));
+
+    validate(
+        "a 1> f | a 2> f | a 3> f | a 9999> f |"
+        "a 1>> f | a 2>> f | a 3>> f | a 9999>> f",
+        &exp);
+}
+
+TEST(parser, multiple_arbitrary_io_number_redirects) {
+    exp_ast exp = AST(NOIF(
+    CMD_R(WORDS(PLAIN_WORD("a")),
+        REDIRS(
+            REDIR(PLAIN_WORD("foo"), 1, 0),
+            REDIR(PLAIN_WORD("123"), 2, 0),
+            REDIR(PLAIN_WORD("bar"), 35, 0),
+            REDIR(PLAIN_WORD("log"), 1003, 1)
+        )),
+    ));
+
+    validate("a 1> foo 2> 123 35>bar 1003>>log", &exp);
+}
+
+TEST(parser, io_number_not_consumed_when_white_space) {
+    exp_ast exp = AST(NOIF(
+    CMD_R(WORDS(PLAIN_WORD("a"), PLAIN_WORD("123")),
+        REDIRS(REDIR(PLAIN_WORD("foo"), 1, 0))),
+    ));
+
+    validate("a 123 >foo", &exp);
+}
+
+TEST(parser, argument_after_redirect) {
+    exp_ast exp = AST(NOIF(
+    CMD_R(WORDS(PLAIN_WORD("echo"), PLAIN_WORD("tail")),
+        REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))),
+    ));
+
+    validate("echo 123>>out tail", &exp);
+
+}
+
+TEST(parser, non_append_between_io_number_appends) {
+    exp_ast exp = AST(NOIF(
+    CMD_R(WORDS(PLAIN_WORD("echo")),
+        REDIRS(
+            REDIR(PLAIN_WORD("a"), 3, 1),
+            REDIR(PLAIN_WORD("b"), 1, 0),
+            REDIR(PLAIN_WORD("c"), 4, 1)
+        )),
+    ));
+
+    validate("echo 3>>a >b 4>>c", &exp);
+}
+
+TEST(parser, io_numbers_inside_subshells) {
+    exp_ast exp = AST(NOIF(SUBSH(AST(NOIF(
+    CMD_R(WORDS(PLAIN_WORD("echo")),
+        REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))),
+    )))));
+
+    validate("(echo 123>>out)", &exp);
+}
+
+TEST(parser, io_number_redirect_subshell_output) {
+    exp_ast exp = AST(NOIF(
+        SUBSH_R(
+            AST(NOIF(CMD(PLAIN_WORD("echo")))),
+            REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))
+        )
+    ));
+
+    validate("(echo) 123>>out", &exp);
+}
+
+TEST(parser, andor_connected_commands_after_io_number_redirect) {
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("echo")),
+            REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))
+        )),
+        ANDIF(CMD(PLAIN_WORD("next")))
+    );
+
+    validate("echo 123>>out && next", &exp);
+}
+
+TEST(parser, io_number_fail_rejections) {
+    validate_fail("echo 123>");
+    validate_fail("echo 123>>");
+    validate_fail("echo 123>> | next");
+    validate_fail("echo 123>> && next");
+    validate_fail("echo 123>> >out");
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(parser) {
@@ -859,6 +980,7 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, redir_append);
     RUN_TEST_CASE(parser, multiple_redirects);
 
+    /* subshell */
     RUN_TEST_CASE(parser, subshell_not_in_command_position_should_fail);
     RUN_TEST_CASE(parser, subshell_after_redirect_should_fail);
     RUN_TEST_CASE(parser, subshell_nested_syntax_error_should_fail);
@@ -876,6 +998,7 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, subshell_with_multiple_redirects);
     RUN_TEST_CASE(parser, subshell_with_alias_expansion);
 
+    /* alias expansion */
     RUN_TEST_CASE(parser, alias_simple_word);
     RUN_TEST_CASE(parser, alias_multiple_words);
     RUN_TEST_CASE(parser, alias_with_redirection);
@@ -883,4 +1006,16 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, alias_with_pipeline);
     RUN_TEST_CASE(parser, alias_with_andor);
     RUN_TEST_CASE(parser, alias_that_expands_into_pipeline);
+
+    /* variable io numbers */
+    RUN_TEST_CASE(parser, append_mode_is_set);
+    RUN_TEST_CASE(parser, arbitrary_io_numbers);
+    RUN_TEST_CASE(parser, multiple_arbitrary_io_number_redirects);
+    RUN_TEST_CASE(parser, io_number_not_consumed_when_white_space);
+    RUN_TEST_CASE(parser, argument_after_redirect);
+    RUN_TEST_CASE(parser, non_append_between_io_number_appends);
+    RUN_TEST_CASE(parser, io_numbers_inside_subshells);
+    RUN_TEST_CASE(parser, io_number_redirect_subshell_output);
+    RUN_TEST_CASE(parser, andor_connected_commands_after_io_number_redirect);
+    RUN_TEST_CASE(parser, io_number_fail_rejections);
 }

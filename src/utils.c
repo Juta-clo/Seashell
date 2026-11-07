@@ -82,7 +82,7 @@ void err_msg(const char *fmt, ...) {
 
 /* general */
 
-void move_fd(int fd1, int fd2) {
+void xdup2_move(int fd1, int fd2) {
     if (fd1 == fd2)
         return;
 
@@ -91,18 +91,34 @@ void move_fd(int fd1, int fd2) {
 }
 
 int get_int(const char *arg, int *num) {
-    ASSERT(num);
+    ASSERT(arg && num);
 
     if (arg[0] == '\0')
         return -1;
 
-    char *endptr;
-    *num = (int) strtol(&arg[0], &endptr, 10);
+    int saved_errno = errno;
+    char *end;
+    long out;
 
-    if (*endptr != '\0')
-        return -1;
+    errno = 0;
+    out = strtol(arg, &end, 10);
 
+    if (*end != '\0')
+        goto fail;
+
+    if (errno == ERANGE)
+        goto fail;
+
+    if (out > INT_MAX || out < INT_MIN)
+        goto fail;
+
+    errno = saved_errno;
+    *num = out;
     return 0;
+
+fail:
+    errno = saved_errno;
+    return -1;
 }
 
 bool is_dir(const char *path) {

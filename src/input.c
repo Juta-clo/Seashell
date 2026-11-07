@@ -145,7 +145,6 @@ static int input_current_tok(comp_tok *comp, int *start, int *end) {
                 *comp = COMP_ARG;
             } else if (toks.data[i - 1].kind == LX_TOK_RDR_OUT ||
                        toks.data[i - 1].kind == LX_TOK_RDR_IN ||
-                       toks.data[i - 1].kind == LX_TOK_RDR_ERR ||
                        toks.data[i - 1].kind == LX_TOK_APPEND) {
                 *comp = COMP_REDIR;
             } else {
