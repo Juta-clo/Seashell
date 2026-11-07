@@ -16,7 +16,6 @@
 
 #define NOFG -1
 
-#define SUBSH_NONE  0
 #define SUBSH_PIPE  1
 #define SUBSH_ASYNC 2
 

@@ -66,7 +66,7 @@ static int validate_argc(char **argv, size_t min_argc, size_t max_argc) {
 }
 
 static int run_fg_builtin(char **argv, shell_env *env) {
-    if (env->subsh != SUBSH_NONE) {
+    if (env->subsh) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -132,7 +132,7 @@ static int run_fg_builtin(char **argv, shell_env *env) {
 }
 
 static int run_bg_builtin(char **argv, shell_env *env) {
-    if (env->subsh != SUBSH_NONE) {
+    if (env->subsh) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -170,7 +170,7 @@ static int run_bg_builtin(char **argv, shell_env *env) {
 
 /* default sig is TERM */
 static int run_kill_builtin(char **argv, shell_env *env) {
-    if (env->subsh != SUBSH_NONE) {
+    if (env->subsh) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -237,7 +237,7 @@ static int run_kill_builtin(char **argv, shell_env *env) {
 }
 
 static int run_jobs_builtin(char **argv, shell_env *env) {
-    if (env->subsh != SUBSH_NONE) {
+    if (env->subsh) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -285,7 +285,7 @@ static int run_exit_builtin(char **argv, shell_env *_) {
         }
     }
 
-    if (env.subsh != SUBSH_NONE) {
+    if (env.subsh) {
         _exit(exit_status);
     } else {
         printf("exit\n");
@@ -417,7 +417,7 @@ static int run_unalias_builtin(char **argv, shell_env *_) {
 }
 
 int run_lua_builtin(char **argv, shell_env *env) {
-    if (env->subsh != SUBSH_NONE) {
+    if (env->subsh) {
         fprintf(stderr, "%s: no lua in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }

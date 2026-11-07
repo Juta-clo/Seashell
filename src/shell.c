@@ -41,7 +41,7 @@ static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
         (p1->stat == PROC_STOP && p1->stop_sig == p2->stop_sig));
 }
 
-static char *get_pline_str_ast(ps_ast *ast) {
+static char *get_subsh_str(ps_ast *ast) {
     ASSERT(ast && ast->andors.size > 0);
 
     linc_string out = LINC_STRING_INIT;
@@ -63,7 +63,7 @@ static char *get_pline_str_ast(ps_ast *ast) {
                 linc_string_append(&out, " | ");
 
             if (cmd->kind == PS_CMD_SUBSH) {
-                char *cmd_str = get_pline_str_ast(&cmd->subsh);
+                char *cmd_str = get_subsh_str(&cmd->subsh);
                 linc_string_append(&out, cmd_str);
                 free(cmd_str);
             } else {
@@ -114,6 +114,9 @@ static char *get_pline_str_ast(ps_ast *ast) {
             }
         }
     }
+
+    if (ast->bg)
+        linc_string_append(&out, " &");
 
     linc_string_append(&out, ")");
     return out.cstr;
@@ -216,7 +219,7 @@ static void flush_job_events(void) {
     job_event *jev;
 
     while ((jev = job_event_pop())) {
-        if (env.subsh == SUBSH_NONE)
+        if (!env.subsh)
             handle_job_event(jev);
 
         job_event_free(jev);
@@ -291,7 +294,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
         if (cpid == 0) {
             xsetpgid(0, pld.pgid);
 
-            if (!bg && first && env.subsh == SUBSH_NONE)
+            if (!bg && first && !env.subsh)
                 xtcsetpgrp(env.tty_fd, getpgrp());
 
             env.subsh |= SUBSH_PIPE;
@@ -315,13 +318,9 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
                 _exit(shell_run_andor(&cur_cmd->subsh));
             }
 
-            /* is it a builtin? */
-
             int status;
             if (try_run_builtin(cur_cmd->argv, &status))
                 _exit(status);
-
-            /* exec program */
 
             execvp(cur_cmd->argv[0], cur_cmd->argv);
 
@@ -339,7 +338,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             err_exit("setpgid");
         }
 
-        if (!bg && first && env.subsh == SUBSH_NONE)
+        if (!bg && first && !env.subsh)
             xtcsetpgrp(env.tty_fd, pld.pgid);
 
         if (!first)
@@ -354,7 +353,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
         pproc->pid = cpid;
 
         if (cur_cmd->kind == PS_CMD_SUBSH) {
-            char *cmd_str = get_pline_str_ast(&cur_cmd->subsh);
+            char *cmd_str = get_subsh_str(&cur_cmd->subsh);
             pproc->argv = argv_copy((char *[]){ cmd_str, nullptr });
             free(cmd_str);
         } else {
@@ -416,7 +415,7 @@ static int shell_wait_pline(int jid, int *status) {
         process_signals();
 
         while ((jev = job_event_pop())) {
-            if (env.subsh == SUBSH_NONE)
+            if (!env.subsh)
                 handle_job_event(jev);
 
             if (jev->jid == jid) {
@@ -436,7 +435,7 @@ static int shell_wait_pline(int jid, int *status) {
                     goto cleanup;
                 }
 
-                if (env.subsh == SUBSH_NONE && jev->type == JSTOPPED) {
+                if (!env.subsh && jev->type == JSTOPPED) {
                     if (jev->last->stat == PROC_STOP) {
                         *status = jev->last->stop_sig + 128;
                     } else {
@@ -462,6 +461,34 @@ cleanup:
 
 static int shell_run_andor(ps_ast *ast) {
     int status = EXIT_SUCCESS;
+    bool caller = true;
+
+    if (ast->bg && ast->andors.size > 1) {
+        ast->bg = false;
+
+        int subsh_pgid = subshell_fork();
+
+        if (subsh_pgid != 0) {
+            int jid = job_new_id();
+            char *cmd_str = get_subsh_str(ast);
+
+            sh_pgrp pld = { .pgid = subsh_pgid };
+            *linc_array_push(&pld.procs) = (sh_proc){
+                .pid = subsh_pgid,
+                .argv = argv_copy((char *[]){ cmd_str, nullptr })
+            };
+
+            free(cmd_str);
+            job_add(jid, &pld);
+
+            if (!env.subsh)
+                printf("[%d] %d\n", jid, subsh_pgid);
+
+            return status;
+        }
+
+        caller = false;
+    }
 
     for (size_t i = 0; i < ast->andors.size; ++i) {
         ps_andor *andor = &ast->andors.data[i];
@@ -474,16 +501,18 @@ static int shell_run_andor(ps_ast *ast) {
 
             env.fg_jid = job_new_id();
 
-            if (!ast->bg && env.subsh == SUBSH_NONE)
+            if (!ast->bg && !env.subsh)
                 xtcgetattr(env.tty_fd, &env.tio);
 
             shell_start_pline(&andor->pline, ast->bg, env.fg_jid);
 
-            if (env.subsh == SUBSH_NONE && ast->bg) {
-                pid_t pgrp = job_lookup_pgrp(env.fg_jid);
-                printf("[%d] %d\n", env.fg_jid, pgrp);
-                env.fg_jid = NOFG;
+            if (ast->bg) {
+                if (!env.subsh) {
+                    pid_t pgrp = job_lookup_pgrp(env.fg_jid);
+                    printf("[%d] %d\n", env.fg_jid, pgrp);
+                }
 
+                env.fg_jid = NOFG;
                 break;
             }
 
@@ -498,6 +527,9 @@ static int shell_run_andor(ps_ast *ast) {
             }
         }
     }
+
+    if (!caller)
+        _exit(status);
 
     return status;
 }
@@ -555,7 +587,7 @@ void process_signals(void) {
 
         flush_wait_events();
 
-        if (env.fg_jid == NOFG && env.subsh == SUBSH_NONE)
+        if (env.fg_jid == NOFG && !env.subsh)
             flush_job_events();
     }
 
@@ -576,7 +608,7 @@ void process_signals(void) {
 }
 
 void print_job_event(int jid, const job_event *jev, bool verbose) {
-    if (env.subsh != SUBSH_NONE)
+    if (env.subsh)
         return;
 
     linc_string msg = LINC_STRING_INIT;
@@ -616,32 +648,7 @@ int shell_run(const char *cmd) {
     if (line_to_ast(line, &ast) == -1)
         goto cleanup;
 
-    if (!ast.bg || ast.andors.size == 1) {
-        status = shell_run_andor(&ast);
-        goto cleanup;
-    }
-
-    int subsh_pgid = subshell_fork();
-
-    if (subsh_pgid == 0) {
-        status = shell_run_andor(&ast);
-        _exit(status);
-    }
-
-    int jid = job_new_id();
-    char *cmd_str = get_pline_str_ast(&ast);
-
-    sh_pgrp pld = { .pgid = subsh_pgid };
-    *linc_array_push(&pld.procs) = (sh_proc){
-        .pid = subsh_pgid,
-        .argv = argv_copy((char *[]){ cmd_str, nullptr })
-    };
-
-    free(cmd_str);
-    job_add(jid, &pld);
-    printf("[%d] %d\n", jid, subsh_pgid);
-
-    status = EXIT_SUCCESS;
+    status = shell_run_andor(&ast);
 
 cleanup:
     ps_free(&ast);

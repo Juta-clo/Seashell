@@ -19,7 +19,10 @@ int main(int argc, char *const *argv) {
         if (env.lua) {
             luart_run(line);
         } else {
-            shell_run(line);
+            int status = shell_run(line);
+
+            if (env.subsh)
+                _exit(status);
         }
 
         free(line);

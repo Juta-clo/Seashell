@@ -38,10 +38,10 @@ void fatal_imp(const char *fmt, ...) {
         va_end(va);
     }
 
-    if (env.subsh == SUBSH_NONE) {
-        exit(EXIT_FAILURE);
-    } else {
+    if (env.subsh) {
         _exit(EXIT_FAILURE);
+    } else {
+        exit(EXIT_FAILURE);
     }
 }
 

@@ -1002,10 +1002,72 @@ TEST(shell, setting_stdin_for_a_subshell) {
     );
 }
 
-IGNORE_TEST(shell, background_subshell_should_exit_immediately) {
+TEST(shell, background_subshell_should_exit_immediately) {
     vt_send_str("(sleep 100 &)\n");
     assert_term(1, PROMPT_LEN,
         PROMPT "(sleep 100 &)",
+        PROMPT
+    );
+}
+
+TEST(shell, subshell_background_single_pipeline) {
+    vt_send_str("(sleep 100 &)\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "(sleep 100 &)",
+        PROMPT
+    );
+
+    vt_send_str("(sleep 100) &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "(sleep 100) &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("(sleep 100 &) &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "(sleep 100 &) &",
+        "[2] %d",
+        PROMPT "%s",
+        "[2] done             (sleep 100 &)",
+        PROMPT
+    );
+
+    vt_send_str("jobs\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "jobs",
+        "[1] running          (sleep 100)%s",
+        PROMPT
+    );
+}
+
+TEST(shell, subshell_background_andif_chain) {
+    vt_send_str("(true && sleep 100 &)\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "(true && sleep 100 &)",
+        PROMPT
+    );
+
+    vt_send_str("(true && sleep 100) &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "(true && sleep 100) &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("(true && sleep 100 &) &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "(true && sleep 100 &) &",
+        "[2] %d",
+        PROMPT "%s",
+        "[2] done             (true && sleep 100 &)",
+        PROMPT
+    );
+
+    vt_send_str("jobs\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "jobs",
+        "[1] running          (true && sleep 100)%s",
         PROMPT
     );
 }
@@ -1071,4 +1133,6 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, builtins_affect_subshell_only);
     RUN_TEST_CASE(shell, setting_stdin_for_a_subshell);
     RUN_TEST_CASE(shell, background_subshell_should_exit_immediately);
+    RUN_TEST_CASE(shell, subshell_background_single_pipeline);
+    RUN_TEST_CASE(shell, subshell_background_andif_chain);
 }
