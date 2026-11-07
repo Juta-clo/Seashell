@@ -90,29 +90,41 @@ static char *get_subsh_str(ps_ast *ast) {
 
             for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
                 ps_redir *redir = &cmd->redirs.data[redir_i];
-                da_segment *segs = &redir->target.segments;
 
                 linc_string_append(&out, " ");
 
                 if (redir->rdr_in) {
                     if (redir->io_num != 0)
                         linc_string_appendf(&out, "%d", redir->io_num);
-                    linc_string_append(&out, "<");
+
+                    if (!redir->fd_dup) {
+                        linc_string_append(&out, "<");
+                    } else {
+                        linc_string_appendf(&out, "<&%d", redir->fd_target);
+                    }
                 } else {
                     if (redir->io_num != 1)
                         linc_string_appendf(&out, "%d", redir->io_num);
-                    linc_string_append(&out, ">");
+
+                    if (!redir->fd_dup) {
+                        linc_string_append(&out, ">");
+                    } else {
+                        linc_string_appendf(&out, ">&%d", redir->fd_target);
+                    }
                 }
 
-                for (size_t seg_i = 0; seg_i < segs->size; ++seg_i) {
-                    ps_segment *seg = &segs->data[seg_i];
+                if (!redir->fd_dup) {
+                    da_segment *segs = &redir->target.segments;
+                    for (size_t seg_i = 0; seg_i < segs->size; ++seg_i) {
+                        ps_segment *seg = &segs->data[seg_i];
 
-                    if (seg->quote == PS_Q_NONE) {
-                        linc_string_append(&out, seg->raw);
-                    } else if (seg->quote == PS_Q_DOUBLE) {
-                        linc_string_appendf(&out, "\"%s\"", seg->raw);
-                    } else if (seg->quote == PS_Q_SINGLE) {
-                        linc_string_appendf(&out, "'%s'", seg->raw);
+                        if (seg->quote == PS_Q_NONE) {
+                            linc_string_append(&out, seg->raw);
+                        } else if (seg->quote == PS_Q_DOUBLE) {
+                            linc_string_appendf(&out, "\"%s\"", seg->raw);
+                        } else if (seg->quote == PS_Q_SINGLE) {
+                            linc_string_appendf(&out, "'%s'", seg->raw);
+                        }
                     }
                 }
             }
@@ -243,21 +255,26 @@ static bool andor_should_run(ps_andor *andor, int status) {
 static void child_redir_setup(da_redir *redirs) {
     for (size_t i = 0; i < redirs->size; ++i) {
         ps_redir *redir = &redirs->data[i];
-        const char *arg = redir->target.arg;
 
-        int fd;
-
-        if (!redir->rdr_in) {
-            if (redir->append) {
-                fd = xopen(arg, O_WRONLY | O_CREAT | O_APPEND, 0600);
-            } else {
-                fd = xopen(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-            }
+        if (redir->fd_dup) {
+            xdup2(redir->fd_target, redir->io_num);
         } else {
-            fd = xopen(arg, O_RDONLY);
-        }
+            const char *arg = redir->target.arg;
 
-        xdup2_move(fd, redir->io_num);
+            int fd;
+
+            if (!redir->rdr_in) {
+                if (redir->append) {
+                    fd = xopen(arg, O_WRONLY | O_CREAT | O_APPEND, 0600);
+                } else {
+                    fd = xopen(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+                }
+            } else {
+                fd = xopen(arg, O_RDONLY);
+            }
+
+            xdup2_move(fd, redir->io_num);
+        }
     }
 }
 
@@ -573,7 +590,7 @@ void seashell_shutdown(void) {
 }
 
 void process_signals(void) {
-    if (sigchld_caught) {
+    if (sigchld_caught || sig_is_pending(SIGCHLD)) {
         LOG_INFO("SIGCHLD caught");
         sigchld_caught = false;
 

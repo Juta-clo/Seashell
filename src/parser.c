@@ -58,9 +58,11 @@ typedef struct {
 static char *tok_str(lx_kind kind) {
     switch (kind) {
     case LX_TOK_PIPE:    return "|";
-    case LX_TOK_BG:      return "&";
+    case LX_TOK_AMPER:      return "&";
     case LX_TOK_RDR_IN:  return "<";
     case LX_TOK_RDR_OUT: return ">";
+    case LX_TOK_FD_OUT:  return ">&";
+    case LX_TOK_FD_IN:  return "<&";
     case LX_TOK_APPEND:  return ">>";
     case LX_TOK_AND_IF:  return "&&";
     case LX_TOK_OR_IF:   return "||";
@@ -76,11 +78,17 @@ static char *tok_str(lx_kind kind) {
     fatal(nullptr);
 }
 
-static void scan_advance_tok(size_t n, ps_scan *scan) {
+static lx_tok *scan_advance(size_t n, ps_scan *scan) {
     ASSERT_(LEQ, n, scan->toks->size - scan->i);
 
     scan->cur_tok += n;
     scan->i += n;
+
+    return scan->cur_tok;
+}
+
+static lx_tok *scan_final(ps_scan *scan) {
+    return (scan->i == scan->toks->size - 1) ? scan->cur_tok : nullptr;
 }
 
 static void log_tokens(const da_tok *toks) {
@@ -119,7 +127,7 @@ static void copy_word(ps_word *dst, lx_tok *src, ps_scan *scan) {
     }
 }
 
-static void queue_redir(int io_num, ps_scan *scan) {
+static void queue_redir(int io_num, bool fd_dup, ps_scan *scan) {
     ASSERT(scan);
 
     ps_redir *redir = linc_array_push(&scan->cur_cmd->redirs);
@@ -129,6 +137,8 @@ static void queue_redir(int io_num, ps_scan *scan) {
         case LX_TOK_RDR_IN:  io_num = 0; break;
         case LX_TOK_RDR_OUT: io_num = 1; break;
         case LX_TOK_APPEND:  io_num = 1; break;
+        case LX_TOK_FD_OUT:  io_num = 1; break;
+        case LX_TOK_FD_IN:   io_num = 0; break;
         default: fatal("unexpected paraser state");
         }
     }
@@ -136,7 +146,9 @@ static void queue_redir(int io_num, ps_scan *scan) {
     *redir = (ps_redir){
         .io_num = io_num,
         .append = (scan->cur_tok->kind == LX_TOK_APPEND),
-        .rdr_in = (scan->cur_tok->kind == LX_TOK_RDR_IN),
+        .rdr_in = (scan->cur_tok->kind == LX_TOK_RDR_IN ||
+                   scan->cur_tok->kind == LX_TOK_FD_IN),
+        .fd_dup = fd_dup,
         .target.segments.allo = scan->ast->allo
     };
 
@@ -270,7 +282,7 @@ static int parse_subshell(ps_scan *scan) {
         return -1;
     }
 
-    scan_advance_tok(n + 1, scan);
+    scan_advance(n + 1, scan);
 
     lx_free(&subsh_toks);
     return 0;
@@ -309,7 +321,7 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
     if (!toks || !ast || toks->size == 0)
         goto fail;
 
-    for (; scan->i != scan->toks->size; scan_advance_tok(1, scan)) {
+    for (; scan->i != scan->toks->size; scan_advance(1, scan)) {
         lx_kind kind = scan->cur_tok->kind;
 
         /* Just parsed a delimeter so need a command */
@@ -327,19 +339,24 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
                 goto fail_tok;
         }
 
-        /* Just parsed a redirect so need a word (target) */
+        /* Just parsed a redirect so need a target */
         if (scan->queued_redir) {
-            if (kind != LX_TOK_WORD)
+            if (scan->queued_redir->fd_dup) {
+                if (kind != LX_TOK_IO_NUM)
+                    goto fail_tok;
+            } else if (kind != LX_TOK_WORD) {
                 goto fail_tok;
-
-            copy_word(&scan->queued_redir->target, scan->cur_tok, scan);
-            scan->queued_redir = nullptr;
-
-            continue;
+            }
         }
 
         switch (kind) {
         case LX_TOK_WORD:
+            if (scan->queued_redir) {
+                copy_word(&scan->queued_redir->target, scan->cur_tok, scan);
+                scan->queued_redir = nullptr;
+                break;
+            }
+
             if (!scan->cur_pline)
                 add_andor(&ast->andors, scan->andor_op, scan);
 
@@ -360,14 +377,39 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
             scan->need_tok = false;
             break;
         case LX_TOK_IO_NUM:
+            if (scan->queued_redir) {
+                scan->queued_redir->fd_target = scan->cur_tok->io_num;
+                scan->queued_redir = nullptr;
+                break;
+            }
+
+            /* If there is no queued redirect theat means the lexer
+             * lexed a redirect token after the io-number. */
+            ASSERT(!scan_final(scan));
+
             int io_num = scan->cur_tok->io_num;
-            scan_advance_tok(1, scan);
-            queue_redir(io_num, scan);
+            scan_advance(1, scan);
+
+            if (scan->cur_tok->kind == LX_TOK_FD_OUT ||
+                scan->cur_tok->kind == LX_TOK_FD_IN) {
+                queue_redir(io_num, true, scan);
+            } else if (scan->cur_tok->kind == LX_TOK_RDR_OUT ||
+                       scan->cur_tok->kind == LX_TOK_RDR_IN ||
+                       scan->cur_tok->kind == LX_TOK_APPEND) {
+                queue_redir(io_num, false, scan);
+            } else {
+                ASSERT(false && "unexpected token stream");
+            }
+
+            break;
+        case LX_TOK_FD_OUT:
+        case LX_TOK_FD_IN:
+            queue_redir(-1, true, scan);
             break;
         case LX_TOK_RDR_IN:
         case LX_TOK_RDR_OUT:
         case LX_TOK_APPEND:
-            queue_redir(-1, scan);
+            queue_redir(-1, false, scan);
             break;
         case LX_TOK_LPAREN:
             if (!scan->cur_pline)
@@ -401,12 +443,11 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
             scan->andor_op = PS_OR_IF;
             scan->need_tok = true;
             break;
-        case LX_TOK_BG:
-            if (scan->i != toks->size - 1)
+        case LX_TOK_AMPER:
+            if (!scan_final(scan))
                 goto fail_tok;
 
             ast->bg = true;
-            break;
         default:
             break;
         }

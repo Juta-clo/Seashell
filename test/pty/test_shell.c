@@ -1088,6 +1088,52 @@ TEST(shell, redirect_out_on_io_number_zero) {
     );
 }
 
+TEST(shell, duplicate_stdout_onto_stderr) {
+    vt_send_str("echo x 2>/tmp/seashell/test 1>&2\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "echo x 2>/tmp/seashell/test 1>&2",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/seashell/test\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat /tmp/seashell/test",
+        "x",
+        PROMPT
+    );
+}
+
+TEST(shell, duplicating_fd_in_subshell) {
+    vt_send_str("(echo x 2>/tmp/seashell/test 1>&2)\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "(echo x 2>/tmp/seashell/test 1>&2)",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/seashell/test\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat /tmp/seashell/test",
+        "x",
+        PROMPT
+    );
+}
+
+TEST(shell, jobs_after_duplicating_fd_in_subshell) {
+    vt_send_str("(echo x 2>/dev/null 1>&2 && sleep 100) &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "(echo x 2>/dev/null 1>&2 && sleep 100) &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("jobs\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "jobs",
+        "[1] running          (echo x 2>/dev/null >&2 && sleep 100)%s",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1152,4 +1198,7 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, subshell_background_single_pipeline);
     RUN_TEST_CASE(shell, subshell_background_andif_chain);
     RUN_TEST_CASE(shell, redirect_out_on_io_number_zero);
+    RUN_TEST_CASE(shell, duplicate_stdout_onto_stderr);
+    RUN_TEST_CASE(shell, duplicating_fd_in_subshell);
+    RUN_TEST_CASE(shell, jobs_after_duplicating_fd_in_subshell);
 }

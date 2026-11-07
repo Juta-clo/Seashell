@@ -8,12 +8,12 @@ TEST_GROUP(parser);
 
 /************ Shared utils ************/
 
-#define IO_NUM_IN  0
-#define IO_NUM_OUT 1
-#define IO_NUM_ERR 2
-
+#define IO(num) num
 #define APPEND_ON  1
 #define APPEND_OFF 0
+
+#define RDR_OUT false
+#define RDR_IN true
 
 #define EXP_DA(DA_T, ELEM_T, ...) \
     ((DA_T){ \
@@ -45,8 +45,23 @@ TEST_GROUP(parser);
 #define NO_REDIRS \
     ((exp_da_redir){0})
 
-#define REDIR(TARGET, IO_NUM, APPEND) \
-    ((exp_redir){ .target = (TARGET), .io_num = (IO_NUM), .append = (APPEND) })
+#define REDIR(TARGET, IO_NUM, APPEND, RDR_IN) \
+    ((exp_redir){ \
+        .target = (TARGET), \
+        .io_num = (IO_NUM), \
+        .append = (APPEND), \
+        .rdr_in = (RDR_IN), \
+        .fd_dup = false \
+    })
+
+#define REDIR_FD(FD_TARGET, IO_NUM, APPEND, RDR_IN) \
+    ((exp_redir){ \
+        .io_num = (IO_NUM), \
+        .append = (APPEND), \
+        .rdr_in = (RDR_IN), \
+        .fd_dup = (true), \
+        .fd_target = (FD_TARGET) \
+    })
 
 #define REDIRS(...) \
     EXP_DA(exp_da_redir, exp_redir, __VA_ARGS__)
@@ -142,9 +157,15 @@ typedef struct {
 } exp_word;
 
 typedef struct {
-    exp_word target;
     int io_num;
     int append;
+    bool rdr_in;
+    bool fd_dup;
+
+    union {
+        int fd_target;
+        exp_word target;
+    };
 } exp_redir;
 
 typedef struct {
@@ -203,7 +224,14 @@ static void validate_tok(const exp_word *exp, const ps_word *word) {
 static void validate_redir(const exp_redir *exp, const ps_redir *redir) {
     TEST_ASSERT_EQUAL_INT(exp->io_num, redir->io_num);
     TEST_ASSERT_EQUAL_INT(exp->append, redir->append);
-    validate_tok(&exp->target, &redir->target);
+    TEST_ASSERT_EQUAL_INT(exp->rdr_in, redir->rdr_in);
+    TEST_ASSERT_EQUAL_INT(exp->fd_dup, redir->fd_dup);
+
+    if (!exp->fd_dup) {
+        validate_tok(&exp->target, &redir->target);
+    } else {
+        TEST_ASSERT_EQUAL_INT(exp->fd_target, redir->fd_target);
+    }
 }
 
 static void validate_redirs(const exp_da_redir *exp, const da_redir *redirs) {
@@ -308,27 +336,12 @@ TEST_TEAR_DOWN(parser) {
 
 /************ Tests ************/
 
-TEST(parser, bg_not_final_token_should_fail) {
+TEST(parser, general_fail_rejections) {
     validate_fail("a & b");
-}
-
-TEST(parser, redirect_with_no_target_fails) {
     validate_fail("echo hi >");
-}
-
-TEST(parser, pipe_is_final_token_should_fail) {
     validate_fail("cmd |");
-}
-
-TEST(parser, andif_is_final_token_should_fail) {
     validate_fail("cmd &&");
-}
-
-TEST(parser, orif_is_final_token_should_fail) {
     validate_fail("cmd ||");
-}
-
-TEST(parser, no_cmd_redir_should_fail) {
     validate_fail("echo > |");
 }
 
@@ -452,7 +465,7 @@ TEST(parser, and_if_with_redirects) {
                 REDIRS(
                     REDIR(
                         PLAIN_WORD("file"),
-                        IO_NUM_OUT, APPEND_ON
+                        IO(1), APPEND_ON, RDR_OUT
                     )
                 )
             )
@@ -486,7 +499,7 @@ TEST(parser, redir_in) {
                 REDIRS(
                     REDIR(
                         PLAIN_WORD("input.txt"),
-                        IO_NUM_IN, APPEND_OFF
+                        IO(0), APPEND_OFF, RDR_IN
                     )
                 )
             )
@@ -505,7 +518,7 @@ TEST(parser, redir_out) {
                 REDIRS(
                     REDIR(
                         PLAIN_WORD("file.txt"),
-                        1, 0
+                        IO(1), APPEND_OFF, RDR_OUT
                     )
                 )
             )
@@ -525,7 +538,7 @@ TEST(parser, redir_err) {
                 REDIRS(
                     REDIR(
                         PLAIN_WORD("/dev/null"),
-                        IO_NUM_ERR, APPEND_OFF
+                        IO(2), APPEND_OFF, RDR_OUT
                     )
                 )
             )
@@ -545,7 +558,7 @@ TEST(parser, redir_append) {
                 REDIRS(
                     REDIR(
                         PLAIN_WORD("log.txt"),
-                        IO_NUM_OUT, APPEND_ON
+                        IO(1), APPEND_ON, RDR_OUT
                     )
                 )
             )
@@ -564,15 +577,15 @@ TEST(parser, multiple_redirects) {
                 REDIRS(
                     REDIR(
                         PLAIN_WORD("output"),
-                        IO_NUM_OUT, APPEND_OFF
+                        IO(1), APPEND_OFF, RDR_OUT
                     ),
                     REDIR(
                         PLAIN_WORD("output2"),
-                        IO_NUM_OUT, APPEND_OFF
+                        IO(1), APPEND_OFF, RDR_OUT
                     ),
                     REDIR(
                         PLAIN_WORD("errors"),
-                        IO_NUM_ERR, APPEND_OFF
+                        IO(2), APPEND_OFF, RDR_OUT
                     ),
                 )
             )
@@ -581,15 +594,9 @@ TEST(parser, multiple_redirects) {
     validate("syslog > output > output2 2> errors", &exp);
 }
 
-TEST(parser, subshell_not_in_command_position_should_fail) {
+TEST(parser, subshell_fail_rejections) {
     validate_fail("a (b && c)");
-}
-
-TEST(parser, subshell_after_redirect_should_fail) {
     validate_fail("a > (b && c)");
-}
-
-TEST(parser, subshell_nested_syntax_error_should_fail) {
     validate_fail("(a |)");
 }
 
@@ -694,7 +701,7 @@ TEST(parser, subshell_with_complex_command) {
         ANDIF(CMD(PLAIN_WORD("b")), CMD(PLAIN_WORD("c"))),
         ORIF(CMD_R(
             WORDS(PLAIN_WORD("d")),
-            REDIRS(REDIR(PLAIN_WORD("e"), 1, false)))
+            REDIRS(REDIR(PLAIN_WORD("e"), IO(1), APPEND_OFF, RDR_OUT)))
         ),
     );
 
@@ -728,7 +735,7 @@ TEST(parser, subshell_with_redirect) {
     exp_ast exp = AST(
         NOIF(SUBSH_R(
             AST_SIMPLE(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("b"), 1, false))
+            REDIRS(REDIR(PLAIN_WORD("b"), IO(1), APPEND_OFF, RDR_OUT))
         ))
     );
 
@@ -740,9 +747,9 @@ TEST(parser, subshell_with_multiple_redirects) {
         NOIF(SUBSH_R(
             AST_SIMPLE(PLAIN_WORD("a")),
             REDIRS(
-                REDIR(PLAIN_WORD("b"), 1, false),
-                REDIR(PLAIN_WORD("c"), 2, false),
-                REDIR(PLAIN_WORD("d"), 1, true)
+                REDIR(PLAIN_WORD("b"), IO(1), APPEND_OFF, RDR_OUT),
+                REDIR(PLAIN_WORD("c"), IO(2), APPEND_OFF, RDR_OUT),
+                REDIR(PLAIN_WORD("d"), IO(1), APPEND_ON, RDR_OUT)
             )
         ))
     );
@@ -784,7 +791,7 @@ TEST(parser, alias_with_redirection) {
     exp_ast exp = AST(
         NOIF(CMD_R(
             WORDS(PLAIN_WORD("bar")),
-            REDIRS(REDIR(PLAIN_WORD("bee"), 1, false))
+            REDIRS(REDIR(PLAIN_WORD("bee"), IO(1), APPEND_OFF, RDR_OUT))
         )
     ));
     validate("foo", &exp);
@@ -796,8 +803,8 @@ TEST(parser, alias_with_multiple_redirections) {
         NOIF(CMD_R(
             WORDS(PLAIN_WORD("bar")),
             REDIRS(
-                REDIR(PLAIN_WORD("bee"), 1, false),
-                REDIR(PLAIN_WORD("boo"), 2, false)
+                REDIR(PLAIN_WORD("bee"), IO(1), APPEND_OFF, RDR_OUT),
+                REDIR(PLAIN_WORD("boo"), IO(2), APPEND_OFF, RDR_OUT)
             )
         )
     ));
@@ -836,7 +843,7 @@ TEST(parser, alias_that_expands_into_pipeline) {
 TEST(parser, append_mode_is_set) {
     exp_ast exp = AST(NOIF(CMD_R(
         WORDS(PLAIN_WORD("echo"), PLAIN_WORD("x")),
-        REDIRS(REDIR(PLAIN_WORD("file"), 123, 1))
+        REDIRS(REDIR(PLAIN_WORD("file"), IO(123), APPEND_ON, RDR_OUT))
     )));
 
     validate("echo x 123>> file", &exp);
@@ -845,21 +852,21 @@ TEST(parser, append_mode_is_set) {
 TEST(parser, arbitrary_io_numbers) {
     exp_ast exp = AST(NOIF(
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 1, 0))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(1), APPEND_OFF, RDR_OUT))),
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 2, 0))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(2), APPEND_OFF, RDR_OUT))),
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 3, 0))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(3), APPEND_OFF, RDR_OUT))),
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 9999, 0))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(9999), APPEND_OFF, RDR_OUT))),
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 1, 1))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(1), APPEND_ON, RDR_OUT))),
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 2, 1))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(2), APPEND_ON, RDR_OUT))),
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 3, 1))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(3), APPEND_ON, RDR_OUT))),
         CMD_R(WORDS(PLAIN_WORD("a")),
-            REDIRS(REDIR(PLAIN_WORD("f"), 9999, 1))),
+            REDIRS(REDIR(PLAIN_WORD("f"), IO(9999), APPEND_ON, RDR_OUT))),
     ));
 
     validate(
@@ -872,10 +879,10 @@ TEST(parser, multiple_arbitrary_io_number_redirects) {
     exp_ast exp = AST(NOIF(
     CMD_R(WORDS(PLAIN_WORD("a")),
         REDIRS(
-            REDIR(PLAIN_WORD("foo"), 1, 0),
-            REDIR(PLAIN_WORD("123"), 2, 0),
-            REDIR(PLAIN_WORD("bar"), 35, 0),
-            REDIR(PLAIN_WORD("log"), 1003, 1)
+            REDIR(PLAIN_WORD("foo"), IO(1), APPEND_OFF, RDR_OUT),
+            REDIR(PLAIN_WORD("123"), IO(2), APPEND_OFF, RDR_OUT),
+            REDIR(PLAIN_WORD("bar"), IO(35), APPEND_OFF, RDR_OUT),
+            REDIR(PLAIN_WORD("log"), IO(1003), APPEND_ON, RDR_OUT)
         )),
     ));
 
@@ -885,7 +892,7 @@ TEST(parser, multiple_arbitrary_io_number_redirects) {
 TEST(parser, io_number_not_consumed_when_white_space) {
     exp_ast exp = AST(NOIF(
     CMD_R(WORDS(PLAIN_WORD("a"), PLAIN_WORD("123")),
-        REDIRS(REDIR(PLAIN_WORD("foo"), 1, 0))),
+        REDIRS(REDIR(PLAIN_WORD("foo"), IO(1), APPEND_OFF, RDR_OUT))),
     ));
 
     validate("a 123 >foo", &exp);
@@ -894,7 +901,7 @@ TEST(parser, io_number_not_consumed_when_white_space) {
 TEST(parser, argument_after_redirect) {
     exp_ast exp = AST(NOIF(
     CMD_R(WORDS(PLAIN_WORD("echo"), PLAIN_WORD("tail")),
-        REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))),
+        REDIRS(REDIR(PLAIN_WORD("out"), IO(123), APPEND_ON, RDR_OUT))),
     ));
 
     validate("echo 123>>out tail", &exp);
@@ -905,9 +912,9 @@ TEST(parser, non_append_between_io_number_appends) {
     exp_ast exp = AST(NOIF(
     CMD_R(WORDS(PLAIN_WORD("echo")),
         REDIRS(
-            REDIR(PLAIN_WORD("a"), 3, 1),
-            REDIR(PLAIN_WORD("b"), 1, 0),
-            REDIR(PLAIN_WORD("c"), 4, 1)
+            REDIR(PLAIN_WORD("a"), IO(3), APPEND_ON, RDR_OUT),
+            REDIR(PLAIN_WORD("b"), IO(1), APPEND_OFF, RDR_OUT),
+            REDIR(PLAIN_WORD("c"), IO(4), APPEND_ON, RDR_OUT)
         )),
     ));
 
@@ -917,7 +924,7 @@ TEST(parser, non_append_between_io_number_appends) {
 TEST(parser, io_numbers_inside_subshells) {
     exp_ast exp = AST(NOIF(SUBSH(AST(NOIF(
     CMD_R(WORDS(PLAIN_WORD("echo")),
-        REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))),
+        REDIRS(REDIR(PLAIN_WORD("out"), IO(123), APPEND_ON, RDR_OUT))),
     )))));
 
     validate("(echo 123>>out)", &exp);
@@ -927,7 +934,7 @@ TEST(parser, io_number_redirect_subshell_output) {
     exp_ast exp = AST(NOIF(
         SUBSH_R(
             AST(NOIF(CMD(PLAIN_WORD("echo")))),
-            REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))
+            REDIRS(REDIR(PLAIN_WORD("out"), IO(123), APPEND_ON, RDR_OUT))
         )
     ));
 
@@ -938,7 +945,7 @@ TEST(parser, andor_connected_commands_after_io_number_redirect) {
     exp_ast exp = AST(
         NOIF(CMD_R(
             WORDS(PLAIN_WORD("echo")),
-            REDIRS(REDIR(PLAIN_WORD("out"), 123, 1))
+            REDIRS(REDIR(PLAIN_WORD("out"), IO(123), APPEND_ON, RDR_OUT))
         )),
         ANDIF(CMD(PLAIN_WORD("next")))
     );
@@ -954,15 +961,87 @@ TEST(parser, io_number_fail_rejections) {
     validate_fail("echo 123>> >out");
 }
 
+TEST(parser, fd_duplication) {
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("echo"), PLAIN_WORD("x")),
+            REDIRS(REDIR_FD(IO(1), IO(2), APPEND_OFF, RDR_OUT))
+        ))
+    );
+
+    validate("echo x 2>&1", &exp);
+}
+
+TEST(parser, multiple_fd_duplications) {
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("echo"), PLAIN_WORD("x")),
+            REDIRS(
+                REDIR_FD(IO(2), IO(1), APPEND_OFF, RDR_OUT),
+                REDIR_FD(IO(1), IO(2), APPEND_OFF, RDR_OUT),
+                REDIR_FD(IO(3), IO(999), APPEND_OFF, RDR_IN),
+            )
+        ))
+    );
+
+    validate("echo x 1>&2 2>&1 999<&3", &exp);
+}
+
+TEST(parser, file_redirections_after_fd_duplication) {
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("echo"), PLAIN_WORD("x")),
+            REDIRS(
+                REDIR_FD(IO(2), IO(1), APPEND_OFF, RDR_OUT),
+                REDIR(PLAIN_WORD("out"), IO(1), APPEND_OFF, RDR_OUT),
+            )
+        ))
+    );
+
+    validate("echo x 1>&2>out", &exp);
+}
+
+TEST(parser, multiple_fd_duplications_no_white_space) {
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("echo"), PLAIN_WORD("x")),
+            REDIRS(
+                REDIR_FD(IO(23), IO(1), APPEND_OFF, RDR_OUT),
+                REDIR_FD(IO(2), IO(1), APPEND_OFF, RDR_OUT),
+            )
+        ))
+    );
+
+    validate("echo x 1>&23>&2", &exp);
+}
+
+TEST(parser, white_space_between_fd_target_and_ampersand) {
+    exp_ast exp = AST(
+        NOIF(CMD_R(
+            WORDS(PLAIN_WORD("echo"), PLAIN_WORD("x")),
+            REDIRS(
+                REDIR_FD(IO(2), IO(1), APPEND_OFF, RDR_OUT)
+            )
+        ))
+    );
+
+    validate("echo x 1>&   2", &exp);
+}
+
+TEST(parser, fd_duplication_fail_rejections) {
+    validate_fail("echo 1>&");
+    validate_fail("echo 1>&x");
+    validate_fail("echo 1>&>");
+    validate_fail("echo 1>&||");
+    validate_fail("echo 1>&&");
+    validate_fail("echo 1>>&1");
+    validate_fail("echo 1>>&x");
+    validate_fail("echo 1>&123x");
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(parser) {
-    RUN_TEST_CASE(parser, bg_not_final_token_should_fail);
-    RUN_TEST_CASE(parser, redirect_with_no_target_fails);
-    RUN_TEST_CASE(parser, no_cmd_redir_should_fail);
-    RUN_TEST_CASE(parser, pipe_is_final_token_should_fail);
-    RUN_TEST_CASE(parser, andif_is_final_token_should_fail);
-    RUN_TEST_CASE(parser, orif_is_final_token_should_fail);
     RUN_TEST_CASE(parser, bg_is_final_token_should_pass);
     RUN_TEST_CASE(parser, cmd_one_word);
     RUN_TEST_CASE(parser, cmd_two_word);
@@ -979,11 +1058,9 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, redir_err);
     RUN_TEST_CASE(parser, redir_append);
     RUN_TEST_CASE(parser, multiple_redirects);
+    RUN_TEST_CASE(parser, general_fail_rejections);
 
     /* subshell */
-    RUN_TEST_CASE(parser, subshell_not_in_command_position_should_fail);
-    RUN_TEST_CASE(parser, subshell_after_redirect_should_fail);
-    RUN_TEST_CASE(parser, subshell_nested_syntax_error_should_fail);
     RUN_TEST_CASE(parser, subshell_simple_command);
     RUN_TEST_CASE(parser, subshell_with_pipeline);
     RUN_TEST_CASE(parser, subshell_with_andors);
@@ -997,6 +1074,7 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, subshell_with_redirect);
     RUN_TEST_CASE(parser, subshell_with_multiple_redirects);
     RUN_TEST_CASE(parser, subshell_with_alias_expansion);
+    RUN_TEST_CASE(parser, subshell_fail_rejections);
 
     /* alias expansion */
     RUN_TEST_CASE(parser, alias_simple_word);
@@ -1018,4 +1096,12 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, io_number_redirect_subshell_output);
     RUN_TEST_CASE(parser, andor_connected_commands_after_io_number_redirect);
     RUN_TEST_CASE(parser, io_number_fail_rejections);
+
+    /* file descriptor duplication */
+    RUN_TEST_CASE(parser, fd_duplication);
+    RUN_TEST_CASE(parser, multiple_fd_duplications);
+    RUN_TEST_CASE(parser, file_redirections_after_fd_duplication);
+    RUN_TEST_CASE(parser, multiple_fd_duplications_no_white_space);
+    RUN_TEST_CASE(parser, white_space_between_fd_target_and_ampersand);
+    RUN_TEST_CASE(parser, fd_duplication_fail_rejections);
 }

@@ -60,23 +60,25 @@ TEST_TEAR_DOWN(lexer) {}
 /************ Tests ************/
 
 TEST(lexer, all_operators) {
-    const lx_kind kind[7] = {
+    const lx_kind kind[9] = {
+        LX_TOK_AND_IF,
+        LX_TOK_OR_IF,
         LX_TOK_PIPE,
-        LX_TOK_BG,
+        LX_TOK_AMPER,
         LX_TOK_RDR_IN,
         LX_TOK_APPEND,
         LX_TOK_RDR_OUT,
-        LX_TOK_AND_IF,
-        LX_TOK_OR_IF,
+        LX_TOK_FD_IN,
+        LX_TOK_FD_OUT,
     };
 
-    assert_tokens("|&<>>>&&||", kind, NULL, NULL, 7, 0);
+    assert_tokens("&&|||&<>>><&>&", kind, NULL, NULL, 9, 0);
 }
 
 TEST(lexer, shell_usage) {
     const lx_kind kind[7] = {
         LX_TOK_WORD, LX_TOK_WORD,
-        LX_TOK_RDR_OUT, LX_TOK_WORD, LX_TOK_BG, LX_TOK_WORD,
+        LX_TOK_RDR_OUT, LX_TOK_WORD, LX_TOK_AMPER, LX_TOK_WORD,
         LX_TOK_WORD
     };
     const char *raw[8] = {
@@ -124,7 +126,7 @@ TEST(lexer, operator_single) {
 }
 
 TEST(lexer, operator_multiple) {
-    const lx_kind kind[2] = { LX_TOK_PIPE, LX_TOK_BG };
+    const lx_kind kind[2] = { LX_TOK_PIPE, LX_TOK_AMPER };
     assert_tokens("|&", kind, NULL, NULL, 2, 0);
 }
 
@@ -449,7 +451,7 @@ TEST(lexer, numbers_interspersed_with_tokens) {
     TEST_ASSERT_EQUAL_INT(LX_TOK_PIPE, toks.data[0].kind);
     TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[1].kind);
     TEST_ASSERT(toks.data[1].is_num);
-    TEST_ASSERT_EQUAL_INT(LX_TOK_BG, toks.data[2].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_AMPER, toks.data[2].kind);
     TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[3].kind);
     TEST_ASSERT(toks.data[3].is_num);
     TEST_ASSERT_EQUAL_INT(LX_TOK_OR_IF, toks.data[4].kind);
@@ -563,6 +565,62 @@ TEST(lexer, redirect_in_with_arbitrary_io_numbers) {
     lx_free(&toks);
 }
 
+TEST(lexer, fd_duplication) {
+    da_tok toks;
+
+    if (lx_tokenize("1>&25<&8>5<&8", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_size_t(9, toks.size);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[0].kind);
+    TEST_ASSERT_EQUAL_INT(1, toks.data[0].io_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_FD_OUT, toks.data[1].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[2].kind);
+    TEST_ASSERT_EQUAL_INT(25, toks.data[2].io_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_FD_IN, toks.data[3].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[4].kind);
+    TEST_ASSERT_EQUAL_INT(8, toks.data[4].io_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_RDR_OUT, toks.data[5].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[6].kind);
+    TEST_ASSERT_EQUAL_INT(5, toks.data[6].io_num);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_FD_IN, toks.data[7].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[8].kind);
+    TEST_ASSERT_EQUAL_INT(8, toks.data[8].io_num);
+
+    lx_free(&toks);
+}
+
+TEST(lexer, word_after_fd_duplication_token) {
+    da_tok toks;
+
+    if (lx_tokenize(">&hello", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_size_t(2, toks.size);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_FD_OUT, toks.data[0].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_WORD, toks.data[1].kind);
+    TEST_ASSERT_EQUAL_STRING("hello", toks.data[1].parts.data[0].raw);
+
+    lx_free(&toks);
+}
+
+TEST(lexer, white_space_between_fd_out_and_io_number) {
+    da_tok toks;
+
+    if (lx_tokenize(">&   123", &toks) != LX_OK)
+        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+
+    TEST_ASSERT_EQUAL_size_t(2, toks.size);
+
+    TEST_ASSERT_EQUAL_INT(LX_TOK_FD_OUT, toks.data[0].kind);
+    TEST_ASSERT_EQUAL_INT(LX_TOK_IO_NUM, toks.data[1].kind);
+    TEST_ASSERT_EQUAL_INT(123, toks.data[1].io_num);
+
+    lx_free(&toks);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(lexer) {
@@ -622,4 +680,8 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, io_number_that_overflows_integer);
     RUN_TEST_CASE(lexer, signed_io_numbers_are_rejected);
     RUN_TEST_CASE(lexer, redirect_in_with_arbitrary_io_numbers);
+    RUN_TEST_CASE(lexer, fd_duplication);
+    RUN_TEST_CASE(lexer, word_after_fd_duplication_token);
+    RUN_TEST_CASE(lexer, white_space_between_fd_out_and_io_number);
+    RUN_TEST_CASE(lexer, numbers_interspersed_with_tokens);
 }

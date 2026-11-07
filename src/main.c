@@ -23,6 +23,8 @@ int main(int argc, char *const *argv) {
 
             if (env.subsh)
                 _exit(status);
+
+            process_signals();
         }
 
         free(line);

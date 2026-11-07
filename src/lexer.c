@@ -17,6 +17,7 @@ typedef struct {
     const char *part_start;
     const char *cur_char;
     const char *cmd;
+    bool fd_dup_pending;
 } lx_scan;
 
 char *lx_errstr(lx_status stat) {
@@ -37,11 +38,15 @@ static lx_kind get_kind(const char *cur_char) {
         return LX_TOK_AND_IF;
     if (strncmp("||", cur_char, 2) == 0)
         return LX_TOK_OR_IF;
+    if (strncmp(">&", cur_char, 2) == 0)
+        return LX_TOK_FD_OUT;
+    if (strncmp("<&", cur_char, 2) == 0)
+        return LX_TOK_FD_IN;
 
     if (strncmp("|", cur_char, 1) == 0)
         return LX_TOK_PIPE;
     if (strncmp("&", cur_char, 1) == 0)
-        return LX_TOK_BG;
+        return LX_TOK_AMPER;
     if (strncmp("<", cur_char, 1) == 0)
         return LX_TOK_RDR_IN;
     if (strncmp(">", cur_char, 1) == 0)
@@ -57,9 +62,11 @@ static lx_kind get_kind(const char *cur_char) {
 static bool kind_is_delim(lx_kind kind) {
     switch (kind) {
     case LX_TOK_PIPE:
-    case LX_TOK_BG:
+    case LX_TOK_AMPER:
     case LX_TOK_RDR_IN:
     case LX_TOK_RDR_OUT:
+    case LX_TOK_FD_OUT:
+    case LX_TOK_FD_IN:
     case LX_TOK_APPEND:
     case LX_TOK_AND_IF:
     case LX_TOK_OR_IF:
@@ -76,6 +83,8 @@ static bool kind_is_double_char_op(lx_kind kind) {
     case LX_TOK_APPEND:
     case LX_TOK_AND_IF:
     case LX_TOK_OR_IF:
+    case LX_TOK_FD_OUT:
+    case LX_TOK_FD_IN:
         return true;
     default:
         return false;
@@ -98,40 +107,67 @@ static void ensure_part(lx_scan *scan, lx_quote quote) {
     }
 }
 
+static int lex_io_num(const lx_scan *scan) {
+    const lx_tok *tok = scan->cur_tok;
+    int io_num;
+
+    for (const char *c = tok->parts.data[0].raw; *c != '\0'; ++c)
+        if (*c < 48 || *c > 57)
+            return -1;
+
+    if (get_int(tok->parts.data[0].raw, &io_num) == -1 || io_num < 0) {
+        LOG_INFO("io-num conversion failed: %s", tok->parts.data[0].raw);
+        return -1;
+    }
+
+    return io_num;
+}
+
 static void end_tok(lx_scan *scan, lx_kind delim) {
     lx_tok *tok = scan->cur_tok;
+    char *endptr;
 
-    if (!tok || tok->kind != LX_TOK_WORD || tok->parts.size > 1 ||
-            tok->parts.data[0].quote != LX_Q_NONE)
-        goto done;
+    if (!tok)
+        return;
 
-    /* raw cannot be empty */
-    char *endptr = tok->parts.data[0].raw;
+    bool not_number = (
+        tok->kind != LX_TOK_WORD ||
+        tok->parts.size > 1 ||
+        tok->parts.data[0].quote != LX_Q_NONE
+    );
+
+    if (not_number) {
+        if (scan->cur_tok->kind != LX_WHITE_SPACE) {
+            scan->fd_dup_pending = (
+                tok->kind == LX_TOK_FD_IN ||
+                tok->kind == LX_TOK_FD_OUT
+            );
+        }
+
+        scan->cur_tok = nullptr;
+        return;
+    }
+
     strtol(tok->parts.data[0].raw, &endptr, 10);
     tok->is_num = (*endptr == '\0');
 
     if (delim == LX_TOK_RDR_OUT || delim == LX_TOK_RDR_IN ||
-            delim == LX_TOK_APPEND) {
-        int io_num;
-
-        for (char *c = tok->parts.data[0].raw; *c != '\0'; ++c)
-            if (*c < 48 || *c > 57)
-                goto done;
-
-        if (get_int(tok->parts.data[0].raw, &io_num) == -1 || io_num < 0) {
-            LOG_INFO("io-num conversion failed: %s", tok->parts.data[0].raw);
+            delim == LX_TOK_APPEND || delim == LX_TOK_FD_OUT ||
+            delim == LX_TOK_FD_IN || scan->fd_dup_pending) {
+        int io_num = lex_io_num(scan);
+        if (io_num == -1) {
+            LOG_INFO("io-num lex failed: %s", tok->parts.data[0].raw);
             goto done;
         }
 
         lx_free_tok(tok);
         tok->kind = LX_TOK_IO_NUM;
         tok->io_num = io_num;
-        LOG_INFO("io_num created: %d", io_num);
-    } else {
-        LOG_INFO("number created: %s", tok->parts.data[0].raw);
+        LOG_INFO("lexed io-num: %d", io_num);
     }
 
 done:
+    scan->fd_dup_pending = false;
     scan->cur_tok = nullptr;
 }
 

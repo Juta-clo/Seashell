@@ -55,10 +55,15 @@ struct ps_word {
 };
 
 struct ps_redir {
-    ps_word target;
     int io_num;
     int append;
     bool rdr_in;
+    bool fd_dup;
+
+    union {
+        ps_word target;
+        int fd_target;
+    };
 };
 
 struct ps_cmd {

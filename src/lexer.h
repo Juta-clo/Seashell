@@ -7,9 +7,11 @@
 
 typedef enum {
     LX_TOK_PIPE,
-    LX_TOK_BG,
+    LX_TOK_AMPER,
     LX_TOK_RDR_IN,
     LX_TOK_RDR_OUT,
+    LX_TOK_FD_OUT,
+    LX_TOK_FD_IN,
     LX_TOK_APPEND,
     LX_TOK_AND_IF,
     LX_TOK_OR_IF,

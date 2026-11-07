@@ -20,13 +20,16 @@ static void output_err(const char *fmt, va_list *va, bool print_err) {
     char user_msg[BUF_SIZE] = "";
     char err_str[BUF_SIZE] = "";
 
-    vsnprintf(user_msg, BUF_SIZE, fmt, *va);
+    int n = vsnprintf(user_msg, BUF_SIZE, fmt, *va);
+    if (n < 0)
+        return;
 
     if (print_err) {
         strncat(err_str, strerror(errno), BUF_SIZE);
         fprintf(stderr, "seashell: %s: %s\n", user_msg, err_str);
-    } else
+    } else {
         fprintf(stderr, "seashell: %s\n", user_msg);
+    }
 }
 
 void fatal_imp(const char *fmt, ...) {
