@@ -695,7 +695,7 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         for (size_t i = 0; i < matches.size; ++i) {
             char *glob_copy = xstrdup(input.comp.glob);
             char *glob_dirname = dirname(glob_copy);
-            bool path_pre = (strcmp(glob_dirname, ".") != 0);
+            bool path_pre = !STREQ(glob_dirname, ".");
             char *bn = basename(matches.data[i]);
 
             linc_string result = LINC_STRING_INIT;

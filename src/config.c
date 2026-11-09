@@ -97,7 +97,7 @@ FILE *config_file_open(void) {
 
         input_sig_cb = saved_cb;
 
-        if (strcmp(line, "y") == 0) {
+        if (STREQ(line, "y")) {
             if ((fd = open(config_path, O_RDWR | O_CREAT, 0600)) == -1) {
                 err_msg("open: error creating config: %m");
             } else {

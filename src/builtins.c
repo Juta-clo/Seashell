@@ -21,23 +21,23 @@ typedef enum {
 
 static int arg_to_sig(char *sig_arg) {
     /* - just to be consistent */
-    if (strcmp("-HUP", sig_arg) == 0)   return SIGHUP;
-    if (strcmp("-INT", sig_arg) == 0)   return SIGINT;
-    if (strcmp("-QUIT", sig_arg) == 0)  return SIGQUIT;
-    if (strcmp("-KILL", sig_arg) == 0)  return SIGKILL;
-    if (strcmp("-USR1", sig_arg) == 0)  return SIGUSR1;
-    if (strcmp("-SEGV", sig_arg) == 0)  return SIGSEGV;
-    if (strcmp("-USR2", sig_arg) == 0)  return SIGUSR2;
-    if (strcmp("-PIPE", sig_arg) == 0)  return SIGPIPE;
-    if (strcmp("-ALRM", sig_arg) == 0)  return SIGALRM;
-    if (strcmp("-TERM", sig_arg) == 0)  return SIGTERM;
-    if (strcmp("-CHLD", sig_arg) == 0)  return SIGCHLD;
-    if (strcmp("-CONT", sig_arg) == 0)  return SIGCONT;
-    if (strcmp("-STOP", sig_arg) == 0)  return SIGSTOP;
-    if (strcmp("-TSTP", sig_arg) == 0)  return SIGTSTP;
-    if (strcmp("-TTIN", sig_arg) == 0)  return SIGTTIN;
-    if (strcmp("-TTOU", sig_arg) == 0)  return SIGTTOU;
-    if (strcmp("-WINCH", sig_arg) == 0) return SIGWINCH;
+    if (STREQ("-HUP", sig_arg))   return SIGHUP;
+    if (STREQ("-INT", sig_arg))   return SIGINT;
+    if (STREQ("-QUIT", sig_arg))  return SIGQUIT;
+    if (STREQ("-KILL", sig_arg))  return SIGKILL;
+    if (STREQ("-USR1", sig_arg))  return SIGUSR1;
+    if (STREQ("-SEGV", sig_arg))  return SIGSEGV;
+    if (STREQ("-USR2", sig_arg))  return SIGUSR2;
+    if (STREQ("-PIPE", sig_arg))  return SIGPIPE;
+    if (STREQ("-ALRM", sig_arg))  return SIGALRM;
+    if (STREQ("-TERM", sig_arg))  return SIGTERM;
+    if (STREQ("-CHLD", sig_arg))  return SIGCHLD;
+    if (STREQ("-CONT", sig_arg))  return SIGCONT;
+    if (STREQ("-STOP", sig_arg))  return SIGSTOP;
+    if (STREQ("-TSTP", sig_arg))  return SIGTSTP;
+    if (STREQ("-TTIN", sig_arg))  return SIGTTIN;
+    if (STREQ("-TTOU", sig_arg))  return SIGTTOU;
+    if (STREQ("-WINCH", sig_arg)) return SIGWINCH;
 
     return -1;
 }
@@ -230,7 +230,6 @@ static int run_kill_builtin(char **argv, shell_env *env) {
         }
     }
 
-    // TODO: remove this. how does bash and zsh do it???
     /* Report termination/stop messages before the next prompt */
     nanosleep(&(struct timespec){0, 5000000}, nullptr);
     return EXIT_SUCCESS;
@@ -279,7 +278,7 @@ static int run_exit_builtin(char **argv, shell_env *_) {
         char *endptr;
         exit_status = strtol(argv[1], &endptr, 10);
 
-        if (strcmp(argv[1], "") == 0 || *endptr != '\0') {
+        if (STREQ(argv[1], "") || *endptr != '\0') {
             fprintf(stderr, "exit: invalid argument: %s\n", argv[1]);
             return EXIT_FAILURE;
         }
@@ -451,7 +450,7 @@ sh_builtin *get_builtin(const char *arg) {
     const char *name = arg;
 
     for (size_t i = 0; i < BUILTIN_COUNT; ++i)
-        if (strcmp(builtins[i].name, name) == 0)
+        if (STREQ(builtins[i].name, name))
             return &builtins[i];
 
     return nullptr;

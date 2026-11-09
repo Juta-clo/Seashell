@@ -398,7 +398,7 @@ static int shell_start_pline(ps_pline *pline, bool bg, int jid) {
             /* fg "replaces" itself with the existing job. Because we
              * don't queue fg's exit event we only reclaim the termianl
              * when the job that was fg'd exits (or stops) */
-            if (strcmp("fg", builtin->name) != 0 || status == EXIT_FAILURE) {
+            if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
                 LOG_INFO("queued \"%s\" exit event", builtin->name);
                 job_queue_builtin_exit(jid, pline->cmds.data[0].argv, status);
             }
@@ -562,7 +562,7 @@ static int subshell_fork(void) {
 }
 
 static int line_to_ast(const char *line, ps_ast *ast) {
-    if (strcmp("", line) == 0)
+    if (STREQ("", line))
         return -1;
 
     da_tok toks;

@@ -40,6 +40,7 @@ typedef struct {
 enum {
     OPT_LOG_FD,
     OPT_LOG_FILE,
+    OPT_LOG_LEVEL,
     OPT_CLEAN,
     OPT_CONFIG,
     OPT_MAX,

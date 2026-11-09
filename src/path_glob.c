@@ -131,10 +131,10 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
                 break;
             }
 
-            if (strcmp(dirent->d_name, ".")  == 0)
+            if (STREQ(dirent->d_name, "."))
                 continue;
 
-            bool is_prev_dirent = (strcmp(dirent->d_name, "..") == 0);
+            bool is_prev_dirent = (STREQ(dirent->d_name, ".."));
 
             if (!inc_prev && is_prev_dirent)
                 continue;
@@ -155,7 +155,7 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
             char **dent = linc_array_push(dents);
             *dent = xmalloc(strlen(path) + strlen(dirent->d_name) + 2);
 
-            if (strcmp(path, "/") == 0)
+            if (STREQ(path, "/"))
                 path[0] = '\0';
 
             strcpy(*dent, path);
@@ -183,7 +183,7 @@ static void filter_dents(const char *glob, da_charp *dents) {
         char *dent_cpy = xstrdup(dents->data[i]);
         char *base_name = basename(dent_cpy);
 
-        if ((exact && strcmp(base_name, glob) != 0) ||
+        if ((exact && !STREQ(base_name, glob)) ||
             !prefix_ok(base_name, glob, pre_n) ||
             !suffix_ok(base_name, glob, suf_n) ||
             !substrs_ok(base_name, &substrs, pre_n, suf_n))
@@ -220,8 +220,8 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
         *linc_array_push(&dents) = xstrdup("/");
 
     } else {
-        if (strcmp(".", comps.data[0]) == 0 ||
-            strcmp("..", comps.data[0]) == 0)
+        if (STREQ(".", comps.data[0]) ||
+            STREQ("..", comps.data[0]))
         {
             *linc_array_push(&dents) = xstrdup(comps.data[0]);
             linc_array_delete(&comps, 0, 1);
@@ -233,7 +233,7 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
     for (size_t comp_i = 0; comp_i < comps.size; ++comp_i) {
         char *comp = comps.data[comp_i];
         bool last_comp = (comp_i == comps.size - 1);
-        bool inc_prev = (strcmp("..", comp) == 0);
+        bool inc_prev = (STREQ("..", comp));
 
         get_dir_entries(inc_prev, !last_comp || slash_last, &dents);
         filter_dents(comp, &dents);

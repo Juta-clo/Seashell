@@ -55,6 +55,17 @@ void shell_log_sink(const linc_log_ctx *ctx, void *_) {
     if (env.log_fd == -1)
         return;
 
+    if (opts[OPT_LOG_LEVEL].found) {
+        const char *level = opts[OPT_LOG_LEVEL].val_str;
+
+        if (STREQ("info", level) && ctx->level != LINC_LOG_INFO)
+            return;
+        if (STREQ("warn", level) && ctx->level != LINC_LOG_WARN)
+            return;
+        if (STREQ("error", level) && ctx->level != LINC_LOG_ERROR)
+            return;
+    }
+
     linc_string output_msg = LINC_STRING_INIT;
 
     linc_string_appendf(&output_msg, "%s %s:%d: %s\n",

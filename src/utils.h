@@ -33,6 +33,8 @@
         ((max_a) > (max_b)) ? (max_a) : (max_b); \
     })
 
+#define STREQ(_a, _b) (strcmp(_a, _b) == 0)
+
 #define STRINGIFY(_str) #_str
 
 #define fatal(...) \

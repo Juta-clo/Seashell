@@ -37,6 +37,12 @@ linc_args opts[] = {
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_STR
     },
+    [OPT_LOG_LEVEL] = {
+        .long_name = "log-level",
+        .short_name = 't',
+        .has_arg = LINC_ARGS_ARG_REQ,
+        .arg_type = LINC_ARGS_ARG_STR
+    },
     [OPT_CLEAN] = {
         .long_name = "clean",
         .short_name = 'q',
