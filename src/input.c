@@ -43,9 +43,17 @@ typedef char * linc_hds;
 static Printty *pt = nullptr;
 
 typedef enum {
-    COMP_CMD,
+    COMP_NAME,
     COMP_ARG,
-    COMP_REDIR
+    COMP_REDIR,
+    COMP_EMPTY,
+} comp_tok_kind;
+
+typedef struct {
+    comp_tok_kind kind;
+    const char *text;
+    int i, n;
+    int off;
 } comp_tok;
 
 typedef struct {
@@ -58,7 +66,6 @@ LINC_ARRAY_TYPE(da_cell, input_cell);
 
 typedef struct {
     size_t i;
-    size_t start_i;
     linc_hds glob;
 } input_comp;
 
@@ -117,45 +124,6 @@ static int line_len(void) {
 
 static char *lstart(void) {
     return input.line + input.start_i;
-}
-
-static int input_current_tok(comp_tok *comp, int *tok_i, int *tok_n) {
-    ASSERT(comp && tok_i && tok_n);
-
-    *comp = COMP_CMD;
-
-    da_tok toks;
-    if (lx_tokenize(lstart(), &toks) != LX_OK)
-        return -1;
-
-    for (size_t i = 0; i < toks.size; ++i) {
-        lx_tok *tok = &toks.data[i];
-        if (tok->kind != LX_TOK_WORD)
-            continue;
-
-        if (input.off >= tok->i && input.off <= tok->i + tok->n) {
-            *tok_i = tok->i;
-            *tok_n = tok->n;
-
-            if (i == 0) {
-                *comp = COMP_CMD;
-            } else if (toks.data[i - 1].kind == LX_TOK_WORD) {
-                *comp = COMP_ARG;
-            } else if (toks.data[i - 1].kind == LX_TOK_RDR_OUT ||
-                       toks.data[i - 1].kind == LX_TOK_RDR_IN ||
-                       toks.data[i - 1].kind == LX_TOK_APPEND) {
-                *comp = COMP_REDIR;
-            } else {
-                *comp = COMP_CMD;
-            }
-
-            lx_free(&toks);
-            return 0;
-        }
-    }
-
-    lx_free(&toks);
-    return -1;
 }
 
 static void ncol_cell(int *crow, int *ccol, int start_row, int col_n) {
@@ -509,7 +477,6 @@ static void enter_mode_insert() {
 static void input_reset_comp(void) {
     if (input.comp.glob) {
         input.comp.i = 0;
-        input.comp.start_i = 0;
         linc_hds_free(input.comp.glob);
         input.comp.glob = nullptr;
         input_update();
@@ -614,112 +581,198 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
     }
 }
 
+static void input_complete_command(da_charp *matches) {
+    ASSERT(matches);
+
+    *matches = (da_charp){0};
+
+    da_charp pents = {0};
+    get_path_entries(&pents);
+
+    for (size_t i = 0; i < pents.size; ++i) {
+        char *glob = nullptr;
+        linc_hds_append(glob, pents.data[i]);
+        linc_hds_append(glob, "/");
+        linc_hds_append(glob, input.comp.glob);
+        LOG_INFO("PATH glob: %s", glob);
+
+        da_charp m;
+        glob_pattern(glob, linc_hds_len(glob), &m);
+
+        memcpy(
+            linc_array_insert(matches, matches->size, m.size),
+            m.data, sizeof(char *) * m.size
+        );
+
+        linc_array_free(&m);
+        linc_hds_free(glob);
+    }
+
+    argv_free_free(&pents);
+
+    for (size_t i = 0; i < matches->size; ++i) {
+        char *match = matches->data[i];
+        matches->data[i] = xstrdup(basename(match));
+        free(match);
+    }
+}
+
+static void input_complete_file(da_charp *matches) {
+    glob_pattern(input.comp.glob, linc_hds_len(input.comp.glob), matches);
+
+    for (size_t i = 0; i < matches->size; ++i) {
+        LOG_INFO("Completion match: %s", matches->data[i]);
+
+        linc_string result = LINC_STRING_INIT;
+
+        if (strncmp(input.comp.glob, "./", 2) != 0 &&
+            strncmp(matches->data[i], "./", 2) == 0) {
+            linc_string_append(&result, &matches->data[i][2]);
+        } else {
+            linc_string_append(&result, matches->data[i]);
+        }
+
+        if (is_dir(matches->data[i]))
+            linc_string_append(&result, "/");
+
+        free(matches->data[i]);
+        escape_spaces(&result);
+
+        matches->data[i] = result.cstr;
+    }
+}
+
+static int input_complete_tok(comp_tok *ctok) {
+    ASSERT(ctok);
+
+    da_tok toks = {0};
+    ps_ast ast = {0};
+    ps_info info = {0};
+
+    ps_scan scan = {
+        .print_err = false,
+        .alias = false,
+        .toks = &toks
+    };
+
+    lx_tokenize(lstart(), &toks);
+    ps_parse(&scan, &ast);
+    ps_get_info(input.off, &ast, &info);
+
+    if (info.kinds & PS_NAME || info.kinds & PS_ARG) {
+        if (expand_word(info.word, nullptr, EXPAND_COMP) == -1)
+            goto fail;
+
+        ctok->kind = (info.kinds & PS_NAME) ? COMP_NAME : COMP_ARG;
+        ctok->text = info.word->arg;
+        ctok->i = info.word->i;
+        ctok->n = info.word->n;
+    } else if (info.kinds & PS_REDIR) {
+        if (expand_word(&info.redir->target, nullptr, EXPAND_COMP) == -1)
+            goto fail;
+
+        ctok->kind = COMP_REDIR;
+        ctok->text = info.redir->target.arg;
+        ctok->i = info.redir->target.i;
+        ctok->n = info.redir->target.n;
+    } else {
+        ctok->kind = COMP_EMPTY;
+        ctok->text = "";
+        ctok->i = input.off;
+        ctok->n = 0;
+    }
+
+    if (!input.comp.glob && ctok->kind != COMP_EMPTY) {
+        ps_segment *seg;
+
+        if (ctok->kind == COMP_REDIR) {
+            ps_word *target = &info.redir->target;
+            seg = &target->segments.data[target->segments.size - 1];
+        } else {
+            ps_word *arg = info.word;
+            seg = &arg->segments.data[arg->segments.size - 1];
+        }
+
+        if (input.off != seg->i + seg->n)
+            goto fail;
+
+        linc_hds_append_n(input.comp.glob, ctok->text, strlen(ctok->text));
+        linc_hds_append_n(input.comp.glob, "*", 1);
+    }
+
+    ps_free(&ast);
+    lx_free(&toks);
+
+    return 0;
+
+fail:
+    ps_free(&ast);
+    lx_free(&toks);
+
+    input_reset_comp();
+
+    return -1;
+}
+
+static void input_complete(void) {
+    comp_tok ctok;
+    da_charp matches = {0};
+
+    if (input_complete_tok(&ctok) == -1 || ctok.kind == COMP_EMPTY)
+        return;
+
+    if (ctok.kind == COMP_NAME) {
+        input_complete_command(&matches);
+    } else if (ctok.kind == COMP_ARG || ctok.kind == COMP_REDIR) {
+        input_complete_file(&matches);
+    }
+
+    if (matches.size == 0)
+        return;
+
+    input_move(ctok.i);
+    input_delete(DELETE_RANGE, &(input_del_ctx){ ctok.i, ctok.n });
+    input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
+    argv_free_free(&matches);
+}
+
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
     if (input.comp.glob && codepoint == '/') {
         input_reset_comp();
         return;
     }
 
-    if (codepoint != 9/*TAB*/)
+    if (codepoint != '\t')
         input_reset_comp();
-    if (codepoint == 5/*C-e*/) {
+
+    switch (codepoint) {
+    case 5: /*C-e*/
         input_move(line_len());
-    } else if (codepoint == 1/*C-a*/) {
+        break;
+    case 1: /*C-a*/
         input_move(0);
-    } else if (codepoint == 11/*C-k*/) {
+        break;
+    case 11: /*C-k*/
         input_delete(DELETE_END, nullptr);
-    } else if (codepoint == 21/*C-u*/) {
+        break;
+    case 21: /*C-u*/
         input_delete(DELETE_START, nullptr);
-    } else if (codepoint == 12/*C-l*/) {
+        break;
+    case 12: /*C-l*/
         xprintty_write(pt, unibi_clear_screen);
         new_start_pos();
         input_update();
-    } else if (codepoint == 27/*ESC*/) {
+        break;
+    case '\x1b':
         input_move(input.off - 1);
         enter_mode_normal();
-    } else if (codepoint == 9/*TAB*/) {
-        comp_tok tok;
-        int i, n;
-
-        if (input_current_tok(&tok, &i, &n) == -1) {
-            input_reset_comp();
-            return;
-        }
-
-        if (!input.comp.glob) {
-            if (*(lstart() + i) == '/' && tok == COMP_CMD)
-                return;
-
-            linc_hds_append_n(input.comp.glob, lstart() + i, n);
-            linc_hds_append_n(input.comp.glob, "*", 1);
-            input.comp.start_i = i;
-        }
-
-        da_charp matches = {0};
-        da_charp pents = {0};
-
-        if (tok == COMP_CMD) {
-            get_path_entries(&pents);
-
-            for (size_t i = 0; i < pents.size; ++i) {
-                char *glob = nullptr;
-                linc_hds_append(glob, pents.data[i]);
-                linc_hds_append(glob, "/");
-                linc_hds_append(glob, input.comp.glob);
-                LOG_INFO("PATH glob: %s", glob);
-
-                glob_pattern(glob, linc_hds_len(glob), &matches);
-                linc_hds_free(glob);
-
-                if (matches.size != 0)
-                    break;
-            }
-
-            argv_free_free(&pents);
-        } else if (tok == COMP_ARG || tok == COMP_REDIR) {
-            linc_string result = expand_seg(input.comp.glob, nullptr);
-            glob_pattern(result.cstr, result.len, &matches);
-            LOG_INFO("File glob: %s", result.cstr);
-
-            linc_string_free(&result);
-        }
-
-        if (matches.size == 0)
-            return;
-
-        for (size_t i = 0; i < matches.size; ++i) {
-            char *glob_copy = xstrdup(input.comp.glob);
-            char *glob_dirname = dirname(glob_copy);
-            bool path_pre = !STREQ(glob_dirname, ".");
-            char *bn = basename(matches.data[i]);
-
-            linc_string result = LINC_STRING_INIT;
-
-            if (path_pre) {
-                linc_string_appendf(&result, "%s", glob_dirname);
-
-                if (glob_dirname[strlen(glob_dirname) - 1] != '/')
-                    linc_string_append(&result, "/");
-            }
-
-            linc_string_append(&result, bn);
-
-            if (is_dir(matches.data[i]))
-                linc_string_append(&result, "/");
-
-            free(matches.data[i]);
-            free(glob_copy);
-
-            escape_spaces(&result);
-            matches.data[i] = result.cstr;
-        }
-
-        input_move(input.comp.start_i);
-        input_delete(DELETE_RANGE, &(input_del_ctx){ i, n });
-        input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
-        argv_free_free(&matches);
-    } else {
+        break;
+    case '\t':
+        input_complete();
+        break;
+    default:
         input_insert(INSERT_CHAR, &utf8[0]);
+        break;
     }
 }
 

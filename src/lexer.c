@@ -418,6 +418,8 @@ int lx_tokenize(const char *cmd, da_tok *toks) {
     return status;
 
 fail:
-    lx_free(toks);
+    clear_part(&scan);
+    end_tok(&scan, LX_EOL);
+
     return status;
 }

@@ -23,6 +23,19 @@ typedef enum {
     PS_CMD_SUBSH,
 } ps_cmd_kind;
 
+typedef enum {
+    PS_SUBSH = 1,
+    PS_ANDIF = 2,
+    PS_ORIF  = 4,
+    PS_NOIF  = 8,
+    PS_CMD   = 16,
+    PS_REDIR = 32,
+    PS_NAME  = 64,
+    PS_ARG   = 128,
+    PS_SEG   = 256,
+    PS_EMPTY = 512,
+} ps_kind;
+
 typedef struct ps_segment ps_segment;
 typedef struct ps_word ps_word;
 typedef struct ps_redir ps_redir;
@@ -30,6 +43,7 @@ typedef struct ps_cmd ps_cmd;
 typedef struct ps_pline ps_pline;
 typedef struct ps_andor ps_andor;
 typedef struct ps_ast ps_ast;
+typedef struct ps_info ps_info;
 
 LINC_ARRAY_TYPE(da_segment, ps_segment);
 LINC_ARRAY_TYPE(da_word, ps_word);
@@ -93,6 +107,17 @@ struct ps_andor {
     int i, n;
 };
 
+struct ps_info {
+    uint64_t kinds;
+
+    ps_ast *subsh;
+    ps_andor *andor;
+    ps_cmd *cmd;
+    ps_redir *redir;
+    ps_word *word;
+    ps_segment *seg;
+};
+
 typedef struct {
     bool print_err;
     bool alias;
@@ -109,7 +134,9 @@ typedef struct {
     ps_ast *ast;
 } ps_scan;
 
-void ps_free(ps_ast *ast);
+void ps_get_info(int i, ps_ast *ast, ps_info *info);
 int ps_parse(ps_scan *scan, ps_ast *ast);
+
+void ps_free(ps_ast *ast);
 
 #endif

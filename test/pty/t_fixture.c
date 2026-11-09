@@ -8,6 +8,7 @@
 #include "linc/hds.h"
 #include "linc/hda.h"
 #include "linc/xsys.h"
+#include "t_pview.h"
 #include "unity_fixture.h" // IWYU pragma: keep
 #include "t_fixture.h"
 #include "t_harness.h"
@@ -200,6 +201,16 @@ static void test_shutdown_prgm(void) {
     }
 
     if (i == 100) {
+        da_pstat pstats;
+        child_pstat(test->cpid, &pstats);
+
+        for (size_t i = 0; i < pstats.size; ++i) {
+            kill(pstats.data[i].pid, SIGHUP);
+            kill(pstats.data[i].pid, SIGCONT);
+        }
+
+        linc_array_free(&pstats);
+
         if (kill(test->cpid, SIGKILL) == -1)
             xtest_fatal("kill: %m");
 

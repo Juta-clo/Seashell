@@ -569,6 +569,7 @@ static int line_to_ast(const char *line, ps_ast *ast) {
     int rv = lx_tokenize(line, &toks);
     if (rv != LX_OK) {
         err_msg("%s", lx_errstr(rv));
+        lx_free(&toks);
         return -1;
     }
 

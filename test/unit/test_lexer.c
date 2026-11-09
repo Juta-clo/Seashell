@@ -113,11 +113,11 @@ void validate(const char *cmd, const da_tok *exp) {
     validate_toks(exp, &actual_tokens);
 }
 
-void validate_fail(const char *cmd, int exp) {
+void validate_fail(const char *cmd, const da_tok *exp, int status) {
+    TEST_ASSERT_EQUAL_INT(status, lx_tokenize(cmd, &actual_tokens));
 
-    int act = lx_tokenize(cmd, &actual_tokens);
-    TEST_ASSERT_EQUAL_size_t(0, actual_tokens.size);
-    TEST_ASSERT_EQUAL_INT(exp, act);
+    validate_toks(exp, &actual_tokens);
+    lx_free(&actual_tokens);
 }
 
 /************ Fixture ************/
@@ -133,12 +133,26 @@ TEST_TEAR_DOWN(lexer) {
 /************ Tests ************/
 
 TEST(lexer, failure_cases) {
-    validate_fail("\\", LX_ERREMPTYESC);
-    validate_fail("|\\", LX_ERREMPTYESC);
-    validate_fail(" \\", LX_ERREMPTYESC);
-    validate_fail("a\\", LX_ERREMPTYESC);
-    validate_fail("\"", LX_ERRNOENDQUOTE);
-    validate_fail("'", LX_ERRNOENDQUOTE);
+    da_tok exp = TOKS(WORD_SIMPLE("\\", I(0), N(1)));
+    validate_fail("\\", &exp, LX_ERREMPTYESC);
+
+    exp = TOKS(
+        OP(LX_TOK_PIPE, I(0), N(1)),
+        WORD_SIMPLE("\\", I(1), N(1))
+    );
+    validate_fail("|\\", &exp, LX_ERREMPTYESC);
+
+    exp = TOKS(WORD_SIMPLE("\\", I(1), N(1)));
+    validate_fail(" \\", &exp, LX_ERREMPTYESC);
+
+    exp = TOKS(WORD_SIMPLE("a\\", I(0), N(2)));
+    validate_fail("a\\", &exp, LX_ERREMPTYESC);
+
+    exp = TOKS();
+    validate_fail("\"", &exp, LX_ERRNOENDQUOTE);
+
+    exp = TOKS();
+    validate_fail("'", &exp, LX_ERRNOENDQUOTE);
 }
 
 TEST(lexer, all_operators) {

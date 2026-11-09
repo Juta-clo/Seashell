@@ -444,6 +444,45 @@ TEST(input, sigchld_does_not_reset_editing_mode) {
     );
 }
 
+TEST(input, complete_command_before_pipe) {
+    vt_send_str("gre |");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 3,
+        PROMPT "gre |"
+    );
+
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 4,
+        PROMPT "grep |"
+    );
+}
+
+TEST(input, complete_file_target_after_subshell) {
+    vt_send_str("(echo hi) > /tmp/sh-tm");
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 24,
+        PROMPT "(echo hi) > /tmp/sh-tmp/"
+    );
+}
+
+TEST(input, glob_in_completion_glob) {
+    vt_send_str("stat /tmp/sh*tm");
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 17,
+        PROMPT "stat /tmp/sh-tmp/"
+    );
+}
+
+TEST(input, complete_on_redirect_with_no_target) {
+    vt_send_str("echo >");
+    vt_send_ch('a', VTERM_MOD_CTRL);
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN,
+        PROMPT "echo >"
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -471,4 +510,8 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, yanked_text);
     RUN_TEST_CASE(input, sigchld_with_no_prompt_redraw);
     RUN_TEST_CASE(input, sigchld_does_not_reset_editing_mode);
+    RUN_TEST_CASE(input, complete_command_before_pipe);
+    RUN_TEST_CASE(input, complete_file_target_after_subshell);
+    RUN_TEST_CASE(input, glob_in_completion_glob);
+    RUN_TEST_CASE(input, complete_on_redirect_with_no_target);
 }

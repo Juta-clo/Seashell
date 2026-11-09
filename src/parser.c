@@ -176,6 +176,9 @@ static void add_andor(da_andor *andors, ps_andor_op op, ps_scan *scan) {
 }
 
 static void end_cmd(ps_scan *scan) {
+    if (!scan->cur_cmd || scan->i == 0)
+        return;
+
     ps_cmd *cmd = scan->cur_cmd;
     lx_tok *tok = &scan->cur_tok[-1];
 
@@ -184,6 +187,9 @@ static void end_cmd(ps_scan *scan) {
 }
 
 static void end_andor(ps_scan *scan) {
+    if (!scan->cur_andor || scan->i == 0)
+        return;
+
     ps_andor *andor = scan->cur_andor;
     lx_tok *tok = &scan->cur_tok[-1];
 
@@ -251,8 +257,9 @@ static int expand_alias(ps_scan *scan) {
 }
 
 static int parse_subshell(ps_scan *scan) {
-    if (scan->toks->data[scan->i].kind != LX_TOK_LPAREN ||
-            scan->i == scan->toks->size - 1) {
+    int status = 0;
+
+    if (scan->toks->data[scan->i].kind != LX_TOK_LPAREN) {
         ERR_TOK(scan->cur_tok);
         return -1;
     }
@@ -281,7 +288,7 @@ static int parse_subshell(ps_scan *scan) {
             ERR_TOK(&scan->toks->data[i]);
         }
 
-        return -1;
+        status = -1;
     }
 
     lx_tok tok;
@@ -303,10 +310,8 @@ static int parse_subshell(ps_scan *scan) {
         .alias = scan->alias,
     };
 
-    if (ps_parse(&subsh_scan, &scan->cur_cmd->subsh) == -1) {
-        lx_free(&subsh_toks);
-        return -1;
-    }
+    if (ps_parse(&subsh_scan, &scan->cur_cmd->subsh) == -1)
+        status = -1;
 
     int shift = subsh_scan.alias_shift;
     int shift_n = scan->toks->size - (rparen_i + 1);
@@ -319,16 +324,129 @@ static int parse_subshell(ps_scan *scan) {
     scan_advance(n + 1, scan);
 
     lx_free(&subsh_toks);
-    return 0;
+
+    return status;
 }
 
-void ps_free(ps_ast *ast) {
-    if (!ast || !ast->allo.ctx || ast->nested)
+static bool in_andor(int i, ps_ast *ast, ps_info *info) {
+    for (size_t andor_i = 0; andor_i < ast->andors.size; ++andor_i) {
+        ps_andor *andor = &ast->andors.data[andor_i];
+
+        if (i < andor->i || i > andor->i + andor->n)
+            continue;
+
+        if (andor->op == PS_AND_IF) {
+            info->kinds |= PS_ANDIF;
+        } else if (andor->op == PS_OR_IF) {
+            info->kinds |= PS_ORIF;
+        } else {
+            info->kinds |= PS_NOIF;
+        }
+
+        info->andor = andor;
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool in_cmd(int i, ps_andor *andor, ps_info *info) {
+    for (size_t cmd_i = 0; cmd_i < andor->pline.cmds.size; ++cmd_i) {
+        ps_cmd *cmd = &andor->pline.cmds.data[cmd_i];
+
+        if (i < cmd->i || i > cmd->i + cmd->n)
+            continue;
+
+        info->kinds |= PS_CMD;
+        info->cmd = cmd;
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool in_word(int i, ps_cmd *cmd, ps_info *info) {
+    for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
+        ps_word *word = &cmd->words.data[word_i];
+
+        if (i < word->i || i > word->i + word->n)
+            continue;
+
+        if (word_i == 0) {
+            info->kinds |= PS_NAME;
+        } else {
+            info->kinds |= PS_ARG;
+        }
+
+        info->kinds |= PS_CMD;
+        info->word = word;
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool in_redir(int i, ps_cmd *cmd, ps_info *info) {
+    for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
+        ps_redir *redir = &cmd->redirs.data[redir_i];
+        ps_word *target = &cmd->redirs.data[redir_i].target;
+
+        if (target->segments.size == 0)
+            continue;
+
+        if (i < target->i || i > target->i + target->n)
+            continue;
+
+        info->kinds |= PS_REDIR;
+        info->redir = redir;
+        info->word = target;
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool in_segment(int i, ps_word *word, ps_info *info) {
+    for (size_t seg_i = 0; seg_i < word->segments.size; ++seg_i) {
+        ps_segment *seg = &word->segments.data[seg_i];
+
+        if (i < seg->i || i > seg->i + seg->n)
+            continue;
+
+        info->kinds |= PS_SEG;
+        info->seg = seg;
+
+        return true;
+    }
+
+    return false;
+}
+
+void ps_get_info(int i, ps_ast *ast, ps_info *info) {
+    ASSERT(ast && i >= 0 && info);
+
+    *info = (ps_info){0};
+
+    if (ast->andors.size == 0) {
+        info->kinds |= PS_EMPTY;
         return;
+    }
 
-    arena_destroy(ast->allo.ctx);
-
-    *ast = (ps_ast){0};
+    if (in_andor(i, ast, info)) {
+        if (in_cmd(i, info->andor, info)) {
+            if (in_redir(i, info->cmd, info)) {
+                in_segment(i, &info->redir->target, info);
+            } else if (info->cmd->kind == PS_CMD_SUBSH) {
+                ps_get_info(i, &info->cmd->subsh, info);
+            } else if (in_word(i, info->cmd, info)) {
+                in_segment(i, info->word, info);
+            }
+        }
+    }
 }
 
 int ps_parse(ps_scan *scan, ps_ast *ast) {
@@ -493,6 +611,17 @@ fail_tok:
     ERR_TOK(scan->cur_tok);
 
 fail:
-    ps_free(ast);
+    end_cmd(scan);
+    end_andor(scan);
+
     return -1;
+}
+
+void ps_free(ps_ast *ast) {
+    if (!ast || !ast->allo.ctx || ast->nested)
+        return;
+
+    arena_destroy(ast->allo.ctx);
+
+    *ast = (ps_ast){0};
 }
