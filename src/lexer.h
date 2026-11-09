@@ -31,6 +31,7 @@ typedef enum {
 } lx_quote;
 
 typedef enum {
+    LX_FAIL = -1,
     LX_OK,
     LX_ERRMEM,
     LX_ERRINPUT,
@@ -47,7 +48,7 @@ typedef enum {
 struct lx_part {
     char *raw;
     lx_quote quote;
-    int start, end;
+    int i, n;
 };
 
 typedef struct lx_part lx_part;
@@ -61,6 +62,9 @@ struct lx_tok {
         da_part parts;
         int io_num;
     };
+
+    int i;
+    int n;
 };
 
 typedef struct lx_tok lx_tok;

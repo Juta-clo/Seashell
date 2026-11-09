@@ -119,8 +119,8 @@ static char *lstart(void) {
     return input.line + input.start_i;
 }
 
-static int input_current_tok(comp_tok *comp, int *start, int *end) {
-    ASSERT(comp && start && end);
+static int input_current_tok(comp_tok *comp, int *tok_i, int *tok_n) {
+    ASSERT(comp && tok_i && tok_n);
 
     *comp = COMP_CMD;
 
@@ -133,11 +133,9 @@ static int input_current_tok(comp_tok *comp, int *start, int *end) {
         if (tok->kind != LX_TOK_WORD)
             continue;
 
-        if (input.off >= tok->parts.data[0].start &&
-            input.off <= tok->parts.data[tok->parts.size - 1].end)
-        {
-            *start = tok->parts.data[0].start;
-            *end = tok->parts.data[tok->parts.size - 1].end;
+        if (input.off >= tok->i && input.off <= tok->i + tok->n) {
+            *tok_i = tok->i;
+            *tok_n = tok->n;
 
             if (i == 0) {
                 *comp = COMP_CMD;
@@ -640,24 +638,21 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         input_move(input.off - 1);
         enter_mode_normal();
     } else if (codepoint == 9/*TAB*/) {
-        int tstart, tend;
         comp_tok tok;
+        int i, n;
 
-        if (input_current_tok(&tok, &tstart, &tend) == -1) {
+        if (input_current_tok(&tok, &i, &n) == -1) {
             input_reset_comp();
             return;
         }
 
         if (!input.comp.glob) {
-            if (*(lstart() + tstart) == '/' && tok == COMP_CMD)
+            if (*(lstart() + i) == '/' && tok == COMP_CMD)
                 return;
 
-            linc_hds_append_n(input.comp.glob, lstart() + tstart, tend - tstart);
+            linc_hds_append_n(input.comp.glob, lstart() + i, n);
             linc_hds_append_n(input.comp.glob, "*", 1);
-            input.comp.start_i = tstart;
-
-            LOG_INFO("new comp tok = \"%.*s\", [%d,%d]",
-                    tend - tstart, lstart() + tstart, tstart, tend);
+            input.comp.start_i = i;
         }
 
         da_charp matches = {0};
@@ -720,7 +715,7 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
         }
 
         input_move(input.comp.start_i);
-        input_delete(DELETE_RANGE, &(input_del_ctx){ tstart, tend - tstart });
+        input_delete(DELETE_RANGE, &(input_del_ctx){ i, n });
         input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
         argv_free_free(&matches);
     } else {
