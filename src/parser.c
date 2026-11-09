@@ -41,20 +41,6 @@
         } \
     } while (false)
 
-typedef struct {
-    int paren_n;
-    bool print_err;
-    bool need_tok;
-    ps_pline *cur_pline;
-    ps_cmd *cur_cmd;
-    lx_tok *cur_tok;
-    ps_redir *queued_redir;
-    ps_andor_op andor_op;
-    ps_ast *ast;
-    da_tok *toks;
-    size_t i;
-} ps_scan;
-
 static char *tok_str(lx_kind kind) {
     switch (kind) {
     case LX_TOK_PIPE:    return "|";
@@ -107,6 +93,9 @@ static void copy_word(ps_word *dst, lx_tok *src, ps_scan *scan) {
     ASSERT(dst);
     ASSERT(dst->segments.size == 0);
 
+    dst->i = src->i;
+    dst->n = src->n;
+
     for (size_t i = 0; i < src->parts.size; ++i) {
         lx_part *src_part = &src->parts.data[i];
         size_t n = strlen(src_part->raw) + 1;
@@ -114,6 +103,8 @@ static void copy_word(ps_word *dst, lx_tok *src, ps_scan *scan) {
         ps_segment *dst_segment = linc_array_push(&dst->segments);
 
         *dst_segment = (ps_segment){
+            .i = src_part->i,
+            .n = src_part->n,
             .raw = scan->ast->allo.alloc(n, scan->ast->allo.ctx),
         };
 
@@ -161,6 +152,7 @@ static void add_cmd(da_cmd *cmds, ps_scan *scan) {
     ps_cmd *cmd = linc_array_push(cmds);
 
     *cmd = (ps_cmd){
+        .i = scan->cur_tok->i,
         .words.allo = scan->ast->allo,
         .redirs.allo = scan->ast->allo
     };
@@ -175,11 +167,28 @@ static void add_andor(da_andor *andors, ps_andor_op op, ps_scan *scan) {
     ps_andor *andor = linc_array_push(andors);
 
     *andor = (ps_andor){
+        .i = scan->cur_tok->i,
         .op = op,
         .pline.cmds.allo = scan->ast->allo
     };
 
-    scan->cur_pline = &andor->pline;
+    scan->cur_andor = andor;
+}
+
+static void end_cmd(ps_scan *scan) {
+    ps_cmd *cmd = scan->cur_cmd;
+    lx_tok *tok = &scan->cur_tok[-1];
+
+    cmd->n = (tok->i + tok->n) - cmd->i;
+    scan->cur_cmd = nullptr;
+}
+
+static void end_andor(ps_scan *scan) {
+    ps_andor *andor = scan->cur_andor;
+    lx_tok *tok = &scan->cur_tok[-1];
+
+    andor->n = (tok->i + tok->n) - andor->i;
+    scan->cur_andor = nullptr;
 }
 
 static int expand_alias(ps_scan *scan) {
@@ -193,6 +202,7 @@ static int expand_alias(ps_scan *scan) {
     /* Is there an actual defined alias match? */
     char *alias = scan->cur_tok->parts.data[0].raw;
     void *value;
+
     mp_str_lookup(&env.aliases, alias, &value);
     if (!value)
         return 0;
@@ -211,6 +221,15 @@ static int expand_alias(ps_scan *scan) {
         lx_free(&alias_toks);
         return -1;
     }
+
+    lx_shift_toks(scan->cur_tok->i, alias_toks.size, alias_toks.data);
+    int len = strlen(value) - strlen(alias);
+
+    scan->alias_shift += len;
+
+    if (!scan_final(scan))
+        lx_shift_toks(len, scan->toks->size - (scan->i + 1),
+                &scan->toks->data[scan->i + 1]);
 
     lx_free_tok(scan->cur_tok);
     linc_array_delete(scan->toks, scan->i, 1);
@@ -267,6 +286,7 @@ static int parse_subshell(ps_scan *scan) {
 
     lx_tok tok;
     da_tok subsh_toks = {0};
+    int rparen_i = scan->i + n;
 
     for (size_t i = 0; i < n; ++i) {
         lx_tok_copy(&tok, &scan->toks->data[scan->i + 1 + i]);
@@ -277,10 +297,24 @@ static int parse_subshell(ps_scan *scan) {
     scan->cur_cmd->subsh.allo = scan->ast->allo;
     scan->cur_cmd->subsh.nested = true;
 
-    if (ps_parse(&subsh_toks, &scan->cur_cmd->subsh, scan->print_err) == -1) {
+    ps_scan subsh_scan = {
+        .toks = &subsh_toks,
+        .print_err = scan->print_err,
+        .alias = scan->alias,
+    };
+
+    if (ps_parse(&subsh_scan, &scan->cur_cmd->subsh) == -1) {
         lx_free(&subsh_toks);
         return -1;
     }
+
+    int shift = subsh_scan.alias_shift;
+    int shift_n = scan->toks->size - (rparen_i + 1);
+
+    scan->alias_shift += subsh_scan.alias_shift;
+
+    if (!scan_final(scan))
+        lx_shift_toks(shift, shift_n, &scan->toks->data[rparen_i + 1]);
 
     scan_advance(n + 1, scan);
 
@@ -297,8 +331,8 @@ void ps_free(ps_ast *ast) {
     *ast = (ps_ast){0};
 }
 
-int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
-    ASSERT(toks && ast);
+int ps_parse(ps_scan *scan, ps_ast *ast) {
+    ASSERT(scan && ast);
 
     if (!ast->allo.alloc) {
         ast->allo = (linc_allo){
@@ -309,23 +343,17 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
     }
 
     ast->andors.allo = ast->allo;
+    scan->ast = ast;
+    scan->cur_tok = &scan->toks->data[0];
 
-    ps_scan *scan = &(ps_scan){
-        .cur_tok = &toks->data[0],
-        .andor_op = PS_NO_IF,
-        .ast = ast,
-        .print_err = print_err,
-        .toks = toks
-    };
-
-    if (!toks || !ast || toks->size == 0)
+    if (!scan->toks || !ast || scan->toks->size == 0)
         goto fail;
 
     for (; scan->i != scan->toks->size; scan_advance(1, scan)) {
         lx_kind kind = scan->cur_tok->kind;
 
         /* Just parsed a delimeter so need a command */
-        if (!scan->cur_pline || !scan->cur_cmd) {
+        if (!scan->cur_andor || !scan->cur_cmd) {
             if (kind != LX_TOK_WORD && kind != LX_TOK_LPAREN)
                 goto fail_tok;
         }
@@ -357,24 +385,21 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
                 break;
             }
 
-            if (!scan->cur_pline)
+            if (!scan->cur_cmd && scan->alias)
+                if (expand_alias(scan) == -1)
+                    goto fail;
+
+            if (!scan->cur_andor)
                 add_andor(&ast->andors, scan->andor_op, scan);
 
-            if (!scan->cur_cmd) {
-                add_cmd(&scan->cur_pline->cmds, scan);
-
-                int expanded = expand_alias(scan);
-                if (expanded == -1)
-                    goto fail;
-            }
+            if (!scan->cur_cmd)
+                add_cmd(&scan->cur_andor->pline.cmds, scan);
 
             scan->cur_cmd->words.allo = scan->ast->allo;
             ps_word *word = linc_array_push(&scan->cur_cmd->words);
             *word = (ps_word){ .segments.allo = scan->ast->allo };
 
             copy_word(word, scan->cur_tok, scan);
-
-            scan->need_tok = false;
             break;
         case LX_TOK_IO_NUM:
             if (scan->queued_redir) {
@@ -412,51 +437,55 @@ int ps_parse(da_tok *toks, ps_ast *ast, bool print_err) {
             queue_redir(-1, false, scan);
             break;
         case LX_TOK_LPAREN:
-            if (!scan->cur_pline)
+            if (!scan->cur_andor)
                 add_andor(&ast->andors, scan->andor_op, scan);
 
             if (scan->cur_cmd)
                 goto fail_tok;
 
-            add_cmd(&scan->cur_pline->cmds, scan);
+            add_cmd(&scan->cur_andor->pline.cmds, scan);
 
             if (parse_subshell(scan) == -1)
                 goto fail;
-
-            scan->need_tok = false;
             break;
         case LX_TOK_RPAREN:
             goto fail_tok;
         case LX_TOK_PIPE:
-            scan->cur_cmd = nullptr;
-            scan->need_tok = true;
+            end_cmd(scan);
             break;
         case LX_TOK_AND_IF:
-            scan->cur_cmd = nullptr;
-            scan->cur_pline = nullptr;
+            end_cmd(scan);
+            end_andor(scan);
             scan->andor_op = PS_AND_IF;
-            scan->need_tok = true;
             break;
         case LX_TOK_OR_IF:
-            scan->cur_cmd = nullptr;
-            scan->cur_pline = nullptr;
+            end_cmd(scan);
+            end_andor(scan);
             scan->andor_op = PS_OR_IF;
-            scan->need_tok = true;
             break;
         case LX_TOK_AMPER:
-            if (!scan_final(scan))
+            if (!scan_final(scan) || !scan->cur_andor ||
+                    !scan->cur_cmd || scan->queued_redir)
                 goto fail_tok;
 
+            end_cmd(scan);
+            end_andor(scan);
+
             ast->bg = true;
+
+            return 0;
         default:
             break;
         }
     }
 
-    if (scan->queued_redir || scan->need_tok) {
+    if (scan->queued_redir || !scan->cur_andor || !scan->cur_cmd) {
         ERR_EOL();
         goto fail;
     }
+
+    end_cmd(scan);
+    end_andor(scan);
 
     return 0;
 

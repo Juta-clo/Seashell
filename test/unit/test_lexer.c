@@ -162,7 +162,7 @@ TEST(lexer, shell_usage) {
         WORD_SIMPLE("solaar", I(0), N(6)),
         WORD_SIMPLE("show", I(7), N(4)),
         OP(LX_TOK_RDR_OUT, I(12), N(1)),
-        WORD(I(15), N(12), false,
+        WORD(I(14), N(13), false,
             PART("weird file", LX_Q_DOUBLE, I(15), N(10)),
             PART("3", LX_Q_NONE, I(26), N(1)),
         ),
@@ -177,8 +177,8 @@ TEST(lexer, shell_usage) {
 TEST(lexer, quotes_galore) {
     da_tok exp = TOKS(
         WORD_SIMPLE("echo", I(0), N(4)),
-        WORD(I(6), N(1), false, PART("", LX_Q_SINGLE, I(6), N(0))),
-        WORD(I(9), N(1), false, PART("", LX_Q_DOUBLE, I(9), N(0))),
+        WORD(I(5), N(2), false, PART("", LX_Q_SINGLE, I(6), N(0))),
+        WORD(I(8), N(2), false, PART("", LX_Q_DOUBLE, I(9), N(0))),
         WORD(I(11), N(4), false,
             PART("a", LX_Q_NONE, I(11), N(1)),
             PART("", LX_Q_SINGLE, I(13), N(0)),
@@ -388,7 +388,7 @@ TEST(lexer, backslash_before_word) {
 
 TEST(lexer, double_quote_empty) {
     da_tok exp = TOKS(
-        WORD(I(1), N(1), false, PART("", LX_Q_DOUBLE, I(1), N(0))),
+        WORD(I(0), N(2), false, PART("", LX_Q_DOUBLE, I(1), N(0))),
     );
 
     validate("\"\"", &exp);
@@ -396,7 +396,7 @@ TEST(lexer, double_quote_empty) {
 
 TEST(lexer, double_quote_word) {
     da_tok exp = TOKS(
-        WORD(I(1), N(2), false, PART("a", LX_Q_DOUBLE, I(1), N(1))),
+        WORD(I(0), N(3), false, PART("a", LX_Q_DOUBLE, I(1), N(1))),
     );
 
     validate("\"a\"", &exp);
@@ -404,7 +404,7 @@ TEST(lexer, double_quote_word) {
 
 TEST(lexer, double_quote_operator) {
     da_tok exp = TOKS(
-        WORD(I(1), N(2), false, PART("|", LX_Q_DOUBLE, I(1), N(1))),
+        WORD(I(0), N(3), false, PART("|", LX_Q_DOUBLE, I(1), N(1))),
     );
 
     validate("\"|\"", &exp);
@@ -412,7 +412,7 @@ TEST(lexer, double_quote_operator) {
 
 TEST(lexer, double_quote_whitespace) {
     da_tok exp = TOKS(
-        WORD(I(1), N(2), false, PART(" ", LX_Q_DOUBLE, I(1), N(1))),
+        WORD(I(0), N(3), false, PART(" ", LX_Q_DOUBLE, I(1), N(1))),
     );
 
     validate("\" \"", &exp);
@@ -420,7 +420,7 @@ TEST(lexer, double_quote_whitespace) {
 
 TEST(lexer, double_quote_escaped_quote) {
     da_tok exp = TOKS(
-        WORD(I(1), N(3), false, PART("\\\"", LX_Q_DOUBLE, I(1), N(2))),
+        WORD(I(0), N(4), false, PART("\\\"", LX_Q_DOUBLE, I(1), N(2))),
     );
 
     validate("\"\\\"\"", &exp);
@@ -428,7 +428,7 @@ TEST(lexer, double_quote_escaped_quote) {
 
 TEST(lexer, single_quote_empty) {
     da_tok exp = TOKS(
-        WORD(I(1), N(1), false, PART("", LX_Q_SINGLE, I(1), N(0))),
+        WORD(I(0), N(2), false, PART("", LX_Q_SINGLE, I(1), N(0))),
     );
 
     validate("''", &exp);
@@ -436,7 +436,7 @@ TEST(lexer, single_quote_empty) {
 
 TEST(lexer, single_quote_word) {
     da_tok exp = TOKS(
-        WORD(I(1), N(2), false, PART("a", LX_Q_SINGLE, I(1), N(1))),
+        WORD(I(0), N(3), false, PART("a", LX_Q_SINGLE, I(1), N(1))),
     );
 
     validate("'a'", &exp);
@@ -444,7 +444,7 @@ TEST(lexer, single_quote_word) {
 
 TEST(lexer, single_quote_operator) {
     da_tok exp = TOKS(
-        WORD(I(1), N(2), false, PART("|", LX_Q_SINGLE, I(1), N(1))),
+        WORD(I(0), N(3), false, PART("|", LX_Q_SINGLE, I(1), N(1))),
     );
 
     validate("'|'", &exp);
@@ -452,7 +452,7 @@ TEST(lexer, single_quote_operator) {
 
 TEST(lexer, single_quote_whitespace) {
     da_tok exp = TOKS(
-        WORD(I(1), N(2), false, PART(" ", LX_Q_SINGLE, I(1), N(1))),
+        WORD(I(0), N(3), false, PART(" ", LX_Q_SINGLE, I(1), N(1))),
     );
 
     validate("' '", &exp);
@@ -460,7 +460,7 @@ TEST(lexer, single_quote_whitespace) {
 
 TEST(lexer, single_quote_backslash) {
     da_tok exp = TOKS(
-        WORD(I(1), N(2), false, PART("\\", LX_Q_SINGLE, I(1), N(1))),
+        WORD(I(0), N(3), false, PART("\\", LX_Q_SINGLE, I(1), N(1))),
     );
 
     validate("'\\'", &exp);
@@ -479,7 +479,7 @@ TEST(lexer, part_none_then_double) {
 
 TEST(lexer, part_double_then_none) {
     da_tok exp = TOKS(
-        WORD(I(1), N(3), false,
+        WORD(I(0), N(4), false,
             PART("a", LX_Q_DOUBLE, I(1), N(1)),
             PART("b", LX_Q_NONE, I(3), N(1)),
         ),
@@ -490,7 +490,7 @@ TEST(lexer, part_double_then_none) {
 
 TEST(lexer, part_double_then_double) {
     da_tok exp = TOKS(
-        WORD(I(1), N(5), false,
+        WORD(I(0), N(6), false,
             PART("a", LX_Q_DOUBLE, I(1), N(1)),
             PART("b", LX_Q_DOUBLE, I(4), N(1)),
         ),
@@ -512,7 +512,7 @@ TEST(lexer, part_none_then_single) {
 
 TEST(lexer, part_single_then_none) {
     da_tok exp = TOKS(
-        WORD(I(1), N(3), false,
+        WORD(I(0), N(4), false,
             PART("a", LX_Q_SINGLE, I(1), N(1)),
             PART("b", LX_Q_NONE, I(3), N(1)),
         ),
@@ -523,7 +523,7 @@ TEST(lexer, part_single_then_none) {
 
 TEST(lexer, part_single_then_single) {
     da_tok exp = TOKS(
-        WORD(I(1), N(5), false,
+        WORD(I(0), N(6), false,
             PART("a", LX_Q_SINGLE, I(1), N(1)),
             PART("b", LX_Q_SINGLE, I(4), N(1)),
         ),
@@ -534,7 +534,7 @@ TEST(lexer, part_single_then_single) {
 
 TEST(lexer, part_double_then_single) {
     da_tok exp = TOKS(
-        WORD(I(1), N(5), false,
+        WORD(I(0), N(6), false,
             PART("a", LX_Q_DOUBLE, I(1), N(1)),
             PART("b", LX_Q_SINGLE, I(4), N(1)),
         ),
@@ -545,7 +545,7 @@ TEST(lexer, part_double_then_single) {
 
 TEST(lexer, part_single_then_double) {
     da_tok exp = TOKS(
-        WORD(I(1), N(5), false,
+        WORD(I(0), N(6), false,
             PART("a", LX_Q_SINGLE, I(1), N(1)),
             PART("b", LX_Q_DOUBLE, I(4), N(1)),
         ),
@@ -559,8 +559,8 @@ TEST(lexer, classifies_words_that_are_numbers) {
         WORD_SIMPLE("123a", I(0), N(4)),
         WORD_SIMPLE("a123", I(5), N(4)),
         WORD_NUMBER(123, I(10), N(3)),
-        WORD(I(15), N(4), false, PART("123", LX_Q_DOUBLE, I(15), N(3))),
-        WORD(I(21), N(5), false,
+        WORD(I(14), N(5), false, PART("123", LX_Q_DOUBLE, I(15), N(3))),
+        WORD(I(20), N(6), false,
             PART("123", LX_Q_DOUBLE, I(21), N(3)),
             PART("a", LX_Q_NONE, I(25), N(1)),
         ),
@@ -609,10 +609,10 @@ TEST(lexer, io_number_tokens_only_created_before_redirect) {
         IO_NUM(IO(12), I(10), N(2)),
         OP(LX_TOK_RDR_OUT, I(12), N(1)),
         WORD_NUMBER(34, I(13), N(2)),
-        WORD(I(17), N(4), false, PART("123", LX_Q_DOUBLE, I(17), N(3))),
+        WORD(I(16), N(5), false, PART("123", LX_Q_DOUBLE, I(17), N(3))),
         OP(LX_TOK_RDR_OUT, I(21), N(1)),
         OP(LX_TOK_RDR_OUT, I(23), N(1)),
-        WORD(I(25), N(4), false, PART("123", LX_Q_DOUBLE, I(25), N(3))),
+        WORD(I(24), N(5), false, PART("123", LX_Q_DOUBLE, I(25), N(3))),
     );
 
     validate("123> >123 12>34 \"123\"> >\"123\"", &exp);
@@ -716,7 +716,7 @@ TEST(lexer, mixed_operators_and_tokens_span_preservation) {
         WORD_SIMPLE("abc", I(0), N(3)),
         WORD_NUMBER(123, I(4), N(3)),
         OP(LX_TOK_OR_IF, I(7), N(2)),
-        WORD(I(10), N(5), false,
+        WORD(I(9), N(6), false,
             PART("ab", LX_Q_SINGLE, I(10), N(2)),
             PART("cd", LX_Q_NONE, I(13), N(2)),
         ),

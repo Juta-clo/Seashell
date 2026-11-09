@@ -101,7 +101,12 @@ static bool kind_is_delim(lx_kind kind) {
 static void ensure_tok(da_tok *toks, lx_kind kind, lx_scan *scan) {
     if (!scan->t) {
         lx_tok *tok = linc_array_push(toks);
-        *tok = (lx_tok){ .kind = kind };
+
+        *tok = (lx_tok){
+            .kind = kind,
+            .i = scan->c - scan->cmd
+        };
+
         scan->t = tok;
     }
 }
@@ -154,16 +159,7 @@ static void end_tok(lx_scan *scan, lx_kind delim) {
         return;
 
     if (scan->t->kind == LX_TOK_WORD) {
-        scan->t->i = scan->t->parts.data[0].i;
-        scan->t->n = (
-            (scan->t->parts.data[scan->t->parts.size - 1].i +
-            scan->t->parts.data[scan->t->parts.size - 1].n) -
-            scan->t->parts.data[0].i
-        );
-
-        if (scan->t->parts.data[scan->t->parts.size - 1].quote != LX_Q_NONE)
-            ++scan->t->n;
-
+        scan->t->n = (scan->c - scan->cmd) - scan->t->i;
     } else {
         scan->t->i = scan->c - scan->cmd;
         scan->t->n = tok_len(scan->t->kind);
@@ -262,9 +258,9 @@ static int handle_normal(da_tok *toks, lx_scan *scan) {
         }
 
         clear_part(scan);
-        ++scan->c;
 
         ensure_tok(toks, LX_TOK_WORD, scan);
+        ++scan->c;
         ensure_part(scan, LX_Q_DOUBLE);
 
         if (*scan->c == '"') {
@@ -285,9 +281,9 @@ static int handle_normal(da_tok *toks, lx_scan *scan) {
         }
 
         clear_part(scan);
-        ++scan->c;
 
         ensure_tok(toks, LX_TOK_WORD, scan);
+        ++scan->c;
         ensure_part(scan, LX_Q_SINGLE);
 
         if (*scan->c == '\'') {
@@ -325,6 +321,19 @@ static int handle_normal(da_tok *toks, lx_scan *scan) {
     }
 
     return 0;
+}
+
+void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks) {
+    if (shift == 0)
+        return;
+
+    for (size_t i = 0; i < shift_n; ++i) {
+        toks[i].i += shift;
+
+        if (toks[i].kind == LX_TOK_WORD)
+            for (size_t y = 0; y < toks[i].parts.size; ++y)
+                toks[i].parts.data[y].i += shift;
+    }
 }
 
 void lx_tok_copy(lx_tok *dest, lx_tok *src) {

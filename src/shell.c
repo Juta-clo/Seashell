@@ -572,7 +572,13 @@ static int line_to_ast(const char *line, ps_ast *ast) {
         return -1;
     }
 
-    if (ps_parse(&toks, ast, true) == -1) {
+    ps_scan scan = {
+        .toks = &toks,
+        .print_err = true,
+        .alias = true,
+    };
+
+    if (ps_parse(&scan, ast) == -1) {
         lx_free(&toks);
         return -1;
     }

@@ -7,15 +7,15 @@
 #include "lexer.h"
 
 typedef enum {
+    PS_NO_IF,
     PS_AND_IF,
     PS_OR_IF,
-    PS_NO_IF,
 } ps_andor_op;
 
 typedef enum {
+    PS_Q_NONE,
     PS_Q_SINGLE,
     PS_Q_DOUBLE,
-    PS_Q_NONE,
 } ps_quote;
 
 typedef enum {
@@ -47,11 +47,13 @@ struct ps_ast {
 struct ps_segment {
     char *raw;
     ps_quote quote;
+    int i, n;
 };
 
 struct ps_word {
     da_segment segments;
     char *arg;
+    int i, n;
 };
 
 struct ps_redir {
@@ -69,6 +71,7 @@ struct ps_redir {
 struct ps_cmd {
     ps_cmd_kind kind;
     da_redir redirs;
+    int i, n;
 
     union {
         struct {
@@ -87,9 +90,26 @@ struct ps_pline {
 struct ps_andor {
     ps_pline pline;
     ps_andor_op op;
+    int i, n;
 };
 
+typedef struct {
+    bool print_err;
+    bool alias;
+    da_tok *toks; /* lx_tokenize(); */
+
+    /* Internal, zero initialize */
+    size_t i;
+    lx_tok *cur_tok;
+    ps_cmd *cur_cmd;
+    ps_redir *queued_redir;
+    ps_andor *cur_andor;
+    ps_andor_op andor_op;
+    int alias_shift;
+    ps_ast *ast;
+} ps_scan;
+
 void ps_free(ps_ast *ast);
-int ps_parse(da_tok *tokens, ps_ast *ast, bool print_err);
+int ps_parse(ps_scan *scan, ps_ast *ast);
 
 #endif
