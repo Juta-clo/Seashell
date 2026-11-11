@@ -40,7 +40,7 @@ static void str_append_free(char *s, linc_string *base) {
     free(s);
 }
 
-static char *make_word_str(ps_word *word) {
+char *make_word_str(ps_word *word) {
     linc_string out = LINC_STRING_INIT;
 
     for (size_t seg_i = 0; seg_i < word->segments.size; ++seg_i) {
@@ -59,7 +59,7 @@ static char *make_word_str(ps_word *word) {
     return out.cstr;
 }
 
-static char *make_redir_str(ps_redir *redir) {
+char *make_redir_str(ps_redir *redir) {
     linc_string out = LINC_STRING_INIT;
     char *rdr_op = (redir->rdr_in) ? "<" : ">";
 
@@ -84,9 +84,7 @@ static char *make_redir_str(ps_redir *redir) {
     return out.cstr;
 }
 
-static char *make_ast_str(ps_ast *ast);
-
-static char *make_cmd_str(ps_cmd *cmd) {
+char *make_cmd_str(ps_cmd *cmd) {
     linc_string out = LINC_STRING_INIT;
 
     if (cmd->kind == PS_CMD_SUBSH) {
@@ -115,7 +113,7 @@ static char *make_cmd_str(ps_cmd *cmd) {
     return out.cstr;
 }
 
-static char *make_pline_str(ps_pline *pline) {
+char *make_pline_str(ps_pline *pline) {
     linc_string out = LINC_STRING_INIT;
 
     for (size_t cmd_i = 0; cmd_i < pline->cmds.size; ++cmd_i) {
@@ -131,7 +129,7 @@ static char *make_pline_str(ps_pline *pline) {
     return out.cstr;
 }
 
-static char *make_ast_str(ps_ast *ast) {
+char *make_ast_str(ps_ast *ast) {
     ASSERT(ast && ast->andors.size > 0);
 
     linc_string out = LINC_STRING_INIT;
@@ -398,9 +396,10 @@ static int shell_start_pline(ps_pline *pline, bool bg, int jid) {
     if (try_builtin) {
         ps_cmd *cmd = &pline->cmds.data[0];
         sh_builtin *builtin = get_builtin(cmd->argv[0]);
+        char *cmd_str = make_cmd_str(cmd);
 
         if (builtin) {
-            LOG_INFO("[%d] Started %s (no fork)", jid, builtin->name);
+            LOG_INFO("[%d] Started %s (no fork)", jid, cmd_str);
 
             int status = builtin->func(cmd->argv, &env);
 
@@ -408,14 +407,14 @@ static int shell_start_pline(ps_pline *pline, bool bg, int jid) {
              * don't queue fg's exit event we only reclaim the termianl
              * when the job that was fg'd exits (or stops) */
             if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
-                char *cmd_str = make_cmd_str(cmd);
                 LOG_INFO("queued \"%s\" exit event", builtin->name);
                 job_queue_builtin_exit(jid, cmd_str, status);
-                free(cmd_str);
             }
 
             handled = true;
         }
+
+        free(cmd_str);
     }
 
     if (!handled) {

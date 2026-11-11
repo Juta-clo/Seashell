@@ -1,3 +1,4 @@
+#include "shell.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <linux/limits.h>
@@ -67,6 +68,7 @@ LINC_ARRAY_TYPE(da_cell, input_cell);
 typedef struct {
     size_t i;
     linc_hds glob;
+    linc_hds orig;
 } input_comp;
 
 typedef struct {
@@ -476,11 +478,17 @@ static void enter_mode_insert() {
 
 static void input_reset_comp(void) {
     if (input.comp.glob) {
-        input.comp.i = 0;
         linc_hds_free(input.comp.glob);
         input.comp.glob = nullptr;
-        input_update();
     }
+
+    if (input.comp.orig) {
+        free(input.comp.orig);
+        input.comp.orig = nullptr;
+    }
+
+    input.comp.i = 0;
+    input_update();
 }
 
 static void get_path_entries(da_charp *pents) {
@@ -506,7 +514,11 @@ static void escape_spaces(linc_string *str) {
 
     for (char *c = str->cstr; *c != '\0'; ++c) {
         if (*c == ' ') {
-            linc_string_append(&out, "\\ ");
+            if (c == str->cstr || c[-1] != '\\') {
+                linc_string_append(&out, "\\ ");
+            } else {
+                linc_string_append(&out, " ");
+            }
         } else
             linc_string_append_n(&out, c, 1);
     }
@@ -539,7 +551,6 @@ static void history_prev(void) {
     }
 
     char *line = xstrdup(input.hist.lines[--input.hist.i]);
-    LOG_INFO("history_prev: input.line = \"%s\"", input.line);
 
     input_delete(DELETE_ALL, nullptr);
     input_insert(INSERT_STR, line);
@@ -560,7 +571,6 @@ static void history_next(void) {
     }
 
     char *line = xstrdup(input.hist.lines[input.hist.i]);
-    LOG_INFO("history_next: input.line = \"%s\"", input.line);
 
     input_delete(DELETE_ALL, nullptr);
     input_insert(INSERT_STR, line);
@@ -581,10 +591,10 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
     }
 }
 
-static void input_complete_command(da_charp *matches) {
-    ASSERT(matches);
+static void input_complete_command(da_charp *hits) {
+    ASSERT(hits);
 
-    *matches = (da_charp){0};
+    *hits = (da_charp){0};
 
     da_charp pents = {0};
     get_path_entries(&pents);
@@ -594,13 +604,12 @@ static void input_complete_command(da_charp *matches) {
         linc_hds_append(glob, pents.data[i]);
         linc_hds_append(glob, "/");
         linc_hds_append(glob, input.comp.glob);
-        LOG_INFO("PATH glob: %s", glob);
 
         da_charp m;
         glob_pattern(glob, linc_hds_len(glob), &m);
 
         memcpy(
-            linc_array_insert(matches, matches->size, m.size),
+            linc_array_insert(hits, hits->size, m.size),
             m.data, sizeof(char *) * m.size
         );
 
@@ -610,35 +619,48 @@ static void input_complete_command(da_charp *matches) {
 
     argv_free_free(&pents);
 
-    for (size_t i = 0; i < matches->size; ++i) {
-        char *match = matches->data[i];
-        matches->data[i] = xstrdup(basename(match));
+    for (size_t i = 0; i < hits->size; ++i) {
+        char *match = hits->data[i];
+        hits->data[i] = xstrdup(basename(match));
         free(match);
     }
 }
 
-static void input_complete_file(da_charp *matches) {
-    glob_pattern(input.comp.glob, linc_hds_len(input.comp.glob), matches);
+static void input_complete_file(da_charp *hits) {
+    glob_pattern(input.comp.glob, linc_hds_len(input.comp.glob), hits);
 
-    for (size_t i = 0; i < matches->size; ++i) {
-        LOG_INFO("Completion match: %s", matches->data[i]);
-
+    for (size_t i = 0; i < hits->size; ++i) {
+        const char *orig = input.comp.orig;
         linc_string result = LINC_STRING_INIT;
+        char *orig_copy = xstrdup(input.comp.orig);
+        char *hit_copy = hits->data[i];
 
-        if (strncmp(input.comp.glob, "./", 2) != 0 &&
-            strncmp(matches->data[i], "./", 2) == 0) {
-            linc_string_append(&result, &matches->data[i][2]);
+        if (strstr(orig, "*")) {
+            linc_string_append(&result, hit_copy);
         } else {
-            linc_string_append(&result, matches->data[i]);
+            char *dir_prefix = dirname(orig_copy);
+
+            if (orig[strlen(orig) - 1] == '/') {
+                linc_string_appendf(&result, "%s", orig);
+            } else if (!STREQ(dir_prefix, ".")) {
+                linc_string_append(&result, dir_prefix);
+                linc_string_append(&result, "/");
+            } else if (strncmp(orig, "./", 2) == 0) {
+                linc_string_append(&result, "./");
+            }
+
+            linc_string_append(&result, basename(hit_copy));
         }
 
-        if (is_dir(matches->data[i]))
+        if (is_dir(hits->data[i]))
             linc_string_append(&result, "/");
 
-        free(matches->data[i]);
         escape_spaces(&result);
 
-        matches->data[i] = result.cstr;
+        hits->data[i] = result.cstr;
+
+        free(hit_copy);
+        free(orig_copy);
     }
 }
 
@@ -660,6 +682,9 @@ static int input_complete_tok(comp_tok *ctok) {
     ps_get_info(input.off, &ast, &info);
 
     if (info.kinds & PS_NAME || info.kinds & PS_ARG) {
+        if (!input.comp.orig)
+            input.comp.orig = make_word_str(info.word);
+
         if (expand_word(info.word, nullptr, EXPAND_COMP) == -1)
             goto fail;
 
@@ -668,6 +693,9 @@ static int input_complete_tok(comp_tok *ctok) {
         ctok->i = info.word->i;
         ctok->n = info.word->n;
     } else if (info.kinds & PS_REDIR) {
+        if (!input.comp.orig)
+            input.comp.orig = make_word_str(&info.redir->target);
+
         if (expand_word(&info.redir->target, nullptr, EXPAND_COMP) == -1)
             goto fail;
 
@@ -683,15 +711,15 @@ static int input_complete_tok(comp_tok *ctok) {
     }
 
     if (!input.comp.glob && ctok->kind != COMP_EMPTY) {
-        ps_segment *seg;
+        ps_word *word;
 
         if (ctok->kind == COMP_REDIR) {
-            ps_word *target = &info.redir->target;
-            seg = &target->segments.data[target->segments.size - 1];
+            word = &info.redir->target;
         } else {
-            ps_word *arg = info.word;
-            seg = &arg->segments.data[arg->segments.size - 1];
+            word = info.word;
         }
+
+        ps_segment *seg = &word->segments.data[word->segments.size - 1];
 
         if (input.off != seg->i + seg->n)
             goto fail;
@@ -715,25 +743,33 @@ fail:
 }
 
 static void input_complete(void) {
+    da_charp hits = {0};
     comp_tok ctok;
-    da_charp matches = {0};
 
     if (input_complete_tok(&ctok) == -1 || ctok.kind == COMP_EMPTY)
         return;
 
-    if (ctok.kind == COMP_NAME) {
-        input_complete_command(&matches);
-    } else if (ctok.kind == COMP_ARG || ctok.kind == COMP_REDIR) {
-        input_complete_file(&matches);
+    LOG_INFO("Attempting Completion");
+    LOG_INFO("    glob = %s", input.comp.glob);
+    LOG_INFO("    orig = %s", input.comp.orig);
+
+    if (ctok.kind == COMP_NAME)
+        input_complete_command(&hits);
+
+    if (ctok.kind == COMP_ARG || ctok.kind == COMP_REDIR || hits.size == 0)
+        input_complete_file(&hits);
+
+    if (hits.size == 0) {
+        LOG_INFO("    Fail!");
+        return;
     }
 
-    if (matches.size == 0)
-        return;
+    LOG_INFO("    Match = %s", hits.data[input.comp.i % hits.size]);
 
     input_move(ctok.i);
     input_delete(DELETE_RANGE, &(input_del_ctx){ ctok.i, ctok.n });
-    input_insert(INSERT_STR, matches.data[input.comp.i++ % matches.size]);
-    argv_free_free(&matches);
+    input_insert(INSERT_STR, hits.data[input.comp.i++ % hits.size]);
+    argv_free_free(&hits);
 }
 
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
@@ -973,7 +1009,7 @@ char *input_get_line(const char *prompt) {
         }
     }
 
-    LOG_INFO("parsed line: %s", lstart());
+    LOG_INFO("input line: %s", lstart());
 
     if (printty_stop(pt) != PRINTTY_OK)
         return nullptr;

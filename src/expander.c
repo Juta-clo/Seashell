@@ -15,6 +15,7 @@
 #include "variable.h"
 #include "state.h"
 #include "utils.h"
+#include "shell.h"
 
 static bool try_push_tok(da_ex_tok *toks, const char *start, const char *c,
         ex_tok_type type) {
@@ -98,11 +99,8 @@ linc_string expand_seg(const char *seg, bool *has_glob) {
         ex_tok *tok = &toks.data[i];
         if (tok->type == EXT_KEY) {
             sh_var *var = lookup_var_n(&env.vars, tok->str, tok->str_len);
-            if (var) {
-                LOG_INFO("expanded varaible %s -> %.*s", var->value,
-                        (int)tok->str_len, tok->str);
+            if (var)
                 linc_string_append(&out, var->value);
-            }
 
         } else if (tok->type == EXT_REG) {
             linc_string_append_n(&out, tok->str, tok->str_len);
@@ -125,6 +123,8 @@ int expand_word(ps_word *word, da_charp *argv, int type) {
 
     /* initial variable expansion and concatenation */
 
+    char *word_str = make_word_str(word);
+
     for (size_t i = 0; i < word->segments.size; ++i) {
         ps_segment *seg = &word->segments.data[i];
         linc_string exp_seg = LINC_STRING_INIT;
@@ -144,7 +144,8 @@ int expand_word(ps_word *word, da_charp *argv, int type) {
         linc_string_free(&exp_seg);
     }
 
-    LOG_INFO("expanded word: %s", arg.cstr);
+    LOG_INFO("expand(%s) = %s", word_str, arg.cstr);
+    free(word_str);
 
     /* globbing */
 
@@ -211,8 +212,9 @@ int expand_pline(const ps_pline *pline) {
         for (size_t k = 0; k < cmd->redirs.size; ++k) {
             ps_redir *redir = &cmd->redirs.data[k];
 
-            if (expand_word(&redir->target, nullptr, EXPAND_REDIR) == -1)
-                return -1;
+            if (!redir->fd_dup)
+                if (expand_word(&redir->target, nullptr, EXPAND_REDIR) == -1)
+                    return -1;
         }
     }
 
