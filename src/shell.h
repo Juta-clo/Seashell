@@ -19,11 +19,12 @@ struct sh_pgrp {
 
 struct sh_proc {
     pid_t pid;
-    char **argv;
+    bool subsh;
+    char *cmd;
 };
 
 void process_signals(void);
-void print_job_event(int jid, const job_event *jev, bool verbose);
+void print_job_event(const job_event *jev, bool verbose);
 
 void seashell_shutdown(void);
 linc_string shell_get_prompt(void);

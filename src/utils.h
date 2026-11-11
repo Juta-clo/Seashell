@@ -37,6 +37,9 @@
 
 #define STRINGIFY(_str) #_str
 
+#define ARRLEN(_arr) \
+        sizeof(_arr) / sizeof(typeof(*_arr))
+
 #define fatal(...) \
     do { \
         LOG_ERR(__VA_ARGS__); \
@@ -107,5 +110,6 @@ void xdup2_move(int fd1, int fd2);
 int get_int(const char *arg, int *num);
 bool is_dir(const char *file);
 char *strdup_alloc(const char *str, linc_allo *allo);
+char *strndup_alloc(const char *str, size_t n, linc_allo *allo);
 
 #endif

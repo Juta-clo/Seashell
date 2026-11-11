@@ -24,6 +24,7 @@ typedef struct {
 
 LINC_ARRAY_TYPE(da_vt_snap, vt_snap);
 
+void vt_take_snap(void);
 void vt_write(const char *str);
 bool vt_snap_cmp(vt_snap *exp);
 da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty);

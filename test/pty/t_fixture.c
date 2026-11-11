@@ -55,7 +55,7 @@ static void get_diff_msg(void) {
 }
 
 static void log_test(void) {
-    *linc_array_push(&test->snaps) = vt_get_snap();
+    vt_take_snap();
 
     fprintf(ptyh.log_file, "%s\n", ptyh.cmd_str);
     fprintf(ptyh.log_file, "%s:FAIL:%s:%d:%s\n",
@@ -149,6 +149,7 @@ static char **create_exec_argv(char **args) {
                 "--leak-check=full",
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
+                "--exit-on-first-error=yes",
                 "--error-exitcode=99", /*seashell shouldn't return that*/
                 "--track-fds=bad", /*this is awesome - bugged with forkpty tho*/
                 "--modify-fds=high",

@@ -17,7 +17,7 @@ static da_jevent jevs = {0};
 
 static void free_job(jc_job *job) {
     for (size_t i = 0; i < job->pgrp.procs.size; ++i)
-        argv_free(job->pgrp.procs.data[i].argv);
+        free(job->pgrp.procs.data[i].cmd);
 
     linc_array_free(&job->pgrp.procs);
     *job = (jc_job){0};
@@ -140,7 +140,7 @@ void job_event_free(job_event *jev) {
         return;
 
     for (size_t i = 0; i < jev->pviews.size; ++i)
-        argv_free(jev->pviews.data[i].argv);
+        free(jev->pviews.data[i].cmd);
     linc_array_free(&jev->pviews);
 }
 
@@ -198,7 +198,7 @@ static void capture_job_state(jc_job *job, job_event *jev) {
 
         pview->pid = proc->pid;
         pview->stat = proc->stat;
-        pview->argv = argv_copy(proc->argv);
+        pview->cmd = xstrdup(proc->cmd);
 
         if (proc->stat == PROC_EXIT) {
             pview->exit_stat = proc->exit_stat;
@@ -310,7 +310,7 @@ bool job_set_running(int jid, job_event *jev) {
     return change;
 }
 
-void job_queue_builtin_exit(int jid, char **argv, int status) {
+void job_queue_builtin_exit(int jid, char *cmd, int status) {
     job_event jev = {
         .jid = jid,
         .type = JEXITED
@@ -322,7 +322,7 @@ void job_queue_builtin_exit(int jid, char **argv, int status) {
         .exit_stat = status
     };
 
-    pview->argv = argv_copy(argv);
+    pview->cmd = xstrdup(cmd);
     jev.last = &jev.pviews.data[0];
     add_job_event(jev);
 
@@ -357,6 +357,7 @@ void job_add(int jid, sh_pgrp *pld) {
     job->jid = jid;
     job->stat = JOB_RUN;
     job->pgrp.pgid = pld->pgid;
+    xtcgetattr(env.tty_fd, &job->tio);
 
     for (size_t i = 0; i < pld->procs.size; ++i) {
         jc_proc *proc = linc_array_push(&job->pgrp.procs);
@@ -364,7 +365,7 @@ void job_add(int jid, sh_pgrp *pld) {
 
         proc->pid = pproc->pid;
         proc->stat = PROC_RUN;
-        proc->argv = pproc->argv;
+        proc->cmd = pproc->cmd;
 
         if (i == pld->procs.size - 1)
             job->last = proc;

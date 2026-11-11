@@ -293,7 +293,7 @@ static int parse_subshell(ps_scan *scan) {
 
     lx_tok tok;
     da_tok subsh_toks = {0};
-    int rparen_i = scan->i + n;
+    int rparen_i = scan->i + n + 1;
 
     for (size_t i = 0; i < n; ++i) {
         lx_tok_copy(&tok, &scan->toks->data[scan->i + 1 + i]);
@@ -301,8 +301,11 @@ static int parse_subshell(ps_scan *scan) {
     }
 
     scan->cur_cmd->kind = PS_CMD_SUBSH;
-    scan->cur_cmd->subsh.allo = scan->ast->allo;
-    scan->cur_cmd->subsh.nested = true;
+
+    scan->cur_cmd->subsh = (ps_ast){
+        .allo = scan->ast->allo,
+        .nested = true
+    };
 
     ps_scan subsh_scan = {
         .toks = &subsh_toks,
@@ -314,12 +317,12 @@ static int parse_subshell(ps_scan *scan) {
         status = -1;
 
     int shift = subsh_scan.alias_shift;
-    int shift_n = scan->toks->size - (rparen_i + 1);
+    int shift_n = scan->toks->size - (rparen_i);
 
     scan->alias_shift += subsh_scan.alias_shift;
 
     if (!scan_final(scan))
-        lx_shift_toks(shift, shift_n, &scan->toks->data[rparen_i + 1]);
+        lx_shift_toks(shift, shift_n, &scan->toks->data[rparen_i]);
 
     scan_advance(n + 1, scan);
 

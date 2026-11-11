@@ -101,13 +101,9 @@ static int run_fg_builtin(char **argv, shell_env *env) {
         return EXIT_FAILURE;
     }
 
-    if (job->tio_saved) {
-        if (tcsetattr(env->tty_fd, TCSANOW, &job->tio) == -1) {
-            fprintf(stderr, "%s: tcsetattr: %m", argv[0]);
-            return EXIT_FAILURE;
-        }
-
-        job->tio_saved = false;
+    if (tcsetattr(env->tty_fd, TCSANOW, &job->tio) == -1) {
+        fprintf(stderr, "%s: tcsetattr: %m", argv[0]);
+        return EXIT_FAILURE;
     }
 
     if (tcsetpgrp(env->tty_fd, job->pgrp.pgid) == -1) {
@@ -117,7 +113,7 @@ static int run_fg_builtin(char **argv, shell_env *env) {
 
     job_event jev;
     if (job_set_running(jid, &jev)) {
-        print_job_event(jev.jid, &jev, false);
+        print_job_event(&jev, false);
         job_event_free(&jev);
     }
 
@@ -161,7 +157,7 @@ static int run_bg_builtin(char **argv, shell_env *env) {
 
     job_event jev;
     if (job_set_running(jid, &jev)) {
-        print_job_event(jev.jid, &jev, false);
+        print_job_event(&jev, false);
         job_event_free(&jev);
     }
 
@@ -259,8 +255,7 @@ static int run_jobs_builtin(char **argv, shell_env *env) {
 
     da_jevent jevs = job_get_snapshot();
     for (size_t i = 0; i < jevs.size; ++i) {
-        print_job_event(jevs.data[i].jid, &jevs.data[i],
-                jobs_opts[SHOW_PIDS].found);
+        print_job_event(&jevs.data[i], jobs_opts[SHOW_PIDS].found);
         job_event_free(&jevs.data[i]);
     }
 

@@ -750,7 +750,7 @@ TEST(shell, async_andor_with_builtin_in_subshell) {
         PROMPT "cd /tmp && pwd >/tmp/seashell/test &",
         "[1] %d",
         PROMPT "%s",
-        "[1] done             (cd /tmp && pwd >/tmp/seashell/test)",
+        "[1] done             (cd /tmp && pwd > /tmp/seashell/test)",
         PROMPT
     );
 
@@ -1129,7 +1129,62 @@ TEST(shell, jobs_after_duplicating_fd_in_subshell) {
     vt_send_str("jobs\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "jobs",
-        "[1] running          (echo x 2>/dev/null >&2 && sleep 100)%s",
+        "[1] running          (echo x 2> /dev/null 1>&2 && sleep 100)",
+        PROMPT
+    );
+}
+
+TEST(shell, job_control_message_with_redirect) {
+    vt_send_str("echo x >/dev/null &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "echo x >/dev/null &",
+        "[1] %d",
+        PROMPT "%s",
+        "[1] done             echo x > /dev/null",
+        PROMPT
+    );
+}
+
+TEST(shell, job_control_message_with_redirect_in_subshell) {
+    vt_send_str("(echo x >/dev/null) &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "(echo x >/dev/null) &",
+        "[1] %d",
+        PROMPT "%s",
+        "[1] done             (echo x > /dev/null)",
+        PROMPT
+    );
+}
+
+TEST(shell, job_control_message_with_complex_ast_in_subshell) {
+    vt_send_str(" ( true|false &&   true 1>&  2  )&\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT " ( true|false &&   true 1>&  2  )&",
+        "[1] %d",
+        PROMPT "%s",
+        "[1] exit 1           (true | false && true 1>&2)",
+        PROMPT
+    );
+}
+
+TEST(shell, job_control_message_subshell_with_redirect) {
+    vt_send_str("(true) > /dev/null &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "(true) > /dev/null &",
+        "[1] %d",
+        PROMPT "%s",
+        "[1] done             (true) > /dev/null",
+        PROMPT
+    );
+}
+
+TEST(shell, job_control_message_subshell_with_append_redirection) {
+    vt_send_str("true >> /dev/null &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "true >> /dev/null &",
+        "[1] %d",
+        PROMPT "%s",
+        "[1] done             true >> /dev/null",
         PROMPT
     );
 }
@@ -1201,4 +1256,9 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, duplicate_stdout_onto_stderr);
     RUN_TEST_CASE(shell, duplicating_fd_in_subshell);
     RUN_TEST_CASE(shell, jobs_after_duplicating_fd_in_subshell);
+    RUN_TEST_CASE(shell, job_control_message_with_redirect);
+    RUN_TEST_CASE(shell, job_control_message_with_redirect_in_subshell);
+    RUN_TEST_CASE(shell, job_control_message_with_complex_ast_in_subshell);
+    RUN_TEST_CASE(shell, job_control_message_subshell_with_redirect);
+    RUN_TEST_CASE(shell, job_control_message_subshell_with_append_redirection);
 }

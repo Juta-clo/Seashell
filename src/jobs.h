@@ -45,7 +45,7 @@ struct job_table {
 struct jc_proc {
     pid_t pid;
     proc_stat stat;
-    char **argv;
+    char *cmd;
 
     union {
         int term_sig;
@@ -64,9 +64,7 @@ struct jc_job {
     jc_pgrp pgrp;
     job_stat stat;
     jc_proc *last;
-
     struct termios tio;
-    bool tio_saved;
 };
 
 struct job_event {
@@ -82,7 +80,7 @@ struct job_event {
 struct proc_view {
     pid_t pid;
     proc_stat stat;
-    char **argv;
+    char *cmd;
 
     union {
         int term_sig;
@@ -109,6 +107,6 @@ void job_add(int jid, struct sh_pgrp *pld);
 
 jc_job *job_lookup(int jid);
 pid_t job_lookup_pgrp(int jid);
-void job_queue_builtin_exit(int jid, char **argv, int status);
+void job_queue_builtin_exit(int jid, char *cmd, int status);
 
 #endif

@@ -190,11 +190,7 @@ void validate_job_events(da_jevent *exp) {
 #define PPROC(_pid) \
     (sh_proc){ \
         .pid = _pid, \
-        .argv = ({\
-            char **p = calloc(1, sizeof(char *)); \
-            p[0] = NULL; \
-            p; \
-        }) \
+        .cmd = strdup(""), \
     }
 
 #define apply_wevs(...) \

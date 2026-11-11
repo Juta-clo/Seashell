@@ -93,82 +93,6 @@ TEST(input, normal_mode_deletion_on_last_character) {
     );
 }
 
-TEST(input, tab_completion_with_no_line) {
-    vt_send_str("\t");
-    assert_term(0, PROMPT_LEN,
-        PROMPT ""
-    );
-
-    vt_send_str("x");
-    assert_term(0, PROMPT_LEN + 1,
-        PROMPT "x"
-    );
-
-    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
-    assert_term(0, PROMPT_LEN,
-        PROMPT "x"
-    );
-}
-
-TEST(input, tab_completion_on_filename_with_whitespace) {
-    close(open("/tmp/sh-tmp/file with spaces", O_RDWR | O_CREAT, 0600));
-
-    vt_send_str("stat /tmp/sh-tmp/file\t");
-    assert_term(0, PROMPT_LEN + 35,
-        PROMPT "stat /tmp/sh-tmp/file\\ with\\ spaces");
-}
-
-TEST(input, tab_completion_cycles_results) {
-    close(open("/tmp/sh-tmp/file1", O_RDWR | O_CREAT, 0600));
-    close(open("/tmp/sh-tmp/foo", O_RDWR | O_CREAT, 0600));
-    close(open("/tmp/sh-tmp/foo bar", O_RDWR | O_CREAT, 0600));
-
-    char *lines[3] = {
-        PROMPT "stat /tmp/sh-tmp/file1",
-        PROMPT "stat /tmp/sh-tmp/foo",
-        PROMPT "stat /tmp/sh-tmp/foo\\ bar"
-    };
-
-    vt_send_str("stat /tmp/sh-tmp/f");
-
-    for (size_t i = 0; i < ARR_LEN(lines) * 2; ++i) {
-        char *exp = lines[i % ARR_LEN(lines)];
-
-        vt_send_str("\t");
-        assert_term(0, strlen(exp), exp);
-    }
-}
-
-TEST(input, forward_slash_confirms_completion) {
-    close(open("/tmp/sh-tmp/foo", O_RDWR | O_CREAT, 0600));
-
-    vt_send_str("stat /tmp/sh-tmp/f\t");
-    assert_term(0, PROMPT_LEN + 20,
-        PROMPT "stat /tmp/sh-tmp/foo");
-
-    vt_send_str("/ bar");
-    assert_term(0, PROMPT_LEN + 24, PROMPT "stat /tmp/sh-tmp/foo bar");
-}
-
-TEST(input, first_word_after_pipeline_uses_path_completion) {
-    vt_send_str("ls -a | gre\t");
-    assert_term(0, PROMPT_LEN + 12,
-        PROMPT "ls -a | grep"
-    );
-}
-
-TEST(input, first_word_after_andor_uses_path_completion) {
-    vt_send_str("ls -a && gre\t");
-    assert_term(0, PROMPT_LEN + 13,
-        PROMPT "ls -a && grep"
-    );
-
-    vt_send_str("\b\b\b\b\b\b\b|| grep\t");
-    assert_term(0, PROMPT_LEN + 13,
-        PROMPT "ls -a || grep"
-    );
-}
-
 TEST(input, no_operation_on_history_scroll_with_non_saved) {
     vt_send_key(VTERM_KEY_UP, VTERM_MOD_NONE);
     vt_send_str("foo");
@@ -444,6 +368,84 @@ TEST(input, sigchld_does_not_reset_editing_mode) {
     );
 }
 
+/* Completion */
+
+TEST(input, complete_with_no_line) {
+    vt_send_str("\t");
+    assert_term(0, PROMPT_LEN,
+        PROMPT ""
+    );
+
+    vt_send_str("x");
+    assert_term(0, PROMPT_LEN + 1,
+        PROMPT "x"
+    );
+
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN,
+        PROMPT "x"
+    );
+}
+
+TEST(input, complete_on_filename_with_whitespace) {
+    close(open("/tmp/sh-tmp/file with spaces", O_RDWR | O_CREAT, 0600));
+
+    vt_send_str("stat /tmp/sh-tmp/file\t");
+    assert_term(0, PROMPT_LEN + 35,
+        PROMPT "stat /tmp/sh-tmp/file\\ with\\ spaces");
+}
+
+TEST(input, complete_cycles_results) {
+    close(open("/tmp/sh-tmp/file1", O_RDWR | O_CREAT, 0600));
+    close(open("/tmp/sh-tmp/foo", O_RDWR | O_CREAT, 0600));
+    close(open("/tmp/sh-tmp/foo bar", O_RDWR | O_CREAT, 0600));
+
+    char *lines[3] = {
+        PROMPT "stat /tmp/sh-tmp/file1",
+        PROMPT "stat /tmp/sh-tmp/foo",
+        PROMPT "stat /tmp/sh-tmp/foo\\ bar"
+    };
+
+    vt_send_str("stat /tmp/sh-tmp/f");
+
+    for (size_t i = 0; i < ARR_LEN(lines) * 2; ++i) {
+        char *exp = lines[i % ARR_LEN(lines)];
+
+        vt_send_str("\t");
+        assert_term(0, strlen(exp), exp);
+    }
+}
+
+TEST(input, complete_forward_slash_confirms_completion) {
+    close(open("/tmp/sh-tmp/foo", O_RDWR | O_CREAT, 0600));
+
+    vt_send_str("stat /tmp/sh-tmp/f\t");
+    assert_term(0, PROMPT_LEN + 20,
+        PROMPT "stat /tmp/sh-tmp/foo");
+
+    vt_send_str("/ bar");
+    assert_term(0, PROMPT_LEN + 24, PROMPT "stat /tmp/sh-tmp/foo bar");
+}
+
+TEST(input, complete_first_word_after_pipeline_completes_path) {
+    vt_send_str("ls -a | gre\t");
+    assert_term(0, PROMPT_LEN + 12,
+        PROMPT "ls -a | grep"
+    );
+}
+
+TEST(input, complete_first_word_after_andor_uses_path_completion) {
+    vt_send_str("ls -a && gre\t");
+    assert_term(0, PROMPT_LEN + 13,
+        PROMPT "ls -a && grep"
+    );
+
+    vt_send_str("\b\b\b\b\b\b\b|| grep\t");
+    assert_term(0, PROMPT_LEN + 13,
+        PROMPT "ls -a || grep"
+    );
+}
+
 TEST(input, complete_command_before_pipe) {
     vt_send_str("gre |");
     vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
@@ -458,7 +460,7 @@ TEST(input, complete_command_before_pipe) {
     );
 }
 
-TEST(input, complete_file_target_after_subshell) {
+TEST(input, complete_file_target_redirect_after_subshell) {
     vt_send_str("(echo hi) > /tmp/sh-tm");
     vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
     assert_term(0, PROMPT_LEN + 24,
@@ -466,7 +468,7 @@ TEST(input, complete_file_target_after_subshell) {
     );
 }
 
-TEST(input, glob_in_completion_glob) {
+TEST(input, complete_glob_in_completion_glob) {
     vt_send_str("stat /tmp/sh*tm");
     vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
     assert_term(0, PROMPT_LEN + 17,
@@ -483,6 +485,42 @@ TEST(input, complete_on_redirect_with_no_target) {
     );
 }
 
+TEST(input, complete_command_in_subshell) {
+    vt_send_str("(gre)");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 5,
+        PROMPT "(grep)"
+    );
+}
+
+TEST(input, complete_command_in_incomplete_subshell) {
+    vt_send_str("(gre");
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 5,
+        PROMPT "(grep"
+    );
+}
+
+TEST(input, complete_command_in_incomplete_subshell_before_pipe) {
+    vt_send_str("(gre | a");
+    for (size_t i = 0; i < 4; ++i)
+        vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 5,
+        PROMPT "(grep | a"
+    );
+}
+
+TEST(input, complete_command_in_subshell_after_pipe) {
+    vt_send_str("a | (gre)");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 9,
+        PROMPT "a | (grep)"
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -491,12 +529,6 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, sigint_discards_line);
     RUN_TEST_CASE(input, line_is_preserved_on_async_job_messages);
     RUN_TEST_CASE(input, normal_mode_deletion_on_last_character);
-    RUN_TEST_CASE(input, tab_completion_with_no_line);
-    RUN_TEST_CASE(input, tab_completion_on_filename_with_whitespace);
-    RUN_TEST_CASE(input, tab_completion_cycles_results);
-    RUN_TEST_CASE(input, forward_slash_confirms_completion);
-    RUN_TEST_CASE(input, first_word_after_pipeline_uses_path_completion);
-    RUN_TEST_CASE(input, first_word_after_andor_uses_path_completion);
     RUN_TEST_CASE(input, no_operation_on_history_scroll_with_non_saved);
     RUN_TEST_CASE(input, history_scroll_with_one_item_saved);
     RUN_TEST_CASE(input, scrolling_history_past_end_and_start);
@@ -510,8 +542,19 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, yanked_text);
     RUN_TEST_CASE(input, sigchld_with_no_prompt_redraw);
     RUN_TEST_CASE(input, sigchld_does_not_reset_editing_mode);
+
+    /* Completion */
+    RUN_TEST_CASE(input, complete_with_no_line);
+    RUN_TEST_CASE(input, complete_on_filename_with_whitespace);
+    RUN_TEST_CASE(input, complete_cycles_results);
+    RUN_TEST_CASE(input, complete_forward_slash_confirms_completion);
+    RUN_TEST_CASE(input, complete_first_word_after_pipeline_completes_path);
+    RUN_TEST_CASE(input, complete_first_word_after_andor_uses_path_completion);
     RUN_TEST_CASE(input, complete_command_before_pipe);
-    RUN_TEST_CASE(input, complete_file_target_after_subshell);
-    RUN_TEST_CASE(input, glob_in_completion_glob);
+    RUN_TEST_CASE(input, complete_file_target_redirect_after_subshell);
+    RUN_TEST_CASE(input, complete_glob_in_completion_glob);
     RUN_TEST_CASE(input, complete_on_redirect_with_no_target);
+    RUN_TEST_CASE(input, complete_command_in_subshell);
+    RUN_TEST_CASE(input, complete_command_in_incomplete_subshell);
+    RUN_TEST_CASE(input, complete_command_in_subshell_after_pipe);
 }

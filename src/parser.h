@@ -53,9 +53,9 @@ LINC_ARRAY_TYPE(da_andor, ps_andor);
 
 struct ps_ast {
     da_andor andors;
-    bool bg;
     linc_allo allo;
     bool nested;
+    bool bg;
 };
 
 struct ps_segment {

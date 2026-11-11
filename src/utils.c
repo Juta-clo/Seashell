@@ -175,3 +175,13 @@ char *strdup_alloc(const char *str, linc_allo *allo) {
 
     return out;
 }
+
+char *strndup_alloc(const char *str, size_t n, linc_allo *allo) {
+    ASSERT(str && allo);
+
+    char *out = allo->alloc(n + 1, allo->ctx);
+    memcpy(out, str, n);
+    out[n] = '\0';
+
+    return out;
+}

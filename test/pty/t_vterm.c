@@ -157,6 +157,11 @@ void vt_free_snap(vt_snap *snap) {
     *snap = (vt_snap){0};
 }
 
+void vt_take_snap(void) {
+    vt_snap snap = vt_get_snap();
+    *linc_array_push(&test->snaps) = snap;
+}
+
 vt_snap vt_get_snap(void) {
     vt_snap snap = {0};
 

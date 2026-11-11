@@ -30,14 +30,14 @@
     do { \
         if (!verify_term(LN(__VA_ARGS__), _row, _col)) \
             PTY_TEST_FAIL("verify_term() timed out"); \
-        *linc_array_push(&test->snaps) = vt_get_snap(); \
+        vt_take_snap(); \
     } while (false)
 
 #define assert_term_clear(_row, _col, ...) \
     do { \
         if (!verify_term(LN(__VA_ARGS__), _row, _col)) \
             PTY_TEST_FAIL("verify_term() timed out"); \
-        *linc_array_push(&test->snaps) = vt_get_snap(); \
+        vt_take_snap(); \
         vt_send_ch('l', VTERM_MOD_CTRL); \
     } while (false)
 

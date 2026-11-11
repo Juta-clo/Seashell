@@ -19,12 +19,6 @@
 #define WAIT_EXIT 193 /* +1 highest signal exit status */
 #define PLINE_INTR -1
 
-static int subshell_fork(void);
-static sh_pgrp exec_pline(const ps_pline *pline, bool bg);
-static int shell_start_pline(ps_pline *pline, bool bg, int jid);
-static int shell_wait_pline(int jid, int *status);
-static int shell_run_andor(ps_ast *ast);
-
 static void cursor_left_anchor(void) {
     struct winsize ws;
     if (ioctl(env.tty_fd, TIOCGWINSZ, &ws) == -1)
@@ -41,11 +35,106 @@ static bool same_ev_type(const proc_view *p1, const proc_view *p2) {
         (p1->stat == PROC_STOP && p1->stop_sig == p2->stop_sig));
 }
 
-static char *get_subsh_str(ps_ast *ast) {
+static void str_append_free(char *s, linc_string *base) {
+    linc_string_append(base, s);
+    free(s);
+}
+
+static char *make_word_str(ps_word *word) {
+    linc_string out = LINC_STRING_INIT;
+
+    for (size_t seg_i = 0; seg_i < word->segments.size; ++seg_i) {
+        ps_segment *seg = &word->segments.data[seg_i];
+
+        if (seg->quote == PS_Q_NONE) {
+            linc_string_append(&out, seg->raw);
+        } else if (seg->quote == PS_Q_DOUBLE) {
+            linc_string_appendf(&out, "\"%s\"", seg->raw);
+        } else if (seg->quote == PS_Q_SINGLE) {
+            linc_string_appendf(&out, "'%s'", seg->raw);
+        }
+    }
+
+    ASSERT(out.cap > 0);
+    return out.cstr;
+}
+
+static char *make_redir_str(ps_redir *redir) {
+    linc_string out = LINC_STRING_INIT;
+    char *rdr_op = (redir->rdr_in) ? "<" : ">";
+
+    if (redir->append)
+        rdr_op = ">>";
+
+    if (redir->fd_dup) {
+        linc_string_appendf(
+            &out, "%d%s&%d",
+            redir->io_num, rdr_op, redir->fd_target
+        );
+    } else {
+        if ((redir->io_num != 0 && redir->rdr_in) ||
+            (redir->io_num != 1 && !redir->rdr_in))
+            linc_string_appendf(&out, "%d", redir->io_num);
+
+        linc_string_appendf(&out, "%s ", rdr_op);
+        str_append_free(make_word_str(&redir->target), &out);
+    }
+
+    ASSERT(out.cap > 0);
+    return out.cstr;
+}
+
+static char *make_ast_str(ps_ast *ast);
+
+static char *make_cmd_str(ps_cmd *cmd) {
+    linc_string out = LINC_STRING_INIT;
+
+    if (cmd->kind == PS_CMD_SUBSH) {
+        char *ast_str = make_ast_str(&cmd->subsh);
+        linc_string_appendf(&out, "(%s)", ast_str);
+        free(ast_str);
+    } else {
+        for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
+            ps_word *word = &cmd->words.data[word_i];
+
+            str_append_free(make_word_str(word), &out);
+
+            if (word_i != cmd->words.size - 1)
+                linc_string_append(&out, " ");
+        }
+    }
+
+    for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
+        ps_redir *redir = &cmd->redirs.data[redir_i];
+
+        linc_string_append(&out, " ");
+        str_append_free(make_redir_str(redir), &out);
+    }
+
+    ASSERT(out.cap > 0);
+    return out.cstr;
+}
+
+static char *make_pline_str(ps_pline *pline) {
+    linc_string out = LINC_STRING_INIT;
+
+    for (size_t cmd_i = 0; cmd_i < pline->cmds.size; ++cmd_i) {
+        ps_cmd *cmd = &pline->cmds.data[cmd_i];
+
+        str_append_free(make_cmd_str(cmd), &out);
+
+        if (cmd_i != pline->cmds.size - 1)
+            linc_string_append(&out, " | ");
+    }
+
+    ASSERT(out.cap > 0);
+    return out.cstr;
+}
+
+static char *make_ast_str(ps_ast *ast) {
     ASSERT(ast && ast->andors.size > 0);
 
     linc_string out = LINC_STRING_INIT;
-    linc_string_append(&out, "(");
 
     for (size_t andor_i = 0; andor_i < ast->andors.size; ++andor_i) {
         ps_andor *andor = &ast->andors.data[andor_i];
@@ -56,98 +145,26 @@ static char *get_subsh_str(ps_ast *ast) {
             linc_string_append(&out, " || ");
         }
 
-        for (size_t cmd_i = 0; cmd_i < andor->pline.cmds.size; ++cmd_i) {
-            ps_cmd *cmd = &andor->pline.cmds.data[cmd_i];
-
-            if (cmd_i != 0)
-                linc_string_append(&out, " | ");
-
-            if (cmd->kind == PS_CMD_SUBSH) {
-                char *cmd_str = get_subsh_str(&cmd->subsh);
-                linc_string_append(&out, cmd_str);
-                free(cmd_str);
-            } else {
-                for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
-                    ps_word *word = &cmd->words.data[word_i];
-
-                    for (size_t seg_i = 0; seg_i < word->segments.size;
-                            ++seg_i) {
-                        ps_segment *seg = &word->segments.data[seg_i];
-
-                        if (seg->quote == PS_Q_NONE) {
-                            linc_string_append(&out, seg->raw);
-                        } else if (seg->quote == PS_Q_DOUBLE) {
-                            linc_string_appendf(&out, "\"%s\"", seg->raw);
-                        } else if (seg->quote == PS_Q_SINGLE) {
-                            linc_string_appendf(&out, "'%s'", seg->raw);
-                        }
-                    }
-
-                    if (word_i != cmd->words.size - 1)
-                        linc_string_appendf(&out, " ");
-                }
-            }
-
-            for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
-                ps_redir *redir = &cmd->redirs.data[redir_i];
-
-                linc_string_append(&out, " ");
-
-                if (redir->rdr_in) {
-                    if (redir->io_num != 0)
-                        linc_string_appendf(&out, "%d", redir->io_num);
-
-                    if (!redir->fd_dup) {
-                        linc_string_append(&out, "<");
-                    } else {
-                        linc_string_appendf(&out, "<&%d", redir->fd_target);
-                    }
-                } else {
-                    if (redir->io_num != 1)
-                        linc_string_appendf(&out, "%d", redir->io_num);
-
-                    if (!redir->fd_dup) {
-                        linc_string_append(&out, ">");
-                    } else {
-                        linc_string_appendf(&out, ">&%d", redir->fd_target);
-                    }
-                }
-
-                if (!redir->fd_dup) {
-                    da_segment *segs = &redir->target.segments;
-                    for (size_t seg_i = 0; seg_i < segs->size; ++seg_i) {
-                        ps_segment *seg = &segs->data[seg_i];
-
-                        if (seg->quote == PS_Q_NONE) {
-                            linc_string_append(&out, seg->raw);
-                        } else if (seg->quote == PS_Q_DOUBLE) {
-                            linc_string_appendf(&out, "\"%s\"", seg->raw);
-                        } else if (seg->quote == PS_Q_SINGLE) {
-                            linc_string_appendf(&out, "'%s'", seg->raw);
-                        }
-                    }
-                }
-            }
-        }
+        str_append_free(make_pline_str(&andor->pline), &out);
     }
 
     if (ast->bg)
         linc_string_append(&out, " &");
 
-    linc_string_append(&out, ")");
+    ASSERT(out.cap > 0);
     return out.cstr;
 }
 
-static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
+static linc_string get_job_str(const job_event *jev, int off, int argv_off,
         bool verbose) {
     linc_string out = LINC_STRING_INIT;
     int min_offset = 1;
 
-    for (size_t y = 0; y < jev->pviews.size; ++y) {
-        proc_view *pview = &jev->pviews.data[y];
+    for (size_t i = 0; i < jev->pviews.size; ++i) {
+        proc_view *pview = &jev->pviews.data[i];
         size_t prev_len = out.len;
 
-        if (verbose || y == 0 || !same_ev_type(pview, &pview[-1])) {
+        if (verbose || i == 0 || !same_ev_type(pview, &pview[-1])) {
             if (pview->stat == PROC_EXIT) {
                 if (pview->exit_stat == 0) {
                     linc_string_appendf(&out, "done");
@@ -172,15 +189,9 @@ static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
         if (verbose)
             linc_string_appendf(&out, "%d ", pview->pid);
 
-        size_t len = argv_len(pview->argv);
+        linc_string_appendf(&out, "%s", pview->cmd);
 
-        for (size_t i = 0; i < len; ++i) {
-            linc_string_append(&out, pview->argv[i]);
-            if (i != len - 1)
-                linc_string_append(&out, " ");
-        }
-
-        if (y != jev->pviews.size - 1) {
+        if (i != jev->pviews.size - 1) {
             if (!verbose && same_ev_type(pview, &pview[1])) {
                 linc_string_appendf(&out, " | ");
             } else {
@@ -192,36 +203,37 @@ static linc_string get_pline_str(const job_event *jev, int off, int argv_off,
     return out;
 }
 
-static void reclaim_terminal(void) {
+static void reclaim_terminal(bool restore_termios) {
     if (xtcsetpgrp(env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");
 
     env.fg_jid = NOFG;
+
+    if (restore_termios) {
+        LOG_INFO("Job exited abnormally. restoring termios");
+        xtcsetattr(env.tty_fd, TCSANOW, &env.tio);
+    }
 }
 
 static void handle_job_event(job_event *jev) {
     if (env.fg_jid != jev->jid) {
-        print_job_event(jev->jid, jev, false);
+        print_job_event(jev, false);
         input_on_new_line();
     } else if (jev->type == JEXITED) {
-        reclaim_terminal();
+        reclaim_terminal(jev->signaled);
 
         if (jev->signaled)
-            print_job_event(jev->jid, jev, false);
+            print_job_event(jev, false);
     } else if (jev->type == JSTOPPED) {
-        reclaim_terminal();
-
         jc_job *job = job_lookup(jev->jid);
-        if (!job)
+        if (!job) {
             fatal("bad jctl state");
+            /* Return instead of fatal? */
+        }
 
-        /* Save current tio of stopped job, will reapply
-         * in fg builtin on resumption */
         xtcgetattr(env.tty_fd, &job->tio);
-        job->tio_saved = true;
-        xtcsetattr(env.tty_fd, TCSANOW, &env.tio);
-
-        print_job_event(jev->jid, jev, false);
+        reclaim_terminal(true);
+        print_job_event(jev, false);
     }
 }
 
@@ -277,6 +289,9 @@ static void child_redir_setup(da_redir *redirs) {
         }
     }
 }
+
+static int subshell_fork(void);
+static int shell_run_andor(ps_ast *ast);
 
 static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
     if (!pline)
@@ -358,16 +373,9 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             xclose(next_pipe[1]);
         }
 
-        sh_proc *pproc = linc_array_push(&pld.procs);
-        pproc->pid = cpid;
-
-        if (cur_cmd->kind == PS_CMD_SUBSH) {
-            char *cmd_str = get_subsh_str(&cur_cmd->subsh);
-            pproc->argv = argv_copy((char *[]){ cmd_str, nullptr });
-            free(cmd_str);
-        } else {
-            pproc->argv = argv_copy(cur_cmd->argv);
-        }
+        sh_proc *proc = linc_array_push(&pld.procs);
+        proc->pid = cpid;
+        proc->cmd = make_cmd_str(cur_cmd);
     }
 
     return pld;
@@ -388,19 +396,22 @@ static int shell_start_pline(ps_pline *pline, bool bg, int jid) {
     );
 
     if (try_builtin) {
-        sh_builtin *builtin = get_builtin(pline->cmds.data[0].argv[0]);
+        ps_cmd *cmd = &pline->cmds.data[0];
+        sh_builtin *builtin = get_builtin(cmd->argv[0]);
 
         if (builtin) {
             LOG_INFO("[%d] Started %s (no fork)", jid, builtin->name);
 
-            int status = builtin->func(pline->cmds.data[0].argv, &env);
+            int status = builtin->func(cmd->argv, &env);
 
             /* fg "replaces" itself with the existing job. Because we
              * don't queue fg's exit event we only reclaim the termianl
              * when the job that was fg'd exits (or stops) */
             if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
+                char *cmd_str = make_cmd_str(cmd);
                 LOG_INFO("queued \"%s\" exit event", builtin->name);
-                job_queue_builtin_exit(jid, pline->cmds.data[0].argv, status);
+                job_queue_builtin_exit(jid, cmd_str, status);
+                free(cmd_str);
             }
 
             handled = true;
@@ -473,30 +484,34 @@ static int shell_run_andor(ps_ast *ast) {
     bool caller = true;
 
     if (ast->bg && ast->andors.size > 1) {
-        ast->bg = false;
-
         int subsh_pgid = subshell_fork();
+
+        ast->bg = false;
 
         if (subsh_pgid != 0) {
             int jid = job_new_id();
-            char *cmd_str = get_subsh_str(ast);
-
             sh_pgrp pld = { .pgid = subsh_pgid };
+
+            char *ast_str = make_ast_str(ast);
+            linc_string subsh_str = LINC_STRING_INIT;
+            linc_string_appendf(&subsh_str, "(%s)", ast_str);
+
             *linc_array_push(&pld.procs) = (sh_proc){
                 .pid = subsh_pgid,
-                .argv = argv_copy((char *[]){ cmd_str, nullptr })
+                .cmd = subsh_str.cstr,
             };
 
-            free(cmd_str);
+            free(ast_str);
+
             job_add(jid, &pld);
 
             if (!env.subsh)
                 printf("[%d] %d\n", jid, subsh_pgid);
 
             return status;
+        } else {
+            caller = false;
         }
-
-        caller = false;
     }
 
     for (size_t i = 0; i < ast->andors.size; ++i) {
@@ -561,7 +576,7 @@ static int subshell_fork(void) {
     return 0;
 }
 
-static int line_to_ast(const char *line, ps_ast *ast) {
+static int line_to_ast(char *line, ps_ast *ast) {
     if (STREQ("", line))
         return -1;
 
@@ -623,16 +638,16 @@ void process_signals(void) {
     }
 }
 
-void print_job_event(int jid, const job_event *jev, bool verbose) {
+void print_job_event(const job_event *jev, bool verbose) {
     if (env.subsh)
         return;
 
     linc_string msg = LINC_STRING_INIT;
-    linc_string_appendf(&msg, "[%d] ", jid);
+    linc_string_appendf(&msg, "[%d] ", jev->jid);
 
     int offset = msg.len;
 
-    linc_string s = get_pline_str(jev, offset, 21, verbose);
+    linc_string s = get_job_str(jev, offset, 21, verbose);
     linc_string_append(&msg, s.cstr);
     linc_string_free(&s);
 

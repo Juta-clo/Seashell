@@ -118,9 +118,7 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
 
     for (size_t i = 0; i < og_dent_size; ++i) {
         char *path = dents->data[i];
-
         DIR *dir = xopendir(path);
-        LOG_INFO("opened path: %s", path);
 
         while (true) {
             errno = 0;
@@ -170,8 +168,6 @@ static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
         free(dents->data[i]);
 
     linc_array_delete(dents, 0, og_dent_size);
-
-    LOG_INFO("dents updated; new size %ld", dents->size);
 }
 
 static void filter_dents(const char *glob, da_charp *dents) {
@@ -196,8 +192,6 @@ static void filter_dents(const char *glob, da_charp *dents) {
     }
 
     argv_free_free(&substrs);
-
-    LOG_INFO("filtered dents; new size %ld [%s]", dents->size, glob);
 }
 
 int glob_pattern(const char *glob, size_t len, da_charp *matches) {
