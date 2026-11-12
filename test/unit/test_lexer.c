@@ -61,6 +61,12 @@ TEST_GROUP(lexer);
 #define WORD_SIMPLE(_raw, _i, _n) \
     WORD(_i, _n, false, PART(_raw, LX_Q_NONE, _i, _n))
 
+#define WORD_DOUBLE(_raw, _i, _n) \
+    WORD(_i, _n, false, PART(_raw, LX_Q_DOUBLE, _i + 1, _n - 1))
+
+#define WORD_SINGLE(_raw, _i, _n) \
+    WORD(_i, _n, false, PART(_raw, LX_Q_SINGLE, _i + 1, _n - 1))
+
 #define TOKS(...) \
     EXP_DA(da_tok, lx_tok, __VA_ARGS__)
 
@@ -107,8 +113,7 @@ void validate_toks(const da_tok *exp, const da_tok *act) {
 }
 
 void validate(const char *cmd, const da_tok *exp) {
-    if (lx_tokenize(cmd, &actual_tokens) != LX_OK)
-        TEST_FAIL_MESSAGE("lx_tokenize() failed");
+    TEST_ASSERT_EQUAL_INT(LX_OK, lx_tokenize(cmd, &actual_tokens));
 
     validate_toks(exp, &actual_tokens);
 }
@@ -148,10 +153,14 @@ TEST(lexer, failure_cases) {
     exp = TOKS(WORD_SIMPLE("a\\", I(0), N(2)));
     validate_fail("a\\", &exp, LX_ERREMPTYESC);
 
-    exp = TOKS();
+    exp = TOKS(
+        WORD(I(0), N(1), false, PART("", LX_Q_DOUBLE, I(1), N(0)))
+    );
     validate_fail("\"", &exp, LX_ERRNOENDQUOTE);
 
-    exp = TOKS();
+    exp = TOKS(
+        WORD(I(0), N(1), false, PART("", LX_Q_SINGLE, I(1), N(0)))
+    );
     validate_fail("'", &exp, LX_ERRNOENDQUOTE);
 }
 
@@ -434,7 +443,9 @@ TEST(lexer, double_quote_whitespace) {
 
 TEST(lexer, double_quote_escaped_quote) {
     da_tok exp = TOKS(
-        WORD(I(0), N(4), false, PART("\\\"", LX_Q_DOUBLE, I(1), N(2))),
+        WORD(I(0), N(4), false,
+            PART("\\\"", LX_Q_DOUBLE, I(1), N(2))
+        ),
     );
 
     validate("\"\\\"\"", &exp);
@@ -740,6 +751,14 @@ TEST(lexer, mixed_operators_and_tokens_span_preservation) {
     validate("abc 123||'ab'cd&", &exp);
 }
 
+TEST(lexer, unfinished_parts_are_completed) {
+    da_tok exp = TOKS(
+        WORD_DOUBLE("abc", I(0), N(4)),
+    );
+
+    validate_fail("\"abc", &exp, LX_ERRNOENDQUOTE);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(lexer) {
@@ -801,4 +820,5 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, operator_token_spans_are_preserved);
     RUN_TEST_CASE(lexer, word_token_span_is_preserved);
     RUN_TEST_CASE(lexer, mixed_operators_and_tokens_span_preservation);
+    RUN_TEST_CASE(lexer, unfinished_parts_are_completed);
 }

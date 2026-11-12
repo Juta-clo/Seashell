@@ -615,6 +615,51 @@ TEST(input, complete_wildcard_directory_cycles_concrete_paths) {
     }
 }
 
+IGNORE_TEST(input, syntax_node_beyond_viewport) {
+    test_resize_term(2, 5);
+
+    vt_send_str("echo x\n");
+    assert_term_clear(1, PROMPT_LEN,
+        "x",
+        PROMPT
+    );
+
+    vt_send_str("echo '6789'");
+    assert_term_clear(1, 3,
+        ">...",
+        "89'"
+    );
+
+    /* Requires asserting vterm cell attributes!
+     * For this test 6789 should not be colored
+     * as that is echo's output! */
+
+    vt_send_ch('a', VTERM_MOD_CTRL);
+    assert_term_clear(0, PROMPT_LEN,
+        PROMPT "ech",
+        "o '67"
+    );
+
+    vt_send_str("\n");
+    assert_term_clear(1, PROMPT_LEN,
+        "6789",
+        PROMPT
+    );
+}
+
+IGNORE_TEST(input, control_characters_dont_reset_highlighting) {
+    /* Requires asserting vterm cell attributes! For this
+     * test the second ' should be highlighted like a string. */
+
+    vt_send_str("'");
+    vt_send_ch('y', VTERM_MOD_CTRL);
+    vt_send_str("'");
+
+    assert_term_clear(0, PROMPT_LEN + 3,
+        PROMPT "'?'"
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -657,4 +702,7 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, complete_relative_path_with_prefix);
     RUN_TEST_CASE(input, complete_prefix_with_spaces_that_are_already_escaped);
     RUN_TEST_CASE(input, complete_wildcard_directory_cycles_concrete_paths);
+
+    RUN_TEST_CASE(input, syntax_node_beyond_viewport);
+    RUN_TEST_CASE(input, control_characters_dont_reset_highlighting);
 }

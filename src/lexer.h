@@ -70,13 +70,13 @@ struct lx_tok {
 typedef struct lx_tok lx_tok;
 LINC_ARRAY_TYPE(da_tok, lx_tok);
 
-char *lx_errstr(lx_status stat);
-
-void lx_tok_copy(lx_tok *dest, lx_tok *src);
-void lx_free_tok(lx_tok *tok);
-void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks);
-
-void lx_free(da_tok *tokens);
 int lx_tokenize(const char *cmd, da_tok *tokens);
+void lx_free_tok(lx_tok *tok);
+void lx_free(da_tok *tokens);
+void lx_tok_copy(lx_tok *dest, lx_tok *src);
+char *tok_str(lx_kind kind);
+bool lx_kind_is_redir(lx_kind kind);
+void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks);
+char *lx_errstr(lx_status stat);
 
 #endif

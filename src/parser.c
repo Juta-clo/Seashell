@@ -41,29 +41,6 @@
         } \
     } while (false)
 
-static char *tok_str(lx_kind kind) {
-    switch (kind) {
-    case LX_TOK_PIPE:    return "|";
-    case LX_TOK_AMPER:      return "&";
-    case LX_TOK_RDR_IN:  return "<";
-    case LX_TOK_RDR_OUT: return ">";
-    case LX_TOK_FD_OUT:  return ">&";
-    case LX_TOK_FD_IN:  return "<&";
-    case LX_TOK_APPEND:  return ">>";
-    case LX_TOK_AND_IF:  return "&&";
-    case LX_TOK_OR_IF:   return "||";
-    case LX_TOK_LPAREN:  return "(";
-    case LX_TOK_RPAREN:  return ")";
-    case LX_TOK_UNKNOWN: return "Unknown";
-    case LX_TOK_WORD:    return "[word]";
-    case LX_TOK_IO_NUM:  return "[io]";
-    default: break;
-    }
-
-    ASSERT(false && "tok_str: bad tok type");
-    fatal(nullptr);
-}
-
 static lx_tok *scan_advance(size_t n, ps_scan *scan) {
     ASSERT_(LEQ, n, scan->toks->size - scan->i);
 

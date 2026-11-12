@@ -8,8 +8,6 @@
 #include "linc/xsys.h"
 #include "utils.h"
 
-static lx_status status = LX_OK;
-
 typedef struct {
     lx_mode mode;
     lx_mode prev_mode;
@@ -18,17 +16,26 @@ typedef struct {
     const char *c;
     const char *cmd;
     bool fd_dup_pending;
+    bool esc_pending;
+    int status;
 } lx_scan;
 
-char *lx_errstr(lx_status stat) {
-    switch (stat) {
-    case LX_ERRMEM:        return "malloc failure";
-    case LX_ERRNOENDQUOTE: return "unterminated quote";
-    case LX_ERREMPTYESC:   return "bad escape";
-    case LX_ERRINPUT:      return "empty input";
-    case LX_OK:            return "success";
-    default:               return "???";
+static void log_toks(da_tok *toks) {
+    return;
+
+    LOG_INFO("lexed toks {");
+
+    for (size_t i = 0; i < toks->size; ++i) {
+        lx_tok *tok = &toks->data[i];
+
+        if (tok->kind == LX_TOK_WORD) {
+            LOG_INFO("    [%s]", tok->parts.data->raw);
+        } else {
+            LOG_INFO("    %s", tok_str(tok->kind));
+        }
     }
+
+    LOG_INFO("}");
 }
 
 static lx_kind get_kind(const char *cur_char) {
@@ -130,13 +137,7 @@ static bool tok_is_number(lx_tok *tok) {
 }
 
 static int lex_io_num(lx_kind delim, const lx_scan *scan) {
-    bool is_io_num = (
-        delim == LX_TOK_RDR_OUT || delim == LX_TOK_RDR_IN ||
-        delim == LX_TOK_APPEND || delim == LX_TOK_FD_OUT ||
-        delim == LX_TOK_FD_IN || scan->fd_dup_pending
-    );
-
-    if (!is_io_num)
+    if (!(lx_kind_is_redir(delim) || scan->fd_dup_pending))
         return LX_FAIL;
 
     const lx_tok *tok = scan->t;
@@ -154,7 +155,7 @@ static int lex_io_num(lx_kind delim, const lx_scan *scan) {
     return io_num;
 }
 
-static void end_tok(lx_scan *scan, lx_kind delim) {
+static void try_end_tok(lx_scan *scan, lx_kind delim) {
     if (!scan->t)
         return;
 
@@ -183,7 +184,6 @@ static void end_tok(lx_scan *scan, lx_kind delim) {
                 lx_free_tok(scan->t);
                 scan->t->kind = LX_TOK_IO_NUM;
                 scan->t->io_num = io_num;
-                LOG_INFO("lexed io-num: %d", scan->t->io_num);
             }
         }
 
@@ -193,10 +193,11 @@ static void end_tok(lx_scan *scan, lx_kind delim) {
     scan->t = nullptr;
 }
 
-static void end_part(lx_scan *scan) {
+static void try_end_part(lx_scan *scan) {
     ASSERT(scan);
-    ASSERT(scan->t);
-    ASSERT(scan->part_start);
+
+    if (!scan->t || !scan->part_start)
+        return;
 
     da_part *parts = &scan->t->parts;
     lx_part *part = &parts->data[parts->size - 1];
@@ -216,111 +217,151 @@ static void end_part(lx_scan *scan) {
     scan->part_start = nullptr;
 }
 
-static void clear_part(lx_scan *scan) {
-    if (scan->t && scan->part_start)
-        end_part(scan);
-}
-
-static void clear_empty_part(lx_scan *scan) {
-    da_part *parts = &scan->t->parts;
-    lx_part *part = &parts->data[parts->size - 1];
-
-    part->raw = xmalloc(1);
-    part->raw[0] = '\0';
-
-    part->i = scan->part_start - scan->cmd;
-    part->n = 0;
-
-    scan->part_start = nullptr;
-}
-
 static void handle_single_quote(lx_scan *scan) {
     if (*scan->c == '\'') {
-        clear_part(scan);
-
+        try_end_part(scan);
         scan->mode = LX_M_NORMAL;
     }
 }
 
 static void handle_double_quote(lx_scan *scan) {
-    if (*scan->c == '"') {
-        clear_part(scan);
-
+    if (scan->esc_pending) {
+        scan->esc_pending = false;
+    } else if (*scan->c == '\\') {
+        scan->esc_pending = true;
+    } else if (*scan->c == '"') {
+        try_end_part(scan);
         scan->mode = LX_M_NORMAL;
     }
 }
 
-static int handle_normal(da_tok *toks, lx_scan *scan) {
-    if (*scan->c == '"') {
-        if (scan->c[1] == '\0') {
-            status = LX_ERRNOENDQUOTE;
-            return -1;
-        }
+int lx_tokenize(const char *cmd, da_tok *toks) {
+    if (!cmd || !toks)
+        return LX_ERRINPUT;
 
-        clear_part(scan);
+    size_t cmd_len = strlen(cmd);
+    if (cmd_len <= 0)
+        return LX_ERRINPUT;
 
-        ensure_tok(toks, LX_TOK_WORD, scan);
-        ++scan->c;
-        ensure_part(scan, LX_Q_DOUBLE);
+    lx_scan scan = {
+        .mode = LX_M_NORMAL,
+        .prev_mode = LX_M_NORMAL,
+        .c = cmd,
+        .cmd = cmd,
+        .status = LX_OK
+    };
 
-        if (*scan->c == '"') {
-            clear_empty_part(scan);
-        } else {
-            if (*scan->c == '\\') {
-                if (*++scan->c == '\0') {
-                    status = LX_ERREMPTYESC;
-                    return -1;
+    *toks = (da_tok){0};
+
+    for (; *scan.c != '\0'; ++scan.c) {
+        if (scan.mode == LX_M_NORMAL) {
+            if (scan.esc_pending) {
+                scan.esc_pending = false;
+                continue;
+            }
+
+            if (*scan.c == '"') {
+                scan.mode = LX_M_DOUBLEQ;
+
+                try_end_part(&scan);
+                ensure_tok(toks, LX_TOK_WORD, &scan);
+                ++scan.c;
+                ensure_part(&scan, LX_Q_DOUBLE);
+
+                if (*scan.c == '\0')
+                    break;
+
+                handle_double_quote(&scan);
+            } else if (*scan.c == '\'') {
+                scan.mode = LX_M_SINGLEQ;
+
+                try_end_part(&scan);
+                ensure_tok(toks, LX_TOK_WORD, &scan);
+                ++scan.c;
+                ensure_part(&scan, LX_Q_SINGLE);
+
+                if (*scan.c == '\0')
+                    break;
+
+                handle_single_quote(&scan);
+            } else if (*scan.c == ' ') {
+                try_end_part(&scan);
+                try_end_tok(&scan, LX_WHITE_SPACE);
+            } else if(*scan.c == '\\') {
+                ensure_tok(toks, LX_TOK_WORD, &scan);
+                ensure_part(&scan, LX_Q_NONE);
+                scan.esc_pending = true;
+            } else {
+                lx_kind kind = get_kind(scan.c);
+
+                if (kind_is_delim(kind)) {
+                    try_end_part(&scan);
+                    try_end_tok(&scan, kind);
+
+                    ensure_tok(toks, kind, &scan);
+                    try_end_tok(&scan, kind);
+
+                    scan.c += tok_len(kind) - 1;
+                }
+
+                else if (kind == LX_TOK_UNKNOWN) {
+                    ensure_tok(toks, LX_TOK_WORD, &scan);
+                    ensure_part(&scan, LX_Q_NONE);
                 }
             }
-            scan->mode = LX_M_DOUBLEQ;
-        }
-    } else if (*scan->c == '\'') {
-        if (scan->c[1] == '\0') {
-            status = LX_ERRNOENDQUOTE;
-            return -1;
-        }
-
-        clear_part(scan);
-
-        ensure_tok(toks, LX_TOK_WORD, scan);
-        ++scan->c;
-        ensure_part(scan, LX_Q_SINGLE);
-
-        if (*scan->c == '\'') {
-            clear_empty_part(scan);
+        } else if (scan.mode == LX_M_DOUBLEQ) {
+            handle_double_quote(&scan);
         } else {
-            scan->mode = LX_M_SINGLEQ;
-        }
-    } else if (*scan->c == ' ') {
-        clear_part(scan);
-        end_tok(scan, LX_WHITE_SPACE);
-    } else {
-        lx_kind kind = get_kind(scan->c);
-
-        if (kind_is_delim(kind)) {
-            clear_part(scan);
-            end_tok(scan, kind);
-
-            ensure_tok(toks, kind, scan);
-            end_tok(scan, kind);
-
-            scan->c += tok_len(kind) - 1;
-        }
-
-        else if (kind == LX_TOK_UNKNOWN) {
-            ensure_tok(toks, LX_TOK_WORD, scan);
-            ensure_part(scan, LX_Q_NONE);
-
-            if (*scan->c == '\\') {
-                if (*++scan->c == '\0') {
-                    status = LX_ERREMPTYESC;
-                    return -1;
-                }
-            }
+            handle_single_quote(&scan);
         }
     }
 
-    return 0;
+    if (scan.mode == LX_M_DOUBLEQ || scan.mode == LX_M_SINGLEQ)
+        scan.status = LX_ERRNOENDQUOTE;
+
+    if (scan.esc_pending)
+        scan.status = LX_ERREMPTYESC;
+
+    try_end_part(&scan);
+    try_end_tok(&scan, LX_EOL);
+    log_toks(toks);
+
+    return scan.status;
+}
+
+char *tok_str(lx_kind kind) {
+    switch (kind) {
+    case LX_TOK_PIPE:    return "|";
+    case LX_TOK_AMPER:      return "&";
+    case LX_TOK_RDR_IN:  return "<";
+    case LX_TOK_RDR_OUT: return ">";
+    case LX_TOK_FD_OUT:  return ">&";
+    case LX_TOK_FD_IN:  return "<&";
+    case LX_TOK_APPEND:  return ">>";
+    case LX_TOK_AND_IF:  return "&&";
+    case LX_TOK_OR_IF:   return "||";
+    case LX_TOK_LPAREN:  return "(";
+    case LX_TOK_RPAREN:  return ")";
+    case LX_TOK_UNKNOWN: return "Unknown";
+    case LX_TOK_WORD:    return "[word]";
+    case LX_TOK_IO_NUM:  return "[io]";
+    default: break;
+    }
+
+    ASSERT(false && "tok_str: bad tok type");
+    fatal(nullptr);
+}
+
+bool lx_kind_is_redir(lx_kind kind) {
+    bool is_redir = (
+        kind == LX_TOK_RDR_OUT ||
+        kind == LX_TOK_RDR_IN ||
+        kind == LX_TOK_APPEND ||
+        kind == LX_TOK_FD_IN ||
+        kind == LX_TOK_FD_OUT
+    );
+
+    return is_redir;
 }
 
 void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks) {
@@ -373,53 +414,13 @@ void lx_free(da_tok *toks) {
     *toks = (da_tok){0};
 }
 
-int lx_tokenize(const char *cmd, da_tok *toks) {
-    status = LX_OK;
-
-    if (!cmd || !toks)
-        return LX_ERRINPUT;
-
-    size_t cmd_len = strlen(cmd);
-    if (cmd_len <= 0)
-        return LX_ERRINPUT;
-
-    lx_scan scan = {
-        .mode = LX_M_NORMAL,
-        .prev_mode = LX_M_NORMAL,
-        .c = cmd,
-        .cmd = cmd
-    };
-
-    *toks = (da_tok){0};
-
-    for (; *scan.c != '\0'; ++scan.c) {
-        switch (scan.mode) {
-        case LX_M_NORMAL:
-            if (handle_normal(toks, &scan) == -1)
-                goto fail;
-            break;
-        case LX_M_DOUBLEQ:
-            handle_double_quote(&scan);
-            break;
-        case LX_M_SINGLEQ:
-            handle_single_quote(&scan);
-            break;
-        }
+char *lx_errstr(lx_status stat) {
+    switch (stat) {
+    case LX_ERRMEM:        return "malloc failure";
+    case LX_ERRNOENDQUOTE: return "unterminated quote";
+    case LX_ERREMPTYESC:   return "bad escape";
+    case LX_ERRINPUT:      return "empty input";
+    case LX_OK:            return "success";
+    default:               return "???";
     }
-
-    if (scan.mode == LX_M_DOUBLEQ || scan.mode == LX_M_SINGLEQ) {
-        status = LX_ERRNOENDQUOTE;
-        goto fail;
-    }
-
-    clear_part(&scan);
-    end_tok(&scan, LX_EOL);
-
-    return status;
-
-fail:
-    clear_part(&scan);
-    end_tok(&scan, LX_EOL);
-
-    return status;
 }

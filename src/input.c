@@ -58,12 +58,22 @@ typedef struct {
 } comp_tok;
 
 typedef struct {
+    char *data;
     int i;
     int n;
-    bool prompt;
+    bool hl;
+    bool attr_off;
+    int fg;
+    int bg;
+    bool bold;
 } input_cell;
 
 LINC_ARRAY_TYPE(da_cell, input_cell);
+
+typedef struct {
+    da_cell cells;
+    int prompt_len;
+} input_buf;
 
 typedef struct {
     size_t i;
@@ -106,11 +116,12 @@ static void log_cells(da_cell cells) {
     return;
 
     LOG_INFO("collected %zu cells {", cells.size);
-    for (size_t i = 0; i < cells.size; ++i)
-        LOG_INFO("    cell(n=%d,i=%d,prompt=%d) = %.*s",
-                cells.data[i].n, cells.data[i].i,
-                cells.data[i].prompt,
-                cells.data[i].n, &input.line[cells.data[i].i]);
+
+    for (size_t i = 0; i < cells.size; ++i) {
+        input_cell cell = cells.data[i];
+        LOG_INFO("    cell(n=%d) = %s", cell.n, cell.data);
+    }
+
     LOG_INFO("}");
 }
 
@@ -185,22 +196,45 @@ static void update_start_pos(void) {
     ASSERT_(G, input.rows, input.start_row);
 }
 
-static void input_draw_ch(char c) {
+static void input_draw_ch_cell(char c, input_cell *hl) {
     if (c >= 32 && c < 127) {
         printf("%c", c);
     } else {
+        xprintty_write(pt, unibi_exit_attribute_mode);
+
         xprintty_set_color(pt, PRINTTY_BLACK, PRINTTY_RED);
         xprintty_write(pt, unibi_enter_bold_mode);
         printf("%c", '?');
         xprintty_write(pt, unibi_exit_attribute_mode);
+
+        if (hl && !hl->attr_off) {
+            xprintty_set_color(pt, hl->fg, hl->bg);
+
+            if (hl->bold)
+                xprintty_write(pt, unibi_enter_bold_mode);
+        }
     }
 }
 
-static da_cell get_cells(int *prompt_len) {
-    ASSERT(prompt_len);
+static void free_cells(input_buf *ibuf) {
+    for (size_t i = 0; i < ibuf->cells.size; ++i)
+        free(ibuf->cells.data[i].data);
 
-    *prompt_len = 0;
-    da_cell cells = {0};
+    linc_array_free(&ibuf->cells);
+}
+
+static void push_cell(char *data, size_t n, size_t i, da_cell *cells) {
+    input_cell *cell = linc_array_push(cells);
+
+    *cell = (input_cell){
+        .n = n,
+        .i = i,
+        .data = xstrndup(data, n)
+    };
+}
+
+static input_buf get_cells(void) {
+    input_buf ibuf = {0};
     bool pending_csi = false;
     bool pending_esc = false;
     int i = 0;
@@ -208,22 +242,20 @@ static da_cell get_cells(int *prompt_len) {
 
     for (char *b = input.line; *b != '\0'; ++b, ++i) {
         if (i >= input.start_i) {
+            /* Push unfinished prompt csi characters literally */
             for (; n > 0; --n)
-                *linc_array_push(&cells) = (input_cell){
-                    .i = i - n, .n = 1, .prompt = false };
+                push_cell(&input.line[i - n], 1, i - n, &ibuf.cells);
 
-            *linc_array_push(&cells) = (input_cell){
-                .i = i, .n = 1, .prompt = false };
+            push_cell(&input.line[i], 1, i, &ibuf.cells);
         } else if (pending_csi) {
             ++n;
 
             if (*b >= '@' && *b <= '~') {
                 pending_csi = false;
-                *linc_array_push(&cells) = (input_cell){
-                    .i = i - (n - 1), .n = n, .prompt = true };
+                int csi_i = i - (n - 1);
+                push_cell(&input.line[csi_i], n, csi_i, &ibuf.cells);
                 n = 0;
             }
-
         } else if (pending_esc) {
             pending_esc = false;
 
@@ -231,45 +263,48 @@ static da_cell get_cells(int *prompt_len) {
                 pending_csi = true;
                 n = 2;
             } else {
-                *linc_array_push(&cells) =
-                    (input_cell){ .i = i - 1, .n = 1, .prompt = true };
-                *linc_array_push(&cells) = (input_cell){
-                    .i = i, .n = 1, .prompt = true };
+                push_cell(&input.line[i - 1], 1, i - 1, &ibuf.cells);
+                push_cell(&input.line[i], 1, i, &ibuf.cells);
             }
         } else if (*b == '\x1b') {
             pending_esc = true;
         } else {
-            ++*prompt_len;
-            *linc_array_push(&cells) = (input_cell){
-                .i = i, .n = 1, .prompt = true };
+            ++ibuf.prompt_len;
+            push_cell(&input.line[i], 1, i, &ibuf.cells);
         }
     }
 
-    log_cells(cells);
-
-    return cells;
+    log_cells(ibuf.cells);
+    return ibuf;
 }
 
 static void input_draw(int rows, int start_row, da_cell cells) {
     int scr_i = 0;
-    size_t start_i = start_row * input.cols;
+    size_t cell_content_start_i = start_row * input.cols;
     int crow, ccol;
 
     for (size_t i = 0; i < cells.size; ++i) {
-        if (scr_i >= input.cols * rows)
-            break;
-
         input_cell cell = cells.data[i];
+        input_cell *last_hl = nullptr;
 
-        if (cell.prompt && cell.n != 1) {
-            printf("%.*s", cell.n, &input.line[cell.i]);
-            ++start_i;
-            continue;
-        }
+        if (cell.hl) {
+            if (cell.attr_off) {
+                xprintty_write(pt, unibi_exit_attribute_mode);
+            } else {
+                xprintty_set_color(pt, cell.fg, cell.bg);
 
-        if (i >= start_i) {
-            input_draw_ch(input.line[cell.i]);
+                if (cell.bold)
+                    xprintty_write(pt, unibi_enter_bold_mode);
+            }
+
+            last_hl = &cells.data[i];
+            ++cell_content_start_i;
+        } else if (cell.n > 1) {
+            printf("%s", cell.data);
+            ++cell_content_start_i;
+        } else if (i >= cell_content_start_i && scr_i < input.cols * rows) {
             ncol_cell(&crow, &ccol, input.start_row, scr_i++);
+            input_draw_ch_cell(*cell.data, last_hl);
 
             if (ccol == input.cols - 1) {
                 if (crow != rows - 1) {
@@ -283,13 +318,126 @@ static void input_draw(int rows, int start_row, da_cell cells) {
     }
 }
 
+static int cell_index(int *start, int *end, da_cell *cells) {
+    ASSERT(start);
+    ASSERT(end);
+    ASSERT(cells);
+
+    int tok_start = *start + input.start_i;
+    int tok_end = *end + input.start_i;
+
+    for (size_t i = 0; i < cells->size; ++i) {
+        input_cell *cell = &cells->data[i];
+
+        if (tok_start == cell->i)
+            *start = i;
+
+        if (tok_end == cell->i) {
+            *end = i + 1;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static void input_highlight(int start, int end, int fg, int bg, bool bold,
+        input_buf *ibuf) {
+    ASSERT(ibuf);
+
+    input_cell *cell = linc_array_insert(&ibuf->cells, start, 1);
+    *cell = (input_cell){
+        .hl = true,
+        .fg = fg,
+        .bg = bg,
+        .bold = bold
+    };
+
+    cell = linc_array_insert(&ibuf->cells, end + 1, 1);
+    *cell = (input_cell){
+        .hl = true,
+        .attr_off = true
+    };
+}
+
+static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
+    ASSERT(word);
+    ASSERT(ibuf);
+
+    for (size_t i = 0; i < word->parts.size; ++i) {
+        lx_part *part = &word->parts.data[i];
+        int pstart, pend, fg;
+
+        if (part->quote == LX_Q_NONE) {
+            if (part->raw[0] != '-')
+                continue;
+
+            fg = (part->raw[1] == '-') ? PRINTTY_BLUE : PRINTTY_CYAN;
+            pstart = part->i;
+            pend = part->i + (part->n - 1);
+        } else {
+            pstart = part->i - 1;
+            pend = part->i + part->n;
+            fg = PRINTTY_GREEN;
+
+            /* Is the quote terminated? */
+            if (lstart()[part->i + part->n] == '\0')
+                --pend;
+        }
+
+        if (cell_index(&pstart, &pend, &ibuf->cells) == -1)
+            continue;
+
+        input_highlight(pstart, pend, fg, -1, false, ibuf);
+    }
+}
+
+static void try_highlight_tok(lx_tok *tok, input_buf *ibuf) {
+    int start = tok->i;
+    int end = tok->i + (tok->n - 1);
+
+    if (cell_index(&start, &end, &ibuf->cells) == -1)
+        return;
+
+    if (tok->kind == LX_TOK_PIPE || tok->kind == LX_TOK_AND_IF ||
+        tok->kind == LX_TOK_OR_IF || tok->kind == LX_TOK_LPAREN ||
+        tok->kind == LX_TOK_RPAREN) {
+        input_highlight(start, end, PRINTTY_YELLOW, -1, false, ibuf);
+    } else if (lx_kind_is_redir(tok->kind) || tok->kind == LX_TOK_IO_NUM) {
+        input_highlight(start, end, PRINTTY_CYAN, -1, false, ibuf);
+    } else if (tok->kind == LX_TOK_AMPER) {
+        input_highlight(start, end, PRINTTY_CYAN, -1, true, ibuf);
+    }
+}
+
+static void input_token_hl(input_buf *ibuf) {
+    da_tok toks = {0};
+    lx_tokenize(lstart(), &toks);
+
+    for (size_t i = 0; i < toks.size; ++i) {
+        lx_tok *tok = &toks.data[i];
+
+        if (tok->kind == LX_TOK_WORD) {
+            try_highlight_word(tok, ibuf);
+        } else {
+            try_highlight_tok(tok, ibuf);
+        }
+    }
+
+    lx_free(&toks);
+}
+
 static void input_update(void) {
     ASSERT_(NEQ, input.rows, 0);
     ASSERT_(NEQ, input.cols, 0);
 
-    int rows = input.rows;
-    da_cell cells = get_cells(&input.prompt_len);
     int crow, ccol;
+    int rows = input.rows;
+    input_buf ibuf = get_cells();
+
+    input_token_hl(&ibuf);
+
+    input.prompt_len = ibuf.prompt_len;
 
     xprintty_cursor_move(pt, input.start_row, 0);
     xprintty_write(pt, unibi_clr_eos);
@@ -325,13 +473,13 @@ static void input_update(void) {
                 printf("\n");
             }
         } else {
-            linc_array_free(&cells);
+            free_cells(&ibuf);
             return;
         }
     }
 
-    input_draw(rows, start_row, cells);
-    linc_array_free(&cells);
+    input_draw(rows, start_row, ibuf.cells);
+    free_cells(&ibuf);
 
     if (paging) {
         ncol_cell(&crow, &ccol, input.start_row,
@@ -976,6 +1124,7 @@ char *input_get_line(const char *prompt) {
                     history_push();
 
                 input_reset_comp();
+                input_move(line_len());
                 printf("\n");
                 break;
             } else if (pev.key == PRINTTY_UP) {

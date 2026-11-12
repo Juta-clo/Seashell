@@ -15,10 +15,6 @@
 
 #include <linc/args.h>
 
-typedef enum {
-    SHOW_PIDS,
-} jobs_opt_names;
-
 static int arg_to_sig(char *sig_arg) {
     /* - just to be consistent */
     if (STREQ("-HUP", sig_arg))   return SIGHUP;
@@ -240,6 +236,10 @@ static int run_jobs_builtin(char **argv, shell_env *env) {
     int arg_n = validate_argc(argv, 0, 1);
     if (arg_n == -1)
         return EXIT_FAILURE;
+
+    enum {
+        SHOW_PIDS,
+    };
 
     linc_args jobs_opts[] = {
         [SHOW_PIDS] = {
