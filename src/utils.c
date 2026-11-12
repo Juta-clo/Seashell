@@ -124,6 +124,11 @@ fail:
     return -1;
 }
 
+bool is_file(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
 bool is_dir(const char *path) {
     struct stat sb;
     if (stat(path, &sb) == -1)

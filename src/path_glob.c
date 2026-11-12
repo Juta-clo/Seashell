@@ -12,6 +12,11 @@ static int cmp_match(const void *p1, const void *p2) {
 }
 
 static void get_path_components(char *str, da_charp *comps) {
+    if (STREQ(str, "/")) {
+        *linc_array_push(comps) = "/";
+        return;
+    }
+
     char *tok = strtok(str, "/");
     if (!tok)
         fatal("unexpected strtok return value");
