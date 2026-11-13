@@ -170,27 +170,27 @@ void init_curses(void) {
         curs_err("noecho");
     if (use_default_colors() == ERR)
         curs_err("use_default_colors");
-    if (init_color(CBRIGHT_WHITE, 984, 945, 780) == ERR)
+    if (init_color(COLOR_BRIGHT_WHITE, 984, 945, 780) == ERR)
         curs_err("init_color");
-    if (init_color(CORANGE, 996, 502, 98) == ERR)
+    if (init_color(COLOR_ORANGE, 996, 502, 98) == ERR)
         curs_err("init_color");
-    if (init_pair(BWHITE_RED, CBRIGHT_WHITE, COLOR_RED) == ERR)
+    if (init_pair(BRIGHT_WHITE_RED, COLOR_BRIGHT_WHITE, COLOR_RED) == ERR)
         curs_err("init_pair");
-    if (init_pair(BWHITE_GREEN, CBRIGHT_WHITE, COLOR_GREEN) == ERR)
+    if (init_pair(BRIGHT_WHITE_GREEN, COLOR_BRIGHT_WHITE, COLOR_GREEN) == ERR)
         curs_err("init_pair");
-    if (init_pair(BWHITE_YELLOW, CBRIGHT_WHITE, COLOR_YELLOW) == ERR)
+    if (init_pair(BRIGHT_WHITE_YELLOW, COLOR_BRIGHT_WHITE, COLOR_YELLOW) == ERR)
         curs_err("init_pair");
-    if (init_pair(BWHITE_ORANGE, CBRIGHT_WHITE, CORANGE) == ERR)
+    if (init_pair(BRIGHT_WHITE_ORANGE, COLOR_BRIGHT_WHITE, COLOR_ORANGE) == ERR)
         curs_err("init_pair");
-    if (init_pair(ORANGE_CL, CORANGE, COLOR_BLACK) == ERR)
+    if (init_pair(ORANGE_CLEAR, COLOR_ORANGE, COLOR_BLACK) == ERR)
         curs_err("init_pair");
-    if (init_pair(MAGENTA_CL, COLOR_MAGENTA, COLOR_BLACK) == ERR)
+    if (init_pair(MAGENTA_CLEAR, COLOR_MAGENTA, COLOR_BLACK) == ERR)
         curs_err("init_pair");
-    if (init_pair(CYAN_CL, COLOR_CYAN, COLOR_BLACK) == ERR)
+    if (init_pair(CYAN_CLEAR, COLOR_CYAN, COLOR_BLACK) == ERR)
         curs_err("init_pair");
-    if (init_pair(GREEN_CL, COLOR_GREEN, COLOR_BLACK) == ERR)
+    if (init_pair(GREEN_CLEAR, COLOR_GREEN, COLOR_BLACK) == ERR)
         curs_err("init_pair");
-    if (init_pair(RED_CL, COLOR_RED, COLOR_BLACK) == ERR)
+    if (init_pair(RED_CLEAR, COLOR_RED, COLOR_BLACK) == ERR)
         curs_err("init_pair");
 
     /* input */
@@ -319,13 +319,28 @@ void render_test_bar(curs_win *test_bar, size_t test_i) {
 
     int n = bar.len;
 
-    if      (!test->test_ok) cp_n = BWHITE_RED;
-    else if (test->val_err)  cp_n = BWHITE_YELLOW;
-    else                     cp_n = BWHITE_GREEN;
+    if      (!test->test_ok) cp_n = BRIGHT_WHITE_RED;
+    else if (test->val_err)  cp_n = BRIGHT_WHITE_YELLOW;
+    else                     cp_n = BRIGHT_WHITE_GREEN;
 
     rnprintf(test_bar->winp, 0, 0, n, COLOR_PAIR(cp_n), "%s", bar.cstr);
     wrefresh(test_bar->winp);
     linc_string_free(&bar);
+}
+
+static chtype get_cell_attr(vt_cell *cell) {
+    chtype attr = 0;
+
+    int cp = alloc_pair(cell->fg, cell->bg);
+
+    if (cp >= 0 && cp <= 255)
+        attr |= COLOR_PAIR(cp);
+    if (cell->bold)
+        attr |= A_BOLD;
+    if (cell->under)
+        attr |= A_UNDERLINE;
+
+    return attr;
 }
 
 void render_vterm_snap(curs_win *win, vt_snap *snap) {
@@ -339,10 +354,20 @@ void render_vterm_snap(curs_win *win, vt_snap *snap) {
     int avail_rows = MIN(rect.rows, snap->rows);
     int avail_cols = MIN(rect.cols, snap->cols);
 
+    /* Render snap lines */
+
     for (int row = 0; row < avail_rows; ++row) {
         char *line = snap->lines.data[row];
-        rnprintf(win->winp, row, 0, avail_cols, 0, "%s", line);
+
+        for (int col = 0; col < avail_cols; ++col) {
+            vt_cell *cell = &snap->cells.data[row * snap->cols + col];
+
+            chtype attr = get_cell_attr(cell);
+            rnprintf(win->winp, row, col, avail_cols, attr, "%c", line[col]);
+        }
     }
+
+    /* Render terminal border if enough size */
 
     if (rect.rows > snap->rows) {
         int n = MIN(snap->cols + 1, rect.cols);
@@ -394,17 +419,17 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
         int attrs = 0;
 
         if (strstr(line->cstr, "CLEAN"))
-            attrs = COLOR_PAIR(GREEN_CL) | A_BOLD;
+            attrs = COLOR_PAIR(GREEN_CLEAR) | A_BOLD;
         else if (strstr(line->cstr, "DIRTY"))
-            attrs = COLOR_PAIR(RED_CL) | A_BOLD;
+            attrs = COLOR_PAIR(RED_CLEAR) | A_BOLD;
         else if (strstr(line->cstr, "WARN"))
-            attrs = COLOR_PAIR(BWHITE_YELLOW);
+            attrs = COLOR_PAIR(BRIGHT_WHITE_YELLOW);
         else if (strstr(line->cstr, "ERROR"))
-            attrs = COLOR_PAIR(BWHITE_RED);
+            attrs = COLOR_PAIR(BRIGHT_WHITE_RED);
         else if (strstr(line->cstr, "===TEST("))
-            attrs = COLOR_PAIR(CYAN_CL);
+            attrs = COLOR_PAIR(CYAN_CLEAR);
         else if (strstr(line->cstr, "===DIFF==="))
-            attrs = COLOR_PAIR(CYAN_CL);
+            attrs = COLOR_PAIR(CYAN_CLEAR);
 
         rnprintf(win->winp, i, 0, win->rect->cols, attrs, "%s", line->cstr);
         char *p = line->cstr;

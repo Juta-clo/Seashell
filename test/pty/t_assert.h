@@ -17,6 +17,12 @@
 #define PROMPT "> "
 #define PROMPT_LEN 2
 
+bool verify_bytes(const char *str);
+bool verify_kill(int sig, const char *name);
+bool verify_pstate(const char *name, const char *state);
+bool verify_termios(struct termios exp);
+bool verify_term(char **lines, int crow, int ccol, bool attr);
+
 #define PTY_TEST_FAIL(fmt, ...) \
     do { \
         test_push_err(fmt __VA_OPT__(,) __VA_ARGS__); \
@@ -28,14 +34,29 @@
 
 #define assert_term(_row, _col, ...) \
     do { \
-        if (!verify_term(LN(__VA_ARGS__), _row, _col)) \
+        if (!verify_term(LN(__VA_ARGS__), _row, _col, false)) \
             PTY_TEST_FAIL("verify_term() timed out"); \
         vt_take_snap(); \
     } while (false)
 
+#define assert_term_attr(_row, _col, ...) \
+    do { \
+        if (!verify_term(LN(__VA_ARGS__), _row, _col, true)) \
+            PTY_TEST_FAIL("verify_term() timed out"); \
+        vt_take_snap(); \
+    } while (false)
+
+#define assert_term_attr_clear(_row, _col, ...) \
+    do { \
+        if (!verify_term(LN(__VA_ARGS__), _row, _col, true)) \
+            PTY_TEST_FAIL("verify_term() timed out"); \
+        vt_take_snap(); \
+        vt_send_ch('l', VTERM_MOD_CTRL); \
+    } while (false)
+
 #define assert_term_clear(_row, _col, ...) \
     do { \
-        if (!verify_term(LN(__VA_ARGS__), _row, _col)) \
+        if (!verify_term(LN(__VA_ARGS__), _row, _col, false)) \
             PTY_TEST_FAIL("verify_term() timed out"); \
         vt_take_snap(); \
         vt_send_ch('l', VTERM_MOD_CTRL); \
@@ -64,11 +85,5 @@
         if (!verify_termios(exp)) \
             PTY_TEST_FAIL("verify_termios: timed out"); \
     } while (false)
-
-bool verify_bytes(const char *str);
-bool verify_kill(int sig, const char *name);
-bool verify_pstate(const char *name, const char *state);
-bool verify_termios(struct termios exp);
-bool verify_term(char **lines, int crow, int ccol);
 
 #endif

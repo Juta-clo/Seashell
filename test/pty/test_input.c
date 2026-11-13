@@ -615,19 +615,19 @@ TEST(input, complete_wildcard_directory_cycles_concrete_paths) {
     }
 }
 
-IGNORE_TEST(input, syntax_node_beyond_viewport) {
+TEST(input, syntax_node_beyond_viewport) {
     test_resize_term(2, 5);
 
     vt_send_str("echo x\n");
-    assert_term_clear(1, PROMPT_LEN,
+    assert_term_attr_clear(1, PROMPT_LEN,
         "x",
         PROMPT
     );
 
     vt_send_str("echo '6789'");
-    assert_term_clear(1, 3,
-        ">...",
-        "89'"
+    assert_term_attr_clear(1, 3,
+        "%[c]>...%[]",
+        "%[G]89'%[]"
     );
 
     /* Requires asserting vterm cell attributes!
@@ -635,28 +635,200 @@ IGNORE_TEST(input, syntax_node_beyond_viewport) {
      * as that is echo's output! */
 
     vt_send_ch('a', VTERM_MOD_CTRL);
-    assert_term_clear(0, PROMPT_LEN,
-        PROMPT "ech",
-        "o '67"
+    assert_term_attr_clear(0, PROMPT_LEN,
+        PROMPT "%[g]ech",
+        "o%[] %[G]'67%[]"
     );
 
     vt_send_str("\n");
-    assert_term_clear(1, PROMPT_LEN,
+    assert_term_attr(1, PROMPT_LEN,
         "6789",
         PROMPT
     );
 }
 
-IGNORE_TEST(input, control_characters_dont_reset_highlighting) {
-    /* Requires asserting vterm cell attributes! For this
-     * test the second ' should be highlighted like a string. */
+TEST(input, control_characters_dont_reset_highlighting) {
+    /* For this test the second ' should be highlighted
+     * like a string. */
 
-    vt_send_str("'");
+    vt_send_str("echo '");
     vt_send_ch('y', VTERM_MOD_CTRL);
     vt_send_str("'");
 
-    assert_term_clear(0, PROMPT_LEN + 3,
-        PROMPT "'?'"
+    assert_term_attr_clear(0, PROMPT_LEN + 8,
+        PROMPT "%[g]echo%[] %[G]'%[]%[b,r,b]?%[]%[G]'%[]"
+    );
+}
+
+TEST(input, highlight_option) {
+    vt_send_str("echo -o");
+    assert_term_attr(0, PROMPT_LEN + 7,
+        PROMPT "%[g]echo%[] %[c]-o%[]"
+    );
+}
+
+TEST(input, highlight_long_option) {
+    vt_send_str("echo --long");
+    assert_term_attr(0, PROMPT_LEN + 11,
+        PROMPT "%[g]echo%[] %[x]--long%[]"
+    );
+}
+
+TEST(input, highlight_command_name_with_directory_prefix) {
+    vt_send_str("/bin/echo");
+    assert_term_attr(0, PROMPT_LEN + 9,
+        PROMPT "%[g]/bin/echo%[]"
+    );
+}
+
+TEST(input, highlight_command_name_after_pipeline) {
+    vt_send_str("echo | echo");
+    assert_term_attr(0, PROMPT_LEN + 11,
+        PROMPT "%[g]echo%[] %[y]|%[] %[g]echo%[]"
+    );
+}
+
+TEST(input, highlight_command_name_in_subshell) {
+    vt_send_str("(echo)");
+    assert_term_attr(0, PROMPT_LEN + 6,
+        PROMPT "%[y](%[g]echo%[y])%[]"
+    );
+}
+
+TEST(input, highlight_redirect) {
+    vt_send_str("echo foo >/tmp");
+    assert_term_attr(0, PROMPT_LEN + 14,
+        PROMPT "%[g]echo%[] foo %[c]>%[]%[,,u]/tmp%[]"
+    );
+}
+
+TEST(input, highlight_redirect_with_io_number) {
+    vt_send_str("echo foo 35>./bar");
+    assert_term_attr(0, PROMPT_LEN + 17,
+        PROMPT "%[g]echo%[] foo %[c]35>%[]./bar"
+    );
+}
+
+TEST(input, highlight_unterminated_subshell_contents) {
+    vt_send_str("(echo");
+    assert_term_attr(0, PROMPT_LEN + 5,
+        PROMPT "%[y](%[g]echo%[]"
+    );
+}
+
+TEST(input, highlight_subshell_after_pipeline) {
+    vt_send_str("echo | (echo)");
+    assert_term_attr(0, PROMPT_LEN + 13,
+        PROMPT "%[g]echo%[] %[y]|%[] %[y](%[g]echo%[y])%[]"
+    );
+}
+
+TEST(input, highlight_subshell_redirect) {
+    vt_send_str("(echo) > echo");
+    assert_term_attr(0, PROMPT_LEN + 13,
+        PROMPT "%[y](%[g]echo%[y])%[] %[c]>%[] echo"
+    );
+}
+
+TEST(input, highlight_command_not_found) {
+    vt_send_str("non-existant");
+    assert_term_attr(0, PROMPT_LEN + 12,
+        PROMPT "%[r,,b]non-existant%[]"
+    );
+}
+
+TEST(input, highlight_partially_quoted_command) {
+    vt_send_str("'ec'ho");
+    assert_term_attr(0, PROMPT_LEN + 6,
+        PROMPT "%[G]'ec'%[g]ho%[]"
+    );
+
+    vt_send_ch('u', VTERM_MOD_CTRL);
+    vt_send_str("'non'existant");
+    assert_term_attr(0, PROMPT_LEN + 13,
+        PROMPT "%[r,,b]'non'existant%[]"
+    );
+}
+
+TEST(input, highlight_multiple_quoted_segments) {
+    vt_send_str("echo 'hello'beautiful\"world\"");
+    assert_term_attr(0, PROMPT_LEN + 28,
+        PROMPT "%[g]echo%[] %[G]'hello'%[]beautiful%[G]\"world\"%[]"
+    );
+}
+
+TEST(input, highlight_unterminated_quotes) {
+    vt_send_str("echo 'hello");
+    assert_term_attr(0, PROMPT_LEN + 11,
+        PROMPT "%[g]echo%[] %[G]'hello%[]"
+    );
+}
+
+TEST(input, highlight_alias_in_command_position) {
+    vt_send_str("alias abc foo\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias abc foo",
+        PROMPT
+    );
+
+    vt_send_str("abc");
+    assert_term_attr(0, PROMPT_LEN + 3,
+        PROMPT "%[g]abc%[]"
+    );
+}
+
+TEST(input, highlight_builtin_in_command_position) {
+    vt_send_str("set FOO bar");
+    assert_term_attr(0, PROMPT_LEN + 11,
+        PROMPT "%[g]set%[] FOO bar"
+    );
+}
+
+TEST(input, highlight_after_unsetting_path) {
+    vt_send_str("unset PATH\n");
+    assert_term_attr_clear(1, PROMPT_LEN,
+        PROMPT "%[g]unset%[] PATH",
+        PROMPT
+    );
+
+    vt_send_str("echo hi");
+    assert_term_attr(0, PROMPT_LEN + 7,
+        PROMPT "%[r,,b]echo%[] hi"
+    );
+}
+
+TEST(input, highlight_async_andor_chain) {
+    vt_send_str("true && false || true &");
+    assert_term_attr(0, PROMPT_LEN + 23,
+        PROMPT "%[g]true%[] %[y]&&%[] %[g]false%[] %[y]||%[] %[g]true%[] "
+            "%[c,,b]&%[]"
+    );
+}
+
+TEST(input, highlight_contiguous_tokens) {
+    vt_send_str("true&&false>foo");
+    assert_term_attr(0, PROMPT_LEN + 15,
+        PROMPT "%[g]true%[y]&&%[g]false%[c]>%[]foo"
+    );
+}
+
+TEST(input, highlight_partially_quoted_file_path) {
+    vt_send_str("cat './te's");
+    assert_term_attr(0, PROMPT_LEN + 11,
+        PROMPT "%[g]cat%[] %[G,,u]'./te'%[]%[,,u]s"
+    );
+}
+
+TEST(input, trailing_slash_on_unreadable_directory) {
+    vt_send_str("mkdir -p -m 0300 /tmp/unreadable\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "mkdir -p -m 0300 /tmp/unreadable",
+        PROMPT
+    );
+
+    vt_send_str("cd /tmp/unreadable/");
+    assert_term_attr(0, PROMPT_LEN + 19,
+        PROMPT "%[g]cd%[] /tmp/unreadable/"
     );
 }
 
@@ -703,6 +875,29 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, complete_prefix_with_spaces_that_are_already_escaped);
     RUN_TEST_CASE(input, complete_wildcard_directory_cycles_concrete_paths);
 
+    /* Highlighting */
     RUN_TEST_CASE(input, syntax_node_beyond_viewport);
     RUN_TEST_CASE(input, control_characters_dont_reset_highlighting);
+    RUN_TEST_CASE(input, highlight_option);
+    RUN_TEST_CASE(input, highlight_long_option);
+    RUN_TEST_CASE(input, highlight_command_name_with_directory_prefix);
+    RUN_TEST_CASE(input, highlight_command_name_after_pipeline);
+    RUN_TEST_CASE(input, highlight_command_name_in_subshell);
+    RUN_TEST_CASE(input, highlight_redirect);
+    RUN_TEST_CASE(input, highlight_redirect_with_io_number);
+    RUN_TEST_CASE(input, highlight_unterminated_subshell_contents);
+    RUN_TEST_CASE(input, highlight_subshell_after_pipeline);
+    RUN_TEST_CASE(input, highlight_subshell_redirect);
+    RUN_TEST_CASE(input, highlight_command_not_found);
+    RUN_TEST_CASE(input, highlight_partially_quoted_command);
+    RUN_TEST_CASE(input, highlight_multiple_quoted_segments);
+    RUN_TEST_CASE(input, highlight_unterminated_quotes);
+    RUN_TEST_CASE(input, highlight_alias_in_command_position);
+    RUN_TEST_CASE(input, highlight_builtin_in_command_position);
+    RUN_TEST_CASE(input, highlight_after_unsetting_path);
+    RUN_TEST_CASE(input, highlight_async_andor_chain);
+    RUN_TEST_CASE(input, highlight_contiguous_tokens);
+    RUN_TEST_CASE(input, highlight_partially_quoted_file_path);
+
+    RUN_TEST_CASE(input, trailing_slash_on_unreadable_directory);
 }

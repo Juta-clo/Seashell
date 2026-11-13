@@ -124,6 +124,13 @@ fail:
     return -1;
 }
 
+bool is_bin(const char *path) {
+    if (is_dir(path))
+        return false;
+
+    return (access(path, X_OK) == 0);
+}
+
 bool is_file(const char *path) {
     struct stat st;
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);

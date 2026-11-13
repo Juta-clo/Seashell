@@ -108,6 +108,7 @@ void argv_free_free(da_charp *arr);
 
 void xdup2_move(int fd1, int fd2);
 int get_int(const char *arg, int *num);
+bool is_bin(const char *path);
 bool is_file(const char *path);
 bool is_dir(const char *file);
 char *strdup_alloc(const char *str, linc_allo *allo);

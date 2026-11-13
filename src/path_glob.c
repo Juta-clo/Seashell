@@ -120,10 +120,22 @@ static bool substrs_ok(const char *dent, da_charp *substrs, size_t pre_n,
 
 static void get_dir_entries(bool inc_prev, bool dirs, da_charp *dents) {
     size_t og_dent_size = dents->size;
+    DIR *dir;
 
     for (size_t i = 0; i < og_dent_size; ++i) {
         char *path = dents->data[i];
-        DIR *dir = xopendir(path);
+
+        if (!(dir = opendir(path))) {
+            switch (errno) {
+            case EACCES:
+            case ENOTDIR:
+            case ENOENT:
+            case ELOOP:
+                continue;
+            default:
+                err_exit("opendir");
+            }
+        }
 
         while (true) {
             errno = 0;

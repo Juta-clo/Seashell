@@ -27,9 +27,9 @@ pty_harness ptyh = {0};
 pty_test *test;
 
 static void test_open_log_files(void) {
-    char log_path[] = "/tmp/seashell/shlog-XXXXXX";
-    char log_raw_out_path[] = "/tmp/seashell/shlog-raw-out-XXXXXX";
-    char log_raw_in_path[] = "/tmp/seashell/shlog-raw-in-XXXXXX";
+    char log_path[] = "/tmp/seashell/log/shlog-XXXXXX";
+    char log_raw_out_path[] = "/tmp/seashell/log/shlog-raw-out-XXXXXX";
+    char log_raw_in_path[] = "/tmp/seashell/log/shlog-raw-in-XXXXXX";
 
     ptyh.log_file = new_tmp_file(log_path);
     ptyh.log_raw_out = new_tmp_file(log_raw_out_path);
@@ -71,6 +71,8 @@ void test_harness_init(int argc, const char *const *argv) {
     process_args(argc, argv);
 
     if (mkdir("/tmp/seashell", 0700) == -1 && errno != EEXIST)
+        xtest_fatal("mkdir: %m");
+    if (mkdir("/tmp/seashell/log", 0700) == -1 && errno != EEXIST)
         xtest_fatal("mkdir: %m");
 
     test_open_log_files();

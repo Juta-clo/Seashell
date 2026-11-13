@@ -144,7 +144,9 @@ int expand_word(ps_word *word, da_charp *argv, int type) {
         linc_string_free(&exp_seg);
     }
 
-    LOG_INFO("expand(%s) = %s", word_str, arg.cstr);
+    if (type != EXPAND_COMP)
+        LOG_INFO("expand(%s) = %s", word_str, arg.cstr);
+
     free(word_str);
 
     /* globbing */

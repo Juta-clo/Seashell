@@ -108,13 +108,13 @@ bool verify_termios(struct termios exp) {
     return false;
 }
 
-bool verify_term(char **lines, int crow, int ccol) {
+bool verify_term(char **lines, int crow, int ccol, bool attr) {
     assert(crow >= 0 && ccol >= 0);
     assert(crow < test->vt.rows && ccol < test->vt.cols);
 
     vt_lines_to_snap(lines, &test->vt_exp, crow, ccol);
 
-    if (vt_snap_cmp(&test->vt_exp)) {
+    if (vt_snap_cmp(&test->vt_exp, attr)) {
         vt_free_snap(&test->vt_exp);
         return true;
     }
@@ -122,7 +122,7 @@ bool verify_term(char **lines, int crow, int ccol) {
     int tfd = start_timerfd(100);
 
     while (test_poll(tfd) != -1) {
-        bool same = vt_snap_cmp(&test->vt_exp);
+        bool same = vt_snap_cmp(&test->vt_exp, attr);
 
         if (same) {
             vt_free_snap(&test->vt_exp);

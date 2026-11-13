@@ -1,3 +1,4 @@
+#include "builtins.h"
 #include "shell.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -254,6 +255,9 @@ static void get_path_entries(da_charp *pents) {
     *pents = (da_charp){0};
 
     sh_var *var = lookup_var(&env.vars, "PATH");
+    if (!var)
+        return;
+
     char *path_str = xstrdup(var->value);
 
     char *tok = strtok(path_str, ":");
@@ -459,10 +463,10 @@ static void input_draw(int rows, int start_row, da_cell cells) {
     int scr_i = 0;
     size_t cell_content_start_i = start_row * input.cols;
     int crow, ccol;
+    input_cell *last_hl = nullptr;
 
     for (size_t i = 0; i < cells.size; ++i) {
         input_cell cell = cells.data[i];
-        input_cell *last_hl = nullptr;
 
         if (cell.hl) {
             if (cell.attr_off) {
@@ -544,11 +548,6 @@ static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
     ASSERT(word);
     ASSERT(ibuf);
 
-    int start, end;
-    int fg = -1;
-    bool bold = false;
-    bool under = false;
-
     comp_tok ctok = {0};
     da_charp hits = {0};
     bool name_found = false;
@@ -563,33 +562,50 @@ static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
     if (*ctok.text != '\0') {
         linc_string glob = LINC_STRING_INIT;
         linc_string_appendf(&glob, "%s*", ctok.text);
-        input_complete_file(glob.cstr, ctok.text, &hits);
+        glob_pattern(glob.cstr, glob.len, &hits);
 
-        for (size_t i = 0; i < hits.size; ++i)
-            if (is_dir(hits.data[i]))
+        for (size_t i = 0; i < hits.size; ++i) {
+            if (is_dir(hits.data[i]) || is_file(hits.data[i]))
                 path_found = true;
+        }
 
         argv_free_free(&hits);
         linc_string_free(&glob);
     }
 
     if (ctok.kind == COMP_NAME) {
-        da_charp candidates = build_path_candidates(ctok.text);
-
-        for (size_t i = 0; i < candidates.size; ++i) {
-            if (is_file(candidates.data[i])) {
+        if (strstr(ctok.text, "/")) {
+            if (is_bin(ctok.text))
                 name_found = true;
-                break;
+        } else if (get_builtin(ctok.text)) {
+            name_found = true;
+        } else if (mp_str_lookup(&env.aliases, ctok.text, NULL) != -1) {
+            name_found = true;
+        } else {
+            da_charp candidates = build_path_candidates(ctok.text);
+
+            for (size_t i = 0; i < candidates.size; ++i) {
+                if (is_bin(candidates.data[i])) {
+                    name_found = true;
+                    break;
+                }
             }
+
+            argv_free_free(&candidates);
         }
 
-        argv_free_free(&candidates);
+        if (!name_found) {
+            int start = word->i;
+            int end = word->i + (word->n - 1);
+            int fg = PRINTTY_RED;
+            bool bold = true;
+            bool under = false;
 
-        if (!name_found && !path_found) {
-            start = word->i;
-            end = word->i + (word->n - 1);
-            fg = PRINTTY_RED;
-            bold = true;
+            if (path_found && is_bin(ctok.text)) {
+                fg = -1;
+                under = true;
+                bold = false;
+            }
 
             if (cell_index(&start, &end, &ibuf->cells) != -1)
                 input_add_highlight(start, end, fg, -1, bold, under, ibuf);
@@ -602,9 +618,13 @@ static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
     for (size_t i = 0; i < word->parts.size; ++i) {
         lx_part *part = &word->parts.data[i];
 
+        int start = part->i;
+        int end = part->i + (part->n - 1);
+        int fg = -1;
+        bool under = false;
+        bool bold = false;
+
         if (part->quote == LX_Q_NONE) {
-            start = part->i;
-            end = part->i + (part->n - 1);
 
             if (ctok.kind == COMP_NAME) {
                 if (name_found) {
@@ -637,7 +657,7 @@ static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
         } else {
             start = part->i - 1;
             end = part->i + part->n;
-            fg = PRINTTY_GREEN;
+            fg = PRINTTY_GREEN + 8;
             bold = false;
 
             if (path_found)

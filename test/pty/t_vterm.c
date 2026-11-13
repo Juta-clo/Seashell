@@ -15,44 +15,21 @@ static char reg_chars[] = {
     '[', '.', '*', '+', '?', '(', ')', '{', '|', '^', '$', '\\'
 };
 
-static linc_string reg_convert(char *line) {
-    linc_string out = LINC_STRING_INIT;
-    linc_string_push(&out, '^');
+static int fg, bg, bold, under;
 
-    if (line) {
-        for (char *c = line; *c != '\0'; ++c) {
-            if (*c == '%') {
-                switch (c[1]) {
-                case 'd':
-                    linc_string_append(&out, "[0-9]+");
-                    break;
-                case '%':
-                    linc_string_push(&out, '%');
-                    break;
-                case 's':
-                    linc_string_append(&out, "[ ]+");
-                    break;
-                default:
-                    xtest_fatal("%s: Bad regex %s", test->test_name, line);
-                }
+static bool is_regex_char(char c) {
+    for (size_t i = 0; i < sizeof(reg_chars); ++i)
+        if (reg_chars[i] == c)
+            return true;
 
-                ++c;
-                continue;
-            }
+    return false;
+}
 
-            for (size_t i = 0; i < sizeof(reg_chars); ++i) {
-                if (reg_chars[i] == *c) {
-                    linc_string_push(&out, '\\');
-                    break;
-                }
-            }
-
-            linc_string_push(&out, *c);
-        }
-    }
-
-    linc_string_append(&out, "`*$");
-    return out;
+static void expand_test_reset(void) {
+    fg = -1;
+    bg = -1;
+    bold = false;
+    under = false;
 }
 
 static void vt_output_cb(const char *bytes, size_t len, void *user) {
@@ -66,17 +43,129 @@ static void vt_output_cb(const char *bytes, size_t len, void *user) {
         xtest_fatal("vterm_output_cb: write: failed/partial");
 }
 
-void vt_write(const char *str) {
-    const char *c = str;
-    size_t left = strlen(str);
-    while (left != 0) {
-        size_t n = vterm_input_write(test->vt.vp, c, left);
-        c += n;
-        left -= n;
+static int letter_to_color(char c) {
+    switch (c) {
+    case 'b':  return VT_COL_BLACK;
+    case 'r':  return VT_COL_RED;
+    case 'g':  return VT_COL_GREEN;
+    case 'y':  return VT_COL_YELLOW;
+    case 'x':  return VT_COL_BLUE;
+    case 'm':  return VT_COL_MAGENTA;
+    case 'c':  return VT_COL_CYAN;
+    case 'w':  return VT_COL_WHITE;
+    case 'B':  return VT_COL_BRIGHT_BLACK;
+    case 'R':  return VT_COL_BRIGHT_RED;
+    case 'G':  return VT_COL_BRIGHT_GREEN;
+    case 'X':  return VT_COL_BRIGHT_BLUE;
+    case 'Y':  return VT_COL_BRIGHT_YELLOW;
+    case 'M':  return VT_COL_BRIGHT_MAGENTA;
+    case 'C':  return VT_COL_BRIGHT_CYAN;
+    case 'W':  return VT_COL_BRIGHT_WHITE;
+    default:   xtest_fatal("bad color specifier");
     }
 }
 
-bool vt_snap_cmp(vt_snap *exp) {
+static void handle_vt_color(char *c, int *ind) {
+    if (*c == ']') {
+        fg = bg = -1;
+        bold = under = false;
+        ++*ind;
+        return;
+    }
+
+    enum {
+        ON_FG,
+        ON_BG,
+        ON_ATTR,
+    } mode = ON_FG;
+
+    while (*c != ']') {
+        switch (mode) {
+        case ON_FG:
+            if (*c == ',') {
+                mode = ON_BG;
+            } else
+                fg = letter_to_color(*c);
+            break;
+        case ON_BG:
+            if (*c == ',') {
+                mode = ON_ATTR;
+            } else
+                bg = letter_to_color(*c);
+            break;
+        case ON_ATTR:
+            switch (*c) {
+            case 'b':  bold = true; break;
+            case 'u':  under = true; break;
+            case '\0': xtest_fatal("bad attribute specifier: '\\0'");
+            default:   xtest_fatal("bad attribute specifier: %c", *c);
+            }
+        }
+
+        ++c;
+        ++*ind;
+    }
+
+    ++*ind;
+}
+
+static bool handle_test_spec_ch(char *c, linc_string *out, int *ind) {
+    ++*ind;
+
+    switch (c[1]) {
+    case 'd':
+        linc_string_append(out, "[0-9]+");
+        return true;
+    case '%':
+        linc_string_push(out, '%');
+        return false;
+    case 's':
+        linc_string_append(out, "[ ]+");
+        return true;
+    case '[':
+        handle_vt_color(&c[2], ind);
+        return true;
+    default:
+        xtest_fatal("bad test specifier: %c", c[1]);
+    }
+}
+
+static linc_string expand_test_specifiers(char *line, vt_snap *snap) {
+    linc_string out = LINC_STRING_INIT;
+    linc_string_push(&out, '^');
+
+    int line_len = (line) ? strlen(line) : 0;
+    int cells_created = 0;
+
+    for (int i = 0; i < line_len; ++i) {
+        if (line[i] == '%') {
+            if (handle_test_spec_ch(&line[i], &out, &i))
+                continue;
+        } else {
+            if (is_regex_char(line[i]))
+                linc_string_push(&out, '\\');
+
+            linc_string_push(&out, line[i]);
+        }
+
+        *linc_array_push(&snap->cells) = (vt_cell){
+            .fg = fg,
+            .bg = bg,
+            .bold = bold,
+            .under = under
+        };
+
+        ++cells_created;
+    }
+
+    for (int i = 0; i < snap->cols - cells_created; ++i)
+        *linc_array_push(&snap->cells) = (vt_cell){ .fg = -1, .bg = -1, };
+
+    linc_string_append(&out, "`*$");
+    return out;
+}
+
+bool vt_snap_cmp(vt_snap *exp, bool attr) {
     assert(exp);
 
     int rv;
@@ -104,6 +193,25 @@ bool vt_snap_cmp(vt_snap *exp) {
         }
 
         regfree(&reg);
+
+    }
+
+    for (size_t i = 0; attr && i < exp->cells.size; ++i) {
+        if(snap.cells.size != exp->cells.size)
+            xtest_fatal("snaps with different cell count! %zu and %zu",
+                    exp->cells.size, snap.cells.size);
+
+        vt_cell *exp_cell = &exp->cells.data[i];
+        vt_cell *act_cell = &snap.cells.data[i];
+
+        if (exp_cell->fg != act_cell->fg)
+            return false;
+        if (exp_cell->bg != act_cell->bg)
+            return false;
+        if (exp_cell->bold != act_cell->bold)
+            return false;
+        if (exp_cell->under != act_cell->under)
+            return false;
     }
 
     if (exp->crow != snap.crow || exp->ccol != snap.ccol) {
@@ -113,6 +221,16 @@ bool vt_snap_cmp(vt_snap *exp) {
 
     vt_free_snap(&snap);
     return true;
+}
+
+void vt_write(const char *str) {
+    const char *c = str;
+    size_t left = strlen(str);
+    while (left != 0) {
+        size_t n = vterm_input_write(test->vt.vp, c, left);
+        c += n;
+        left -= n;
+    }
 }
 
 da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty) {
@@ -132,13 +250,27 @@ da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty) {
         }
 
         rv = regexec(&reg, act->lines.data[row], 0, NULL, 0);
-
-        if (rv == REG_NOMATCH) {
-            regfree(&reg);
-            *linc_array_push(&out) = row;
-        } else if (rv != 0) {
+        if (rv != REG_NOMATCH && rv != 0) {
             regerror(rv, &reg, reg_errbuf, BUFSIZ);
             xtest_fatal("regexec: %s", reg_errbuf);
+        }
+
+        if (rv == REG_NOMATCH) {
+            *linc_array_push(&out) = row;
+        } else {
+            size_t row_len = strlen(exp->lines.data[row]);
+
+            for (size_t col = 0; col < row_len; ++col) {
+                vt_cell *exp_cell = &exp->cells.data[row * exp->cols + col];
+                vt_cell *act_cell = &act->cells.data[row * exp->cols + col];
+
+                if (exp_cell->fg != act_cell->fg ||
+                    exp_cell->bold != act_cell->bold ||
+                    exp_cell->under != act_cell->under) {
+                    *linc_array_push(&out) = row;
+                    break;
+                }
+            }
         }
 
         regfree(&reg);
@@ -154,6 +286,7 @@ void vt_free_snap(vt_snap *snap) {
         free(snap->lines.data[i]);
 
     linc_array_free(&snap->lines);
+    linc_array_free(&snap->cells);
     *snap = (vt_snap){0};
 }
 
@@ -189,15 +322,32 @@ vt_snap vt_get_snap(void) {
             if (cell.chars[0] > 127)
                 PTY_TEST_FAIL("non ascii in vterm");
 
-            char ch;
+            if (cell.chars[0] == 0)
+                cell.chars[0] = '`';
 
-            if (cell.chars[0] == 0) {
-                ch = '`';
-            } else {
-                ch = cell.chars[0];
-            }
+            if (!VTERM_COLOR_IS_DEFAULT_FG(&cell.fg))
+                if (!VTERM_COLOR_IS_INDEXED(&cell.fg))
+                    PTY_TEST_FAIL("non indexed fg color in vterm");
+            if (!VTERM_COLOR_IS_DEFAULT_BG(&cell.bg))
+                if (!VTERM_COLOR_IS_INDEXED(&cell.bg))
+                    PTY_TEST_FAIL("non indexed bg color in vterm");
 
-            (*line)[col] = ch;
+            (*line)[col] = cell.chars[0];
+
+            vt_cell *snap_cell = linc_array_push(&snap.cells);
+
+            *snap_cell = (vt_cell){
+                .ch = cell.chars[0],
+                .bold = cell.attrs.bold,
+                .under = cell.attrs.underline,
+                .fg = -1,
+                .bg = -1
+            };
+
+            if (!VTERM_COLOR_IS_DEFAULT_FG(&cell.fg))
+                snap_cell->fg = cell.fg.indexed.idx;
+            if (!VTERM_COLOR_IS_DEFAULT_BG(&cell.bg))
+                snap_cell->bg = cell.bg.indexed.idx;
         }
     }
 
@@ -224,6 +374,7 @@ void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol) {
         if (i == test->vt.rows - 1 && lines[i + 1])
             xtest_fatal("lines_to_term: Too many terminal lines");
 
+    expand_test_reset();
     bool lines_done = false;
 
     for (int i = 0; i < test->vt.rows; ++i) {
@@ -233,9 +384,9 @@ void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol) {
         linc_string s;
 
         if (!lines_done) {
-            s = reg_convert(lines[i]);
+            s = expand_test_specifiers(lines[i], snap);
         } else {
-            s = reg_convert(NULL);
+            s = expand_test_specifiers(NULL, snap);
         }
 
         *linc_array_push(&snap->lines) = xstrdup(s.cstr);

@@ -27,7 +27,7 @@
 LINC_ARRAY_TYPE(da_dstr, linc_string);
 LINC_ARRAY_TYPE(da_int, int);
 
-__attribute__ ((format(printf, 3, 4)))
+_Noreturn __attribute__ ((format(printf, 3, 4)))
 void test_fatal(const char *file, int line, const char *fmt, ...);
 
 __attribute__ ((__format__(printf, 1, 2)))

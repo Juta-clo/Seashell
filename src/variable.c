@@ -69,8 +69,7 @@ void update_status_variable(int status) {
 sh_var *lookup_var(map_t *vars, const char *key) {
     void *value;
 
-    if (mp_str_lookup(vars, key, &value) == -1)
-        fatal("mp_str_lookup");
+    mp_str_lookup(vars, key, &value);
 
     return value;
 }
@@ -82,8 +81,7 @@ sh_var *lookup_var_n(map_t *vars, const char *key, size_t key_len) {
     strncpy(key_buf, key, key_len);
     key_buf[key_len] = '\0';
 
-    if (mp_str_lookup(vars, key_buf, &value) == -1)
-        fatal("mp_str_lookup");
+    mp_str_lookup(vars, key_buf, &value);
 
     return value;
 }

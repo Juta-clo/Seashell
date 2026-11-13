@@ -60,7 +60,7 @@ target("pty_test")
     add_deps("seashell", { inherit = false })
     add_deps("launch_seashell", { inherit = false })
     add_deps(linc_targets)
-    add_syslinks("ncurses", "vterm", "m")
+    add_syslinks("ncursesw", "vterm", "m")
     add_defines(
         "UNITY_FIXTURE_NO_EXTRAS",
         "UNITY_OUTPUT_COLOR",

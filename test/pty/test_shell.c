@@ -215,12 +215,19 @@ TEST(shell, simple_andor) {
 }
 
 TEST(shell, simple_bg_andor) {
-    vt_send_str("true && echo x &\n");
-    assert_term(4, PROMPT_LEN,
-        PROMPT "true && echo x &",
+    vt_send_str("true && echo x >/tmp/shtest &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "true && echo x >/tmp/shtest &",
         "[1] %d",
-        PROMPT "x",
-        "[1] done             (true && echo x)%s",
+        PROMPT "%s",
+        "[1] done             (true && echo x > /tmp/shtest)",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/shtest\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest",
+        "x",
         PROMPT
     );
 }
@@ -256,41 +263,55 @@ TEST(shell, or_if_logic) {
 }
 
 TEST(shell, and_if_logic_bg) {
-    vt_send_str("true && echo x &\n");
+    vt_send_str("true && echo x >/tmp/shtest &\n");
     assert_term_clear(4, PROMPT_LEN,
-        PROMPT "true && echo x &",
+        PROMPT "true && echo x >/tmp/shtest &",
         "[1] %d",
-        PROMPT "x",
-        "[1] done             (true && echo x)%s",
+        PROMPT "%s",
+        "[1] done             (true && echo x > /tmp/shtest)",
         PROMPT
     );
 
-    vt_send_str("false && echo x &\n");
-    assert_term(4, PROMPT_LEN,
-        PROMPT "false && echo x &",
+    vt_send_str("false && echo x >>/tmp/shtest &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "false && echo x >>/tmp/shtest &",
         "[1] %d",
         PROMPT "%s",
-        "[1] exit 1           (false && echo x)",
+        "[1] exit 1           (false && echo x >> /tmp/shtest)",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/shtest\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest",
+        "x",
         PROMPT
     );
 }
 
 TEST(shell, or_if_logic_bg) {
-    vt_send_str("false || echo y &\n");
+    vt_send_str("false || echo x >/tmp/shtest &\n");
     assert_term_clear(4, PROMPT_LEN,
-        PROMPT "false || echo y &",
+        PROMPT "false || echo x >/tmp/shtest &",
         "[1] %d",
-        PROMPT "y",
-        "[1] done             (false || echo y)%s",
+        PROMPT "%s",
+        "[1] done             (false || echo x > /tmp/shtest)",
         PROMPT
     );
 
-    vt_send_str("true || echo y &\n");
-    assert_term(4, PROMPT_LEN,
-        PROMPT "true || echo y &",
+    vt_send_str("true || echo x >>/tmp/shtest &\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "true || echo x >>/tmp/shtest &",
         "[1] %d",
         PROMPT "%s",
-        "[1] done             (true || echo y)",
+        "[1] done             (true || echo x >> /tmp/shtest)",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/shtest\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest",
+        "x",
         PROMPT
     );
 }

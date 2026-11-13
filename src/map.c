@@ -62,22 +62,25 @@ fail:
 }
 
 static int mp_lookup(map_t *map, const void *key, void **value, key_func func) {
-    ASSERT(map && key && value);
+    ASSERT(map && key);
 
     void *canon_key = func(map, key);
     if (!canon_key)
-        return -1;
+        fatal("mp_lookup: faliled to create key");
 
     void *map_value = lookup_index(map, canon_key, nullptr);
     if (!map_value) {
+        if (value)
+            *value = nullptr;
+
         free(canon_key);
-        *value = nullptr;
-        return 0;
+        return -1;
     }
 
-    *value = map_value;
-    free(canon_key);
+    if (value)
+        *value = map_value;
 
+    free(canon_key);
     return 0;
 }
 
