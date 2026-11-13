@@ -130,10 +130,6 @@ static void log_cells(da_cell cells) {
     LOG_INFO("}");
 }
 
-static int llen(void) {
-    return (int)(linc_hda_size(input.line) - 1);
-}
-
 static int line_len(void) {
     int rv = (int)(linc_hda_size(input.line) - 1) - input.start_i;
     ASSERT(rv >= 0);
@@ -146,7 +142,6 @@ static char *lstart(void) {
 
 static void ncol_cell(int *crow, int *ccol, int start_row, int col_n) {
     ASSERT_(GEQ, col_n, 0);
-    ASSERT_(GEQ, llen(), col_n);
     ASSERT(crow && ccol);
 
     *crow = start_row;
@@ -683,9 +678,10 @@ static void try_highlight_tok(lx_tok *tok, input_buf *ibuf) {
         return;
 
     if (tok->kind == LX_TOK_PIPE || tok->kind == LX_TOK_AND_IF ||
-        tok->kind == LX_TOK_OR_IF || tok->kind == LX_TOK_LPAREN ||
-        tok->kind == LX_TOK_RPAREN) {
+        tok->kind == LX_TOK_OR_IF) {
         input_add_highlight(start, end, PRINTTY_YELLOW, -1, false, false, ibuf);
+    } else if (tok->kind == LX_TOK_LPAREN || tok->kind == LX_TOK_RPAREN) {
+        input_add_highlight(start, end, PRINTTY_MAGENTA, -1, false, false, ibuf);
     } else if (lx_kind_is_redir(tok->kind) || tok->kind == LX_TOK_IO_NUM) {
         input_add_highlight(start, end, PRINTTY_CYAN, -1, false, false, ibuf);
     } else if (tok->kind == LX_TOK_AMPER) {
@@ -693,7 +689,22 @@ static void try_highlight_tok(lx_tok *tok, input_buf *ibuf) {
     }
 }
 
-static void input_token_hl(input_buf *ibuf) {
+static char *history_get_shadow(void) {
+    char *shadow = nullptr;
+
+    if (!input.hist.saved && line_len() > 0) {
+        for (size_t i = 0; i < linc_hda_size(input.hist.lines); ++i) {
+            char *hist_line = input.hist.lines[i];
+
+            if (strncmp(hist_line, lstart(), line_len()) == 0)
+                return &hist_line[line_len()];
+        }
+    }
+
+    return shadow;
+}
+
+static void input_highlight(input_buf *ibuf) {
     da_tok toks = {0};
 
     lx_tokenize(lstart(), &toks);
@@ -708,6 +719,23 @@ static void input_token_hl(input_buf *ibuf) {
         }
     }
 
+    char *shadow = history_get_shadow();
+
+    if (shadow) {
+        size_t shadow_len = strlen(shadow);
+
+        *linc_array_push(&ibuf->cells) = (input_cell){
+            .hl = true, .fg = PRINTTY_BLACK + 8, .bg = -1,
+        };
+
+        for (size_t i = 0; i < shadow_len; ++i)
+            push_cell(&shadow[i], 1, 0, &ibuf->cells);
+
+        *linc_array_push(&ibuf->cells) = (input_cell){
+            .hl = true, .attr_off = true
+        };
+    }
+
     lx_free(&toks);
 }
 
@@ -719,7 +747,7 @@ static void input_update(void) {
     int rows = input.rows;
     input_buf ibuf = get_cells();
 
-    input_token_hl(&ibuf);
+    input_highlight(&ibuf);
 
     input.prompt_len = ibuf.prompt_len;
 
@@ -1055,6 +1083,11 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
     switch (codepoint) {
     case 5: /*C-e*/
         input_move(line_len());
+
+        char *shadow = history_get_shadow();
+        if (shadow)
+            input_insert(INSERT_STR, shadow);
+
         break;
     case 1: /*C-a*/
         input_move(0);

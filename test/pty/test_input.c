@@ -615,7 +615,20 @@ TEST(input, complete_wildcard_directory_cycles_concrete_paths) {
     }
 }
 
-TEST(input, syntax_node_beyond_viewport) {
+TEST(input, trailing_slash_on_unreadable_directory) {
+    vt_send_str("mkdir -p -m 0300 /tmp/unreadable\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "mkdir -p -m 0300 /tmp/unreadable",
+        PROMPT
+    );
+
+    vt_send_str("cd /tmp/unreadable/");
+    assert_term_attr(0, PROMPT_LEN + 19,
+        PROMPT "%[g]cd%[] /tmp/unreadable/"
+    );
+}
+
+TEST(input, highlight_syntax_node_beyond_viewport) {
     test_resize_term(2, 5);
 
     vt_send_str("echo x\n");
@@ -647,7 +660,7 @@ TEST(input, syntax_node_beyond_viewport) {
     );
 }
 
-TEST(input, control_characters_dont_reset_highlighting) {
+TEST(input, highlight_control_characters_dont_reset_highlighting) {
     /* For this test the second ' should be highlighted
      * like a string. */
 
@@ -691,7 +704,7 @@ TEST(input, highlight_command_name_after_pipeline) {
 TEST(input, highlight_command_name_in_subshell) {
     vt_send_str("(echo)");
     assert_term_attr(0, PROMPT_LEN + 6,
-        PROMPT "%[y](%[g]echo%[y])%[]"
+        PROMPT "%[m](%[g]echo%[m])%[]"
     );
 }
 
@@ -712,21 +725,21 @@ TEST(input, highlight_redirect_with_io_number) {
 TEST(input, highlight_unterminated_subshell_contents) {
     vt_send_str("(echo");
     assert_term_attr(0, PROMPT_LEN + 5,
-        PROMPT "%[y](%[g]echo%[]"
+        PROMPT "%[m](%[g]echo%[]"
     );
 }
 
 TEST(input, highlight_subshell_after_pipeline) {
     vt_send_str("echo | (echo)");
     assert_term_attr(0, PROMPT_LEN + 13,
-        PROMPT "%[g]echo%[] %[y]|%[] %[y](%[g]echo%[y])%[]"
+        PROMPT "%[g]echo%[] %[y]|%[] %[m](%[g]echo%[m])%[]"
     );
 }
 
 TEST(input, highlight_subshell_redirect) {
     vt_send_str("(echo) > echo");
     assert_term_attr(0, PROMPT_LEN + 13,
-        PROMPT "%[y](%[g]echo%[y])%[] %[c]>%[] echo"
+        PROMPT "%[m](%[g]echo%[m])%[] %[c]>%[] echo"
     );
 }
 
@@ -819,18 +832,98 @@ TEST(input, highlight_partially_quoted_file_path) {
     );
 }
 
-TEST(input, trailing_slash_on_unreadable_directory) {
-    vt_send_str("mkdir -p -m 0300 /tmp/unreadable\n");
-    assert_term_clear(1, PROMPT_LEN,
-        PROMPT "mkdir -p -m 0300 /tmp/unreadable",
+TEST(input, shadow_displays_latest_history) {
+    vt_send_str("echo goodbye world!\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo goodbye world!",
+        "goodbye world!",
         PROMPT
     );
 
-    vt_send_str("cd /tmp/unreadable/");
-    assert_term_attr(0, PROMPT_LEN + 19,
-        PROMPT "%[g]cd%[] /tmp/unreadable/"
+    vt_send_str("echo hello world!\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo hello world!",
+        "hello world!",
+        PROMPT
+    );
+
+    vt_send_str("e");
+    assert_term_attr_clear(0, PROMPT_LEN + 1,
+        PROMPT "%[r,,b]e%[]%[B]cho hello world!%[]"
     );
 }
+
+TEST(input, shadow_cannot_be_edited) {
+    vt_send_str("echo hello world!\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo hello world!",
+        "hello world!",
+        PROMPT
+    );
+
+    vt_send_str("echo");
+    assert_term_attr_clear(0, PROMPT_LEN + 4,
+        PROMPT "%[g]echo%[B] hello world!%[]"
+    );
+
+    vt_send_key(VTERM_KEY_RIGHT, VTERM_MOD_NONE);
+    vt_send_key(VTERM_KEY_BACKSPACE, VTERM_MOD_NONE);
+    assert_term_attr_clear(0, PROMPT_LEN + 3,
+        PROMPT "%[r,,b]ech%[]%[B]o hello world!%[]"
+    );
+}
+
+TEST(input, shadow_shortcut_inserts_editable_string) {
+    vt_send_str("echo hello world!\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo hello world!",
+        "hello world!",
+        PROMPT
+    );
+
+    vt_send_str("echo");
+    vt_send_ch('e', VTERM_MOD_CTRL);
+    assert_term_attr_clear(0, PROMPT_LEN + 17,
+        PROMPT "%[g]echo%[] hello world!"
+    );
+
+    vt_send_key(VTERM_KEY_BACKSPACE, VTERM_MOD_NONE);
+    vt_send_str("\n");
+    assert_term_attr(2, PROMPT_LEN,
+        PROMPT "%[g]echo%[] hello world",
+        "hello world",
+        PROMPT
+    );
+}
+
+TEST(input, shadow_wrapping_and_unwrapping_on_resize) {
+    vt_send_str("echo hello world!\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo hello world!",
+        "hello world!",
+        PROMPT
+    );
+
+    vt_send_str("echo");
+    assert_term_attr_clear(0, PROMPT_LEN + 4,
+        PROMPT "%[g]echo%[B] hello world!%[]"
+    );
+
+    test_resize_term(5, 5);
+    assert_term_attr_clear(1, 1,
+        PROMPT "%[g]ech",
+        "o%[B] hel",
+        "lo wo",
+        "rld!%[]"
+    );
+
+    test_resize_term(15, 60);
+    assert_term_attr_clear(0, PROMPT_LEN + 4,
+        PROMPT "%[g]echo%[B] hello world!%[]"
+    );
+}
+
+// shadow wraps correctly
 
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
@@ -874,10 +967,11 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, complete_relative_path_with_prefix);
     RUN_TEST_CASE(input, complete_prefix_with_spaces_that_are_already_escaped);
     RUN_TEST_CASE(input, complete_wildcard_directory_cycles_concrete_paths);
+    RUN_TEST_CASE(input, trailing_slash_on_unreadable_directory);
 
     /* Highlighting */
-    RUN_TEST_CASE(input, syntax_node_beyond_viewport);
-    RUN_TEST_CASE(input, control_characters_dont_reset_highlighting);
+    RUN_TEST_CASE(input, highlight_syntax_node_beyond_viewport);
+    RUN_TEST_CASE(input, highlight_control_characters_dont_reset_highlighting);
     RUN_TEST_CASE(input, highlight_option);
     RUN_TEST_CASE(input, highlight_long_option);
     RUN_TEST_CASE(input, highlight_command_name_with_directory_prefix);
@@ -899,5 +993,9 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, highlight_contiguous_tokens);
     RUN_TEST_CASE(input, highlight_partially_quoted_file_path);
 
-    RUN_TEST_CASE(input, trailing_slash_on_unreadable_directory);
+    /* Shadowing */
+    RUN_TEST_CASE(input, shadow_displays_latest_history);
+    RUN_TEST_CASE(input, shadow_cannot_be_edited);
+    RUN_TEST_CASE(input, shadow_shortcut_inserts_editable_string);
+    RUN_TEST_CASE(input, shadow_wrapping_and_unwrapping_on_resize);
 }

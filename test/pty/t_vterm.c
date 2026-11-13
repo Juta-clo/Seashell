@@ -204,14 +204,21 @@ bool vt_snap_cmp(vt_snap *exp, bool attr) {
         vt_cell *exp_cell = &exp->cells.data[i];
         vt_cell *act_cell = &snap.cells.data[i];
 
+        bool success = true;
+
         if (exp_cell->fg != act_cell->fg)
-            return false;
+            success = false;
         if (exp_cell->bg != act_cell->bg)
-            return false;
+            success = false;
         if (exp_cell->bold != act_cell->bold)
-            return false;
+            success = false;
         if (exp_cell->under != act_cell->under)
+            success = false;
+
+        if (!success) {
+            vt_free_snap(&snap);
             return false;
+        }
     }
 
     if (exp->crow != snap.crow || exp->ccol != snap.ccol) {

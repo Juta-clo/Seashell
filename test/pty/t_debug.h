@@ -23,7 +23,7 @@ typedef enum {
 } gap_names;
 
 typedef enum {
-    COLOR_BRIGHT_WHITE = 8, /* ascii indexes use 0-7 */
+    COLOR_BRIGHT_WHITE = 16, /* ascii indexes use 0-15 */
     COLOR_ORANGE
 } curs_colors;
 
