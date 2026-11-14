@@ -753,7 +753,7 @@ TEST(input, highlight_command_not_found) {
 TEST(input, highlight_partially_quoted_command) {
     vt_send_str("'ec'ho");
     assert_term_attr(0, PROMPT_LEN + 6,
-        PROMPT "%[G]'ec'%[g]ho%[]"
+        PROMPT "%[g]'ec'ho%[]"
     );
 
     vt_send_ch('u', VTERM_MOD_CTRL);

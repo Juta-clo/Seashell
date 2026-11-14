@@ -539,124 +539,109 @@ static void input_add_highlight(int start, int end, int fg, int bg, bool bold,
     };
 }
 
-static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
-    ASSERT(word);
-    ASSERT(ibuf);
+static bool is_path(const char *text) {
+    if (*text == '\0')
+        return false;
 
-    comp_tok ctok = {0};
     da_charp hits = {0};
-    bool name_found = false;
+    linc_string glob = LINC_STRING_INIT;
     bool path_found = false;
 
-    int rv = input_index_tok(&ctok, word->i);
-    if (rv == -1 || ctok.kind == COMP_EMPTY) {
-        free_index_tok(&ctok);
-        return;
-    }
+    linc_string_appendf(&glob, "%s*", text);
+    glob_pattern(glob.cstr, glob.len, &hits);
 
-    if (*ctok.text != '\0') {
-        linc_string glob = LINC_STRING_INIT;
-        linc_string_appendf(&glob, "%s*", ctok.text);
-        glob_pattern(glob.cstr, glob.len, &hits);
-
-        for (size_t i = 0; i < hits.size; ++i) {
-            if (is_dir(hits.data[i]) || is_file(hits.data[i]))
-                path_found = true;
+    for (size_t i = 0; i < hits.size; ++i) {
+        if (is_dir(hits.data[i]) || is_file(hits.data[i])) {
+            path_found = true;
+            break;
         }
-
-        argv_free_free(&hits);
-        linc_string_free(&glob);
     }
 
-    if (ctok.kind == COMP_NAME) {
-        if (strstr(ctok.text, "/")) {
-            if (is_bin(ctok.text))
+    argv_free_free(&hits);
+    linc_string_free(&glob);
+
+    return path_found;
+}
+
+static bool is_name(const char *text) {
+    bool name_found = false;
+
+    if (strstr(text, "/")) {
+        if (is_bin(text))
+            name_found = true;
+    } else if (get_builtin(text)) {
+        name_found = true;
+    } else {
+        da_charp candidates = build_path_candidates(text);
+
+        for (size_t i = 0; i < candidates.size; ++i) {
+            if (is_bin(candidates.data[i])) {
                 name_found = true;
-        } else if (get_builtin(ctok.text)) {
-            name_found = true;
-        } else if (mp_str_lookup(&env.aliases, ctok.text, NULL) != -1) {
-            name_found = true;
-        } else {
-            da_charp candidates = build_path_candidates(ctok.text);
-
-            for (size_t i = 0; i < candidates.size; ++i) {
-                if (is_bin(candidates.data[i])) {
-                    name_found = true;
-                    break;
-                }
+                break;
             }
-
-            argv_free_free(&candidates);
         }
 
-        if (!name_found) {
-            int start = word->i;
-            int end = word->i + (word->n - 1);
-            int fg = PRINTTY_RED;
-            bool bold = true;
-            bool under = false;
-
-            if (path_found && is_bin(ctok.text)) {
-                fg = -1;
-                under = true;
-                bold = false;
-            }
-
-            if (cell_index(&start, &end, &ibuf->cells) != -1)
-                input_add_highlight(start, end, fg, -1, bold, under, ibuf);
-
-            free_index_tok(&ctok);
-            return;
-        }
+        argv_free_free(&candidates);
     }
+
+    if (mp_str_lookup(&env.aliases, text, NULL) != -1)
+        name_found = true;
+
+    return name_found;
+}
+
+static void highlight_command(comp_tok *ctok, input_buf *ibuf) {
+    bool name_found = is_name(ctok->text);
+    bool path_found = is_path(ctok->text);
+
+    int start = ctok->i;
+    int end = ctok->i + (ctok->n - 1);
+    int fg = -1;
+    bool bold = false;
+    bool under = false;
+
+    if (!name_found) {
+        if (!path_found) {
+            fg = PRINTTY_RED;
+            bold = true;
+        } else {
+            under = true;
+        }
+    } else {
+        fg = PRINTTY_GREEN;
+    }
+
+    if (cell_index(&start, &end, &ibuf->cells) != -1)
+        input_add_highlight(start, end, fg, -1, bold, under, ibuf);
+}
+
+static void highlight_arg(comp_tok *ctok, lx_tok *word, input_buf *ibuf) {
+    bool path_found = is_path(ctok->text);
 
     for (size_t i = 0; i < word->parts.size; ++i) {
         lx_part *part = &word->parts.data[i];
 
-        int start = part->i;
-        int end = part->i + (part->n - 1);
+        int start;
+        int end;
         int fg = -1;
-        bool under = false;
+        bool under = (path_found);
         bool bold = false;
 
         if (part->quote == LX_Q_NONE) {
+            start = part->i;
+            end = part->i + (part->n - 1);
 
-            if (ctok.kind == COMP_NAME) {
-                if (name_found) {
-                    fg = PRINTTY_GREEN;
-                    bold = false;
-                    under = false;
-                } else if (path_found) {
-                    fg = -1;
-                    bold = false;
-                    under = true;
-                }
-            } else if (ctok.kind == COMP_ARG) {
+            if (ctok->kind == COMP_ARG) {
                 if (part->raw[0] == '-' && part->raw[1] != '-')
                     fg = PRINTTY_CYAN;
 
                 if (part->raw[0] == '-' && part->raw[1] == '-')
                     fg = PRINTTY_BLUE;
-
-                bold = false;
-
-                if (path_found)
-                    under = true;
-            } else if (ctok.kind == COMP_REDIR) {
-                fg = -1;
-                bold = false;
-
-                if (path_found)
-                    under = true;
             }
         } else {
             start = part->i - 1;
             end = part->i + part->n;
             fg = PRINTTY_GREEN + 8;
-            bold = false;
-
-            if (path_found)
-                under = true;
 
             /* Is the quote terminated? */
             if (lstart()[part->i + part->n] == '\0')
@@ -665,6 +650,24 @@ static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
 
         if (cell_index(&start, &end, &ibuf->cells) != -1)
             input_add_highlight(start, end, fg, -1, bold, under, ibuf);
+    }
+}
+
+static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
+    ASSERT(word);
+    ASSERT(ibuf);
+
+    comp_tok ctok = {0};
+
+    if (input_index_tok(&ctok, word->i) == -1 || ctok.kind == COMP_EMPTY) {
+        free_index_tok(&ctok);
+        return;
+    }
+
+    if (ctok.kind == COMP_NAME) {
+        highlight_command(&ctok, ibuf);
+    } else {
+        highlight_arg(&ctok, word, ibuf);
     }
 
     free_index_tok(&ctok);
