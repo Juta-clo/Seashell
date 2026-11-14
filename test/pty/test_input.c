@@ -832,6 +832,57 @@ TEST(input, highlight_partially_quoted_file_path) {
     );
 }
 
+TEST(input, highlight_invalid_fd_dup_target_error) {
+    vt_send_str("cat >& foo");
+    assert_term_attr(0, PROMPT_LEN + 10,
+        PROMPT "%[g]cat%[] %[c]>&%[] %[r,,b]foo%[]"
+    );
+}
+
+TEST(input, highlight_pipe_error) {
+    vt_send_str("|");
+    assert_term_attr(0, PROMPT_LEN + 1,
+        PROMPT "%[r,,b]|%[]"
+    );
+}
+
+TEST(input, highlight_pipe_after_pipe_error) {
+    vt_send_str("cat ||");
+    assert_term_attr(0, PROMPT_LEN + 6,
+        PROMPT "%[g]cat%[] %[m]|%[y,,b]|%[]"
+    );
+}
+
+TEST(input, highlight_andor_error) {
+    vt_send_str("&&");
+    assert_term_attr(0, PROMPT_LEN + 2,
+        PROMPT "%[r,,b]&&%[]"
+    );
+}
+
+TEST(input, highlight_error_in_subshell) {
+    vt_send_str("(true && & echo");
+    assert_term_attr(0, PROMPT_LEN + 15,
+        PROMPT "%[m](%[g]true%[] %[y]&&%[] %[r,,b]&%[] %[g]echo%[]"
+    );
+}
+
+IGNORE_TEST(input, higlight_subshell_errors_are_contained) {
+    vt_send_str("(&&) > out");
+    assert_term_attr(0, PROMPT_LEN + 10,
+        PROMPT "%[m](%[r,,b]&&%[]%[m])%[] %[c]>%[] out"
+    );
+}
+
+TEST(input, highlight_error_after_initial_error) {
+    vt_send_str("| echo");
+    assert_term_attr(0, PROMPT_LEN + 6,
+        PROMPT "%[r,,b]|%[] %[g]echo%[]"
+    );
+}
+
+/********************SHADOWING********************/
+
 TEST(input, shadow_displays_latest_history) {
     vt_send_str("echo goodbye world!\n");
     assert_term_clear(2, PROMPT_LEN,
@@ -992,6 +1043,12 @@ TEST_GROUP_RUNNER(input) {
     RUN_TEST_CASE(input, highlight_async_andor_chain);
     RUN_TEST_CASE(input, highlight_contiguous_tokens);
     RUN_TEST_CASE(input, highlight_partially_quoted_file_path);
+    RUN_TEST_CASE(input, highlight_invalid_fd_dup_target_error);
+    RUN_TEST_CASE(input, highlight_pipe_error);
+    RUN_TEST_CASE(input, highlight_andor_error);
+    RUN_TEST_CASE(input, highlight_error_in_subshell);
+    RUN_TEST_CASE(input, higlight_subshell_errors_are_contained);
+    RUN_TEST_CASE(input, highlight_error_after_initial_error);
 
     /* Shadowing */
     RUN_TEST_CASE(input, shadow_displays_latest_history);

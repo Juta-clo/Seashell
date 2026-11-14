@@ -28,6 +28,7 @@
                 LOG_INFO("parse error near '%s'", tok_str((_tok)->kind)); \
             } \
         } \
+        *linc_array_push(&scan->err_toks) = *_tok; \
     } while (false)
 
 #define ERR_EOL() \
@@ -298,6 +299,11 @@ static int parse_subshell(ps_scan *scan) {
 
     scan->alias_shift += subsh_scan.alias_shift;
 
+    for (size_t i = 0; i < subsh_scan.err_toks.size; ++i) {
+        lx_tok *src = &subsh_scan.err_toks.data[i];
+        lx_tok_copy(linc_array_push(&scan->err_toks), src);
+    }
+
     if (!scan_final(scan))
         lx_shift_toks(shift, shift_n, &scan->toks->data[rparen_i]);
 
@@ -316,11 +322,11 @@ static bool in_andor(int i, ps_ast *ast, ps_info *info) {
             continue;
 
         if (andor->op == PS_AND_IF) {
-            info->kinds |= PS_ANDIF;
+            info->kinds |= PS_INFO_AND_IF;
         } else if (andor->op == PS_OR_IF) {
-            info->kinds |= PS_ORIF;
+            info->kinds |= PS_INFO_OR_IF;
         } else {
-            info->kinds |= PS_NOIF;
+            info->kinds |= PS_INFO_NO_IF;
         }
 
         info->andor = andor;
@@ -338,7 +344,7 @@ static bool in_cmd(int i, ps_andor *andor, ps_info *info) {
         if (i < cmd->i || i > cmd->i + cmd->n)
             continue;
 
-        info->kinds |= PS_CMD;
+        info->kinds |= PS_INFO_CMD;
         info->cmd = cmd;
 
         return true;
@@ -355,12 +361,12 @@ static bool in_word(int i, ps_cmd *cmd, ps_info *info) {
             continue;
 
         if (word_i == 0) {
-            info->kinds |= PS_NAME;
+            info->kinds |= PS_INFO_NAME;
         } else {
-            info->kinds |= PS_ARG;
+            info->kinds |= PS_INFO_ARG;
         }
 
-        info->kinds |= PS_CMD;
+        info->kinds |= PS_INFO_CMD;
         info->word = word;
 
         return true;
@@ -380,7 +386,7 @@ static bool in_redir(int i, ps_cmd *cmd, ps_info *info) {
         if (i < target->i || i > target->i + target->n)
             continue;
 
-        info->kinds |= PS_REDIR;
+        info->kinds |= PS_INFO_REDIR;
         info->redir = redir;
         info->word = target;
 
@@ -397,7 +403,7 @@ static bool in_segment(int i, ps_word *word, ps_info *info) {
         if (i < seg->i || i > seg->i + seg->n)
             continue;
 
-        info->kinds |= PS_SEG;
+        info->kinds |= PS_INFO_SEG;
         info->seg = seg;
 
         return true;
@@ -412,7 +418,7 @@ void ps_get_info(int i, ps_ast *ast, ps_info *info) {
     *info = (ps_info){0};
 
     if (ast->andors.size == 0) {
-        info->kinds |= PS_EMPTY;
+        info->kinds |= PS_INFO_EMPTY;
         return;
     }
 
@@ -440,6 +446,7 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
         };
     }
 
+    scan->err_toks.allo = ast->allo;
     ast->andors.allo = ast->allo;
     scan->ast = ast;
     scan->cur_tok = &scan->toks->data[0];

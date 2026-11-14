@@ -78,5 +78,6 @@ char *tok_str(lx_kind kind);
 bool lx_kind_is_redir(lx_kind kind);
 void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks);
 char *lx_errstr(lx_status stat);
+void log_toks(da_tok *toks);
 
 #endif

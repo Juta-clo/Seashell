@@ -24,16 +24,16 @@ typedef enum {
 } ps_cmd_kind;
 
 typedef enum {
-    PS_SUBSH = 1,
-    PS_ANDIF = 2,
-    PS_ORIF  = 4,
-    PS_NOIF  = 8,
-    PS_CMD   = 16,
-    PS_REDIR = 32,
-    PS_NAME  = 64,
-    PS_ARG   = 128,
-    PS_SEG   = 256,
-    PS_EMPTY = 512,
+    PS_INFO_SUBSH = 1,
+    PS_INFO_AND_IF = 2,
+    PS_INFO_OR_IF  = 4,
+    PS_INFO_NO_IF  = 8,
+    PS_INFO_CMD   = 16,
+    PS_INFO_REDIR = 32,
+    PS_INFO_NAME  = 64,
+    PS_INFO_ARG   = 128,
+    PS_INFO_SEG   = 256,
+    PS_INFO_EMPTY = 512,
 } ps_kind;
 
 typedef struct ps_segment ps_segment;
@@ -132,6 +132,7 @@ typedef struct {
     ps_andor_op andor_op;
     int alias_shift;
     ps_ast *ast;
+    da_tok err_toks;
 } ps_scan;
 
 void ps_get_info(int i, ps_ast *ast, ps_info *info);

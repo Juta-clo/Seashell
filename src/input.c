@@ -45,21 +45,21 @@ typedef char * linc_hds;
 static Printty *pt = nullptr;
 
 typedef enum {
-    COMP_NAME,
-    COMP_ARG,
-    COMP_REDIR,
-    COMP_EMPTY,
-} comp_tok_kind;
+    ITOK_NAME,
+    ITOK_ARG,
+    ITOK_REDIR,
+    ITOK_EMPTY,
+} index_tok_kind;
 
 typedef struct {
-    comp_tok_kind kind;
+    index_tok_kind kind;
     const char *text;
     int i, n;
     int off;
 
     ps_word *word;
     ps_ast ast;
-} comp_tok;
+} index_tok;
 
 typedef struct {
     char *data;
@@ -196,14 +196,14 @@ static void update_start_pos(void) {
     ASSERT_(G, input.rows, input.start_row);
 }
 
-static void free_index_tok(comp_tok *ctok) {
-    ps_free(&ctok->ast);
+static void free_index_tok(index_tok *itok) {
+    ps_free(&itok->ast);
 }
 
-static int input_index_tok(comp_tok *ctok, int ind) {
-    ASSERT(ctok);
+static int input_index_tok(index_tok *itok, int ind) {
+    ASSERT(itok);
 
-    *ctok = (comp_tok){0};
+    *itok = (index_tok){0};
     da_tok toks = {0};
     ps_info info = {0};
     ps_scan scan = {
@@ -213,33 +213,33 @@ static int input_index_tok(comp_tok *ctok, int ind) {
     };
 
     lx_tokenize(lstart(), &toks);
-    ps_parse(&scan, &ctok->ast);
-    ps_get_info(ind, &ctok->ast, &info);
+    ps_parse(&scan, &itok->ast);
+    ps_get_info(ind, &itok->ast, &info);
     lx_free(&toks);
 
-    if (info.kinds & PS_NAME || info.kinds & PS_ARG) {
+    if (info.kinds & PS_INFO_NAME || info.kinds & PS_INFO_ARG) {
         if (expand_word(info.word, nullptr, EXPAND_COMP) == -1)
             return -1;
 
-        ctok->kind = (info.kinds & PS_NAME) ? COMP_NAME : COMP_ARG;
-        ctok->text = info.word->arg;
-        ctok->i = info.word->i;
-        ctok->n = info.word->n;
-        ctok->word = info.word;
-    } else if (info.kinds & PS_REDIR) {
+        itok->kind = (info.kinds & PS_INFO_NAME) ? ITOK_NAME : ITOK_ARG;
+        itok->text = info.word->arg;
+        itok->i = info.word->i;
+        itok->n = info.word->n;
+        itok->word = info.word;
+    } else if (info.kinds & PS_INFO_REDIR) {
         if (expand_word(&info.redir->target, nullptr, EXPAND_COMP) == -1)
             return -1;
 
-        ctok->kind = COMP_REDIR;
-        ctok->text = info.redir->target.arg;
-        ctok->i = info.redir->target.i;
-        ctok->n = info.redir->target.n;
-        ctok->word = &info.redir->target;
+        itok->kind = ITOK_REDIR;
+        itok->text = info.redir->target.arg;
+        itok->i = info.redir->target.i;
+        itok->n = info.redir->target.n;
+        itok->word = &info.redir->target;
     } else {
-        ctok->kind = COMP_EMPTY;
-        ctok->text = "";
-        ctok->i = input.off;
-        ctok->n = 0;
+        itok->kind = ITOK_EMPTY;
+        itok->text = "";
+        itok->i = input.off;
+        itok->n = 0;
     }
 
     return 0;
@@ -590,90 +590,7 @@ static bool is_name(const char *text) {
     return name_found;
 }
 
-static void highlight_command(comp_tok *ctok, input_buf *ibuf) {
-    bool name_found = is_name(ctok->text);
-    bool path_found = is_path(ctok->text);
-
-    int start = ctok->i;
-    int end = ctok->i + (ctok->n - 1);
-    int fg = -1;
-    bool bold = false;
-    bool under = false;
-
-    if (!name_found) {
-        if (!path_found) {
-            fg = PRINTTY_RED;
-            bold = true;
-        } else {
-            under = true;
-        }
-    } else {
-        fg = PRINTTY_GREEN;
-    }
-
-    if (cell_index(&start, &end, &ibuf->cells) != -1)
-        input_add_highlight(start, end, fg, -1, bold, under, ibuf);
-}
-
-static void highlight_arg(comp_tok *ctok, lx_tok *word, input_buf *ibuf) {
-    bool path_found = is_path(ctok->text);
-
-    for (size_t i = 0; i < word->parts.size; ++i) {
-        lx_part *part = &word->parts.data[i];
-
-        int start;
-        int end;
-        int fg = -1;
-        bool under = (path_found);
-        bool bold = false;
-
-        if (part->quote == LX_Q_NONE) {
-            start = part->i;
-            end = part->i + (part->n - 1);
-
-            if (ctok->kind == COMP_ARG) {
-                if (part->raw[0] == '-' && part->raw[1] != '-')
-                    fg = PRINTTY_CYAN;
-
-                if (part->raw[0] == '-' && part->raw[1] == '-')
-                    fg = PRINTTY_BLUE;
-            }
-        } else {
-            start = part->i - 1;
-            end = part->i + part->n;
-            fg = PRINTTY_GREEN + 8;
-
-            /* Is the quote terminated? */
-            if (lstart()[part->i + part->n] == '\0')
-                --end;
-        }
-
-        if (cell_index(&start, &end, &ibuf->cells) != -1)
-            input_add_highlight(start, end, fg, -1, bold, under, ibuf);
-    }
-}
-
-static void try_highlight_word(lx_tok *word, input_buf *ibuf) {
-    ASSERT(word);
-    ASSERT(ibuf);
-
-    comp_tok ctok = {0};
-
-    if (input_index_tok(&ctok, word->i) == -1 || ctok.kind == COMP_EMPTY) {
-        free_index_tok(&ctok);
-        return;
-    }
-
-    if (ctok.kind == COMP_NAME) {
-        highlight_command(&ctok, ibuf);
-    } else {
-        highlight_arg(&ctok, word, ibuf);
-    }
-
-    free_index_tok(&ctok);
-}
-
-static void try_highlight_tok(lx_tok *tok, input_buf *ibuf) {
+static void highlight_tok(lx_tok *tok, input_buf *ibuf) {
     int start = tok->i;
     int end = tok->i + (tok->n - 1);
 
@@ -692,6 +609,80 @@ static void try_highlight_tok(lx_tok *tok, input_buf *ibuf) {
     }
 }
 
+static void highlight_err(int start, int end, input_buf *ibuf) {
+    int fg = PRINTTY_RED;
+    int bg = -1;
+    int bold = true;
+    int under = false;
+
+    if (cell_index(&start, &end, &ibuf->cells) != -1)
+        input_add_highlight(start, end, fg, bg, bold, under, ibuf);
+}
+
+static void highlight_command(ps_word *word, input_buf *ibuf) {
+    ASSERT(word && ibuf);
+    ASSERT(word->arg);
+
+    bool name_found = is_name(word->arg);
+    bool path_found = is_path(word->arg);
+
+    int start = word->i;
+    int end = word->i + (word->n - 1);
+    int fg = -1;
+    bool bold = false;
+    bool under = false;
+
+    if (name_found) {
+        fg = PRINTTY_GREEN;
+    } else if (path_found) {
+        under = true;
+    } else {
+        highlight_err(start, end, ibuf);
+        return;
+    }
+
+    if (cell_index(&start, &end, &ibuf->cells) != -1)
+        input_add_highlight(start, end, fg, -1, bold, under, ibuf);
+}
+
+static void highlight_arg(ps_word *word, bool redir, input_buf *ibuf) {
+    bool path_found = is_path(word->arg);
+
+    for (size_t i = 0; i < word->segments.size; ++i) {
+        ps_segment *seg = &word->segments.data[i];
+
+        int start;
+        int end;
+        int fg = -1;
+        bool under = (path_found);
+        bool bold = false;
+
+        if (seg->quote == PS_Q_NONE) {
+            start = seg->i;
+            end = seg->i + (seg->n - 1);
+
+            if (!redir) {
+                if (seg->raw[0] == '-' && seg->raw[1] != '-')
+                    fg = PRINTTY_CYAN;
+
+                if (seg->raw[0] == '-' && seg->raw[1] == '-')
+                    fg = PRINTTY_BLUE;
+            }
+        } else {
+            start = seg->i - 1;
+            end = seg->i + seg->n;
+            fg = PRINTTY_GREEN + 8;
+
+            /* Is the quote terminated? */
+            if (lstart()[seg->i + seg->n] == '\0')
+                --end;
+        }
+
+        if (cell_index(&start, &end, &ibuf->cells) != -1)
+            input_add_highlight(start, end, fg, -1, bold, under, ibuf);
+    }
+}
+
 static char *history_get_shadow(void) {
     char *shadow = nullptr;
 
@@ -707,20 +698,66 @@ static char *history_get_shadow(void) {
     return shadow;
 }
 
+static bool is_err_tok(lx_tok *tok, ps_scan *scan) {
+    for (size_t i = 0; i < scan->err_toks.size; ++i)
+        if (tok->i == scan->err_toks.data[i].i)
+            return true;
+
+    return false;
+}
+
 static void input_highlight(input_buf *ibuf) {
+    bool hl_complete = false;
+    size_t err_tok_i;
     da_tok toks = {0};
 
     lx_tokenize(lstart(), &toks);
 
-    for (size_t i = 0; i < toks.size; ++i) {
-        lx_tok *tok = &toks.data[i];
+    while (!hl_complete) {
+        ps_ast ast = {0};
+        ps_scan scan = { .toks = &toks };
+        ps_parse(&scan, &ast);
 
-        if (tok->kind == LX_TOK_WORD) {
-            try_highlight_word(tok, ibuf);
-        } else {
-            try_highlight_tok(tok, ibuf);
+        for (size_t i = 0; i < toks.size; ++i) {
+            lx_tok *tok = &toks.data[i];
+
+            if (is_err_tok(tok, &scan)) {
+                highlight_err(tok->i, tok->i + (tok->n - 1), ibuf);
+                err_tok_i = i + 1;
+            } else if (tok->kind != LX_TOK_WORD) {
+                highlight_tok(tok, ibuf);
+            } else  {
+                ps_info pinfo = {0};
+                ps_get_info(tok->i, &ast, &pinfo);
+
+                if (pinfo.kinds & PS_INFO_NAME) {
+                    expand_word(pinfo.word, NULL, EXPAND_COMP);
+                    highlight_command(pinfo.word, ibuf);
+                } else if (pinfo.kinds & PS_INFO_REDIR) {
+                    expand_word(pinfo.word, NULL, EXPAND_COMP);
+                    highlight_arg(pinfo.word, true, ibuf);
+                } else if (pinfo.kinds & PS_INFO_ARG) {
+                    expand_word(pinfo.word, NULL, EXPAND_COMP);
+                    highlight_arg(pinfo.word, false, ibuf);
+                }
+            }
         }
+
+        if (scan.err_toks.size != 0) {
+            da_tok next_toks = {0};
+
+            for (size_t i = err_tok_i; i < toks.size; ++i)
+                lx_tok_copy(linc_array_push(&next_toks), &toks.data[i]);
+
+            lx_free(&toks);
+            toks = next_toks;
+        } else {
+            hl_complete = true;
+        }
+
+        ps_free(&ast);
     }
+
 
     char *shadow = history_get_shadow();
 
@@ -1020,58 +1057,58 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
 
 static void input_complete(void) {
     da_charp hits = {0};
-    comp_tok ctok = {0};
+    index_tok itok = {0};
 
-    if (input_index_tok(&ctok, input.off) == -1) {
+    if (input_index_tok(&itok, input.off) == -1) {
         input_reset_comp();
-        free_index_tok(&ctok);
+        free_index_tok(&itok);
         return;
     }
 
-    if (ctok.kind == COMP_EMPTY) {
-        free_index_tok(&ctok);
+    if (itok.kind == ITOK_EMPTY) {
+        free_index_tok(&itok);
         return;
     }
 
-    da_segment *segs = &ctok.word->segments;
+    da_segment *segs = &itok.word->segments;
     ps_segment *last = &segs->data[segs->size - 1];
 
     if (input.off != last->i + last->n) {
-        free_index_tok(&ctok);
+        free_index_tok(&itok);
         return;
     }
 
     if (!input.comp.glob) {
-        linc_hds_append_n(input.comp.glob, ctok.text, strlen(ctok.text));
+        linc_hds_append_n(input.comp.glob, itok.text, strlen(itok.text));
         linc_hds_append_n(input.comp.glob, "*", 1);
     }
 
     if (!input.comp.orig)
-        input.comp.orig = make_word_str(ctok.word);
+        input.comp.orig = make_word_str(itok.word);
 
     LOG_INFO("Attempting Completion");
     LOG_INFO("    glob = %s", input.comp.glob);
     LOG_INFO("    orig = %s", input.comp.orig);
 
-    if (ctok.kind == COMP_NAME)
+    if (itok.kind == ITOK_NAME)
         input_complete_command(input.comp.glob, &hits);
 
-    if (ctok.kind == COMP_ARG || ctok.kind == COMP_REDIR || hits.size == 0)
+    if (itok.kind == ITOK_ARG || itok.kind == ITOK_REDIR || hits.size == 0)
         input_complete_file(input.comp.glob, input.comp.orig, &hits);
 
     if (hits.size == 0) {
         LOG_INFO("    Fail!");
-        free_index_tok(&ctok);
+        free_index_tok(&itok);
         return;
     }
 
     LOG_INFO("    Match = %s", hits.data[input.comp.i % hits.size]);
 
-    input_move(ctok.i);
-    input_delete(DELETE_RANGE, &(input_del_ctx){ ctok.i, ctok.n });
+    input_move(itok.i);
+    input_delete(DELETE_RANGE, &(input_del_ctx){ itok.i, itok.n });
     input_insert(INSERT_STR, hits.data[input.comp.i++ % hits.size]);
     argv_free_free(&hits);
-    free_index_tok(&ctok);
+    free_index_tok(&itok);
 }
 
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {

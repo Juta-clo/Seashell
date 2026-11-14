@@ -20,18 +20,34 @@ typedef struct {
     int status;
 } lx_scan;
 
-static void log_toks(da_tok *toks) {
-    return;
+void log_toks(da_tok *toks) {
+    if (toks->size == 0) {
+        LOG_INFO("tokens = { NONE }");
+        return;
+    }
 
-    LOG_INFO("lexed toks {");
+    LOG_INFO("tokens = {");
 
     for (size_t i = 0; i < toks->size; ++i) {
         lx_tok *tok = &toks->data[i];
 
         if (tok->kind == LX_TOK_WORD) {
-            LOG_INFO("    [%s]", tok->parts.data->raw);
+            for (size_t i = 0; i < tok->parts.size; ++i) {
+                lx_part *part = &tok->parts.data[i];
+
+                if (part->quote == LX_Q_DOUBLE) {
+                    LOG_INFO("    [\"%s\"], i=%d, n=%d", tok->parts.data->raw,
+                            tok->i, tok->n);
+                } else if (part->quote == LX_Q_SINGLE) {
+                    LOG_INFO("    ['%s'], i=%d, n=%d", tok->parts.data->raw,
+                            tok->i, tok->n);
+                } else {
+                    LOG_INFO("    [%s], i=%d, n=%d", tok->parts.data->raw,
+                            tok->i, tok->n);
+                }
+            }
         } else {
-            LOG_INFO("    %s", tok_str(tok->kind));
+            LOG_INFO("    %s, i=%d, n=%d", tok_str(tok->kind), tok->i, tok->n);
         }
     }
 
@@ -324,24 +340,26 @@ int lx_tokenize(const char *cmd, da_tok *toks) {
 
     try_end_part(&scan);
     try_end_tok(&scan, LX_EOL);
-    log_toks(toks);
+
+    if (false)
+        log_toks(toks);
 
     return scan.status;
 }
 
 char *tok_str(lx_kind kind) {
     switch (kind) {
-    case LX_TOK_PIPE:    return "|";
-    case LX_TOK_AMPER:      return "&";
-    case LX_TOK_RDR_IN:  return "<";
-    case LX_TOK_RDR_OUT: return ">";
-    case LX_TOK_FD_OUT:  return ">&";
-    case LX_TOK_FD_IN:  return "<&";
-    case LX_TOK_APPEND:  return ">>";
-    case LX_TOK_AND_IF:  return "&&";
-    case LX_TOK_OR_IF:   return "||";
-    case LX_TOK_LPAREN:  return "(";
-    case LX_TOK_RPAREN:  return ")";
+    case LX_TOK_PIPE:    return "PIPE[|]";
+    case LX_TOK_AMPER:   return "AMPER[&]";
+    case LX_TOK_RDR_IN:  return "RDR_IN[<]";
+    case LX_TOK_RDR_OUT: return "RDR_OUT[>]";
+    case LX_TOK_FD_OUT:  return "FD_OUT[>&]";
+    case LX_TOK_FD_IN:   return "FD_IN[<&]";
+    case LX_TOK_APPEND:  return "APPEND[>>]";
+    case LX_TOK_AND_IF:  return "AND_IF[&&]";
+    case LX_TOK_OR_IF:   return "OR_IF[||]";
+    case LX_TOK_LPAREN:  return "LPAREN[(]";
+    case LX_TOK_RPAREN:  return "RPAREN[)]";
     case LX_TOK_UNKNOWN: return "Unknown";
     case LX_TOK_WORD:    return "[word]";
     case LX_TOK_IO_NUM:  return "[io]";
