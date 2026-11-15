@@ -252,10 +252,13 @@ int config_field_prompt(linc_string *string) {
     if (lua_rawgeti(L, LUA_REGISTRYINDEX, ref_field_prompt) != LUA_TFUNCTION)
         fatal("unexpected lua reference");
 
-    char *cwd = xgetcwd(nullptr, 0);
+    char *cwd = getcwd(nullptr, 0);
+    if (!cwd)
+        cwd = xstrdup("?");
+
     char *home = getenv("HOME");
     if (!home)
-        home = "";
+        home = xstrdup(cwd);
 
     int last_status = 0;
     sh_var *var = lookup_var(&env.vars, "?");
