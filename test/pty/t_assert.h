@@ -17,6 +17,42 @@
 #define PROMPT "> "
 #define PROMPT_LEN 2
 
+#define HL_COL(_col, _str) "%[" #_col "]" #_str "%[]"
+#define HL_COL_RAW(_col, _str) "%[" _col "]" _str "%[]"
+
+#define HL_CMD(_cmd) HL_COL(g, _cmd)
+#define HL_CMD_RAW(_cmd) HL_COL_RAW("g", _cmd)
+#define HL_STR(_str) HL_COL_RAW("G", _str)
+#define HL_STR_PATH(_str) HL_COL_RAW("G,,u", _str)
+
+#define HL_OPT(_opt) HL_COL(c, _opt)
+#define HL_OPT_LONG(_opt) HL_COL(x, _opt)
+
+#define HL_IO(_io) HL_COL(c, _io)
+#define HL_RDR_OUT HL_COL(c, >)
+#define HL_RDR_IN HL_COL(c, <)
+#define HL_APPEND HL_COL(c, >>)
+#define HL_FD_OUT HL_COL(c, >&)
+#define HL_FD_IN HL_COL(c, <&)
+
+#define HL_PIPE HL_COL(y, |)
+#define HL_AND_IF HL_COL(y, &&)
+#define HL_OR_IF HL_COL(y, ||)
+#define HL_AMPER HL_COL_RAW("c,,b", "&")
+
+#define HL_LPAREN HL_COL_RAW("m", "(")
+#define HL_RPAREN HL_COL_RAW("m", ")")
+
+#define HL_PATH(_path) HL_COL_RAW(",,u", #_path)
+
+#define HL_INVAL "%[b,r,b]?%[]"
+#define HL_SYNTAX(_str) HL_COL_RAW("r,,b", #_str)
+#define HL_NO_CMD(_cmd) HL_COL_RAW("r,,b", #_cmd)
+#define HL_NO_CMD_RAW(_cmd) HL_COL_RAW("r,,b", _cmd)
+
+#define HL_SHADOW(_str) HL_COL_RAW("B", #_str)
+#define HL_SHADOW_RAW(_str) HL_COL_RAW("B", _str)
+
 bool verify_bytes(const char *str);
 bool verify_kill(int sig, const char *name);
 bool verify_pstate(const char *name, const char *state);

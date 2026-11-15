@@ -33,6 +33,9 @@ void run_all(void) {
     RUN_TEST_GROUP(glob);
     RUN_TEST_GROUP(termios);
     RUN_TEST_GROUP(input);
+    RUN_TEST_GROUP(highlight);
+    RUN_TEST_GROUP(completion);
+    RUN_TEST_GROUP(shadow);
     RUN_TEST_GROUP(resize);
     RUN_TEST_GROUP(config);
 
