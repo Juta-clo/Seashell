@@ -9,6 +9,42 @@
 
 TEST_GROUP(input);
 
+#define HL_COL(_col, _str) "%[" #_col "]" #_str "%[]"
+#define HL_COL_RAW(_col, _str) "%[" _col "]" _str "%[]"
+
+#define HL_CMD(_cmd) HL_COL(g, _cmd)
+#define HL_CMD_RAW(_cmd) HL_COL_RAW("g", _cmd)
+#define HL_STR(_str) HL_COL_RAW("G", _str)
+#define HL_STR_PATH(_str) HL_COL_RAW("G,,u", _str)
+
+#define HL_OPT(_opt) HL_COL(c, _opt)
+#define HL_OPT_LONG(_opt) HL_COL(x, _opt)
+
+#define HL_IO(_io) HL_COL(c, _io)
+#define HL_RDR_OUT HL_COL(c, >)
+#define HL_RDR_IN HL_COL(c, <)
+#define HL_APPEND HL_COL(c, >>)
+#define HL_FD_OUT HL_COL(c, >&)
+#define HL_FD_IN HL_COL(c, <&)
+
+#define HL_PIPE HL_COL(y, |)
+#define HL_AND_IF HL_COL(y, &&)
+#define HL_OR_IF HL_COL(y, ||)
+#define HL_AMPER HL_COL_RAW("c,,b", "&")
+
+#define HL_LPAREN HL_COL_RAW("m", "(")
+#define HL_RPAREN HL_COL_RAW("m", ")")
+
+#define HL_PATH(_path) HL_COL_RAW(",,u", #_path)
+
+#define HL_INVAL "%[b,r,b]?%[]"
+#define HL_SYNTAX(_str) HL_COL_RAW("r,,b", #_str)
+#define HL_NO_CMD(_cmd) HL_COL_RAW("r,,b", #_cmd)
+#define HL_NO_CMD_RAW(_cmd) HL_COL_RAW("r,,b", _cmd)
+
+#define HL_SHADOW(_str) HL_COL_RAW("B", #_str)
+#define HL_SHADOW_RAW(_str) HL_COL_RAW("B", _str)
+
 /************ Fixture ************/
 
 TEST_SETUP(input) {
@@ -639,8 +675,8 @@ TEST(input, highlight_syntax_node_beyond_viewport) {
 
     vt_send_str("echo '6789'");
     assert_term_attr_clear(1, 3,
-        "%[c]>...%[]",
-        "%[G]89'%[]"
+        HL_COL(c, >...),
+        HL_STR("89'")
     );
 
     /* Requires asserting vterm cell attributes!
@@ -649,8 +685,8 @@ TEST(input, highlight_syntax_node_beyond_viewport) {
 
     vt_send_ch('a', VTERM_MOD_CTRL);
     assert_term_attr_clear(0, PROMPT_LEN,
-        PROMPT "%[g]ech",
-        "o%[] %[G]'67%[]"
+        PROMPT HL_CMD(ech),
+        HL_CMD(o) " " HL_STR("'67")
     );
 
     vt_send_str("\n");
@@ -669,111 +705,112 @@ TEST(input, highlight_control_characters_dont_reset_highlighting) {
     vt_send_str("'");
 
     assert_term_attr_clear(0, PROMPT_LEN + 8,
-        PROMPT "%[g]echo%[] %[G]'%[]%[b,r,b]?%[]%[G]'%[]"
+        PROMPT HL_CMD(echo) " " HL_STR("'") HL_INVAL HL_STR("'")
     );
 }
 
 TEST(input, highlight_option) {
     vt_send_str("echo -o");
     assert_term_attr(0, PROMPT_LEN + 7,
-        PROMPT "%[g]echo%[] %[c]-o%[]"
+        PROMPT HL_CMD(echo) " " HL_OPT(-o)
     );
 }
 
 TEST(input, highlight_long_option) {
     vt_send_str("echo --long");
     assert_term_attr(0, PROMPT_LEN + 11,
-        PROMPT "%[g]echo%[] %[x]--long%[]"
+        PROMPT HL_CMD(echo) " " HL_OPT_LONG(--long)
     );
 }
 
 TEST(input, highlight_command_name_with_directory_prefix) {
     vt_send_str("/bin/echo");
     assert_term_attr(0, PROMPT_LEN + 9,
-        PROMPT "%[g]/bin/echo%[]"
+        PROMPT HL_CMD(/bin/echo)
     );
 }
 
 TEST(input, highlight_command_name_after_pipeline) {
     vt_send_str("echo | echo");
     assert_term_attr(0, PROMPT_LEN + 11,
-        PROMPT "%[g]echo%[] %[y]|%[] %[g]echo%[]"
+        PROMPT HL_CMD(echo) " " HL_PIPE " " HL_CMD(echo)
     );
 }
 
 TEST(input, highlight_command_name_in_subshell) {
     vt_send_str("(echo)");
     assert_term_attr(0, PROMPT_LEN + 6,
-        PROMPT "%[m](%[g]echo%[m])%[]"
+        PROMPT HL_LPAREN HL_CMD(echo) HL_RPAREN
     );
 }
 
 TEST(input, highlight_redirect) {
     vt_send_str("echo foo >/tmp");
     assert_term_attr(0, PROMPT_LEN + 14,
-        PROMPT "%[g]echo%[] foo %[c]>%[]%[,,u]/tmp%[]"
+        PROMPT HL_CMD(echo) " foo " HL_RDR_OUT HL_PATH(/tmp)
     );
 }
 
 TEST(input, highlight_redirect_with_io_number) {
     vt_send_str("echo foo 35>./bar");
     assert_term_attr(0, PROMPT_LEN + 17,
-        PROMPT "%[g]echo%[] foo %[c]35>%[]./bar"
+        PROMPT HL_CMD(echo) " foo " HL_IO(35) HL_RDR_OUT "./bar"
     );
 }
 
 TEST(input, highlight_unterminated_subshell_contents) {
     vt_send_str("(echo");
     assert_term_attr(0, PROMPT_LEN + 5,
-        PROMPT "%[m](%[g]echo%[]"
+        PROMPT HL_LPAREN HL_CMD(echo)
     );
 }
 
 TEST(input, highlight_subshell_after_pipeline) {
     vt_send_str("echo | (echo)");
     assert_term_attr(0, PROMPT_LEN + 13,
-        PROMPT "%[g]echo%[] %[y]|%[] %[m](%[g]echo%[m])%[]"
+        PROMPT HL_CMD(echo) " " HL_PIPE " " HL_LPAREN HL_CMD(echo) HL_RPAREN
     );
 }
 
 TEST(input, highlight_subshell_redirect) {
     vt_send_str("(echo) > echo");
     assert_term_attr(0, PROMPT_LEN + 13,
-        PROMPT "%[m](%[g]echo%[m])%[] %[c]>%[] echo"
+        PROMPT HL_LPAREN HL_CMD(echo) HL_RPAREN " " HL_RDR_OUT " echo"
     );
 }
 
 TEST(input, highlight_command_not_found) {
     vt_send_str("non-existant");
     assert_term_attr(0, PROMPT_LEN + 12,
-        PROMPT "%[r,,b]non-existant%[]"
+        PROMPT HL_NO_CMD(non-existant)
     );
 }
 
 TEST(input, highlight_partially_quoted_command) {
     vt_send_str("'ec'ho");
     assert_term_attr(0, PROMPT_LEN + 6,
-        PROMPT "%[g]'ec'ho%[]"
+        PROMPT HL_CMD_RAW("'ec'ho")
     );
 
     vt_send_ch('u', VTERM_MOD_CTRL);
     vt_send_str("'non'existant");
     assert_term_attr(0, PROMPT_LEN + 13,
-        PROMPT "%[r,,b]'non'existant%[]"
+        PROMPT HL_NO_CMD_RAW("'non'existant")
     );
 }
 
 TEST(input, highlight_multiple_quoted_segments) {
     vt_send_str("echo 'hello'beautiful\"world\"");
     assert_term_attr(0, PROMPT_LEN + 28,
-        PROMPT "%[g]echo%[] %[G]'hello'%[]beautiful%[G]\"world\"%[]"
+        PROMPT HL_CMD(echo) " " HL_STR("'hello'")
+            "beautiful" HL_STR("\"world\"")
     );
 }
 
 TEST(input, highlight_unterminated_quotes) {
     vt_send_str("echo 'hello");
     assert_term_attr(0, PROMPT_LEN + 11,
-        PROMPT "%[g]echo%[] %[G]'hello%[]"
+        PROMPT HL_CMD(echo) " " HL_STR("'hello")
     );
 }
 
@@ -786,98 +823,99 @@ TEST(input, highlight_alias_in_command_position) {
 
     vt_send_str("abc");
     assert_term_attr(0, PROMPT_LEN + 3,
-        PROMPT "%[g]abc%[]"
+        PROMPT HL_CMD(abc)
     );
 }
 
 TEST(input, highlight_builtin_in_command_position) {
     vt_send_str("set FOO bar");
     assert_term_attr(0, PROMPT_LEN + 11,
-        PROMPT "%[g]set%[] FOO bar"
+        PROMPT HL_CMD(set) " FOO bar"
     );
 }
 
 TEST(input, highlight_after_unsetting_path) {
     vt_send_str("unset PATH\n");
     assert_term_attr_clear(1, PROMPT_LEN,
-        PROMPT "%[g]unset%[] PATH",
+        PROMPT HL_CMD(unset) " PATH",
         PROMPT
     );
 
     vt_send_str("echo hi");
     assert_term_attr(0, PROMPT_LEN + 7,
-        PROMPT "%[r,,b]echo%[] hi"
+        PROMPT HL_NO_CMD(echo) " hi"
     );
 }
 
 TEST(input, highlight_async_andor_chain) {
     vt_send_str("true && false || true &");
     assert_term_attr(0, PROMPT_LEN + 23,
-        PROMPT "%[g]true%[] %[y]&&%[] %[g]false%[] %[y]||%[] %[g]true%[] "
-            "%[c,,b]&%[]"
+        PROMPT HL_CMD(true) " " HL_AND_IF " " HL_CMD(false) " " HL_OR_IF
+            " " HL_CMD(true) " " HL_AMPER
     );
 }
 
 TEST(input, highlight_contiguous_tokens) {
     vt_send_str("true&&false>foo");
     assert_term_attr(0, PROMPT_LEN + 15,
-        PROMPT "%[g]true%[y]&&%[g]false%[c]>%[]foo"
+        PROMPT HL_CMD(true) HL_AND_IF HL_CMD(false) HL_RDR_OUT "foo"
     );
 }
 
 TEST(input, highlight_partially_quoted_file_path) {
     vt_send_str("cat './te's");
     assert_term_attr(0, PROMPT_LEN + 11,
-        PROMPT "%[g]cat%[] %[G,,u]'./te'%[]%[,,u]s"
+        PROMPT HL_CMD(cat) " " HL_STR_PATH("'./te'") HL_PATH(s)
     );
 }
 
 TEST(input, highlight_invalid_fd_dup_target_error) {
     vt_send_str("cat >& foo");
     assert_term_attr(0, PROMPT_LEN + 10,
-        PROMPT "%[g]cat%[] %[c]>&%[] %[r,,b]foo%[]"
+        PROMPT HL_CMD(cat) " " HL_FD_OUT " " HL_SYNTAX(foo)
     );
 }
 
 TEST(input, highlight_pipe_error) {
     vt_send_str("|");
     assert_term_attr(0, PROMPT_LEN + 1,
-        PROMPT "%[r,,b]|%[]"
+        PROMPT HL_SYNTAX(|)
     );
 }
 
 TEST(input, highlight_pipe_after_pipe_error) {
     vt_send_str("cat ||");
     assert_term_attr(0, PROMPT_LEN + 6,
-        PROMPT "%[g]cat%[] %[m]|%[y,,b]|%[]"
+        PROMPT HL_CMD(cat) " " HL_SYNTAX(||)
     );
 }
 
 TEST(input, highlight_andor_error) {
     vt_send_str("&&");
     assert_term_attr(0, PROMPT_LEN + 2,
-        PROMPT "%[r,,b]&&%[]"
+        PROMPT HL_SYNTAX(&&)
     );
 }
 
 TEST(input, highlight_error_in_subshell) {
     vt_send_str("(true && & echo");
     assert_term_attr(0, PROMPT_LEN + 15,
-        PROMPT "%[m](%[g]true%[] %[y]&&%[] %[r,,b]&%[] %[g]echo%[]"
+        PROMPT HL_LPAREN HL_CMD(true) " " HL_AND_IF " " HL_SYNTAX(&)
+          " " HL_CMD(echo)
     );
 }
 
 IGNORE_TEST(input, higlight_subshell_errors_are_contained) {
     vt_send_str("(&&) > out");
     assert_term_attr(0, PROMPT_LEN + 10,
-        PROMPT "%[m](%[r,,b]&&%[]%[m])%[] %[c]>%[] out"
+        PROMPT HL_LPAREN HL_AND_IF HL_RPAREN " " HL_RDR_OUT " out"
     );
 }
 
 TEST(input, highlight_error_after_initial_error) {
     vt_send_str("| echo");
     assert_term_attr(0, PROMPT_LEN + 6,
-        PROMPT "%[r,,b]|%[] %[g]echo%[]"
+        PROMPT HL_SYNTAX(|) " " HL_CMD(echo)
     );
 }
 
@@ -900,7 +938,7 @@ TEST(input, shadow_displays_latest_history) {
 
     vt_send_str("e");
     assert_term_attr_clear(0, PROMPT_LEN + 1,
-        PROMPT "%[r,,b]e%[]%[B]cho hello world!%[]"
+        PROMPT HL_NO_CMD(e) HL_SHADOW(cho hello world!)
     );
 }
 
@@ -914,13 +952,13 @@ TEST(input, shadow_cannot_be_edited) {
 
     vt_send_str("echo");
     assert_term_attr_clear(0, PROMPT_LEN + 4,
-        PROMPT "%[g]echo%[B] hello world!%[]"
+        PROMPT HL_CMD(echo) HL_SHADOW_RAW(" hello world!")
     );
 
     vt_send_key(VTERM_KEY_RIGHT, VTERM_MOD_NONE);
     vt_send_key(VTERM_KEY_BACKSPACE, VTERM_MOD_NONE);
     assert_term_attr_clear(0, PROMPT_LEN + 3,
-        PROMPT "%[r,,b]ech%[]%[B]o hello world!%[]"
+        PROMPT HL_NO_CMD(ech) HL_SHADOW_RAW("o hello world!")
     );
 }
 
@@ -935,13 +973,13 @@ TEST(input, shadow_shortcut_inserts_editable_string) {
     vt_send_str("echo");
     vt_send_ch('e', VTERM_MOD_CTRL);
     assert_term_attr_clear(0, PROMPT_LEN + 17,
-        PROMPT "%[g]echo%[] hello world!"
+        PROMPT HL_CMD(echo) " hello world!"
     );
 
     vt_send_key(VTERM_KEY_BACKSPACE, VTERM_MOD_NONE);
     vt_send_str("\n");
     assert_term_attr(2, PROMPT_LEN,
-        PROMPT "%[g]echo%[] hello world",
+        PROMPT HL_CMD(echo) " hello world",
         "hello world",
         PROMPT
     );
@@ -957,20 +995,20 @@ TEST(input, shadow_wrapping_and_unwrapping_on_resize) {
 
     vt_send_str("echo");
     assert_term_attr_clear(0, PROMPT_LEN + 4,
-        PROMPT "%[g]echo%[B] hello world!%[]"
+        PROMPT HL_CMD(echo) HL_SHADOW_RAW(" hello world!")
     );
 
     test_resize_term(5, 5);
     assert_term_attr_clear(1, 1,
-        PROMPT "%[g]ech",
-        "o%[B] hel",
-        "lo wo",
-        "rld!%[]"
+        PROMPT HL_CMD(ech),
+        HL_CMD(o) HL_SHADOW_RAW(" hel"),
+        HL_SHADOW(lo wo),
+        HL_SHADOW(rld!)
     );
 
     test_resize_term(15, 60);
     assert_term_attr_clear(0, PROMPT_LEN + 4,
-        PROMPT "%[g]echo%[B] hello world!%[]"
+        PROMPT HL_CMD(echo) HL_SHADOW_RAW(" hello world!")
     );
 }
 
