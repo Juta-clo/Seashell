@@ -202,6 +202,9 @@ static linc_string get_job_str(const job_event *jev, int off, int argv_off,
 }
 
 static void reclaim_terminal(bool restore_termios) {
+    if (!env.job_ctrl)
+        return;
+
     if (xtcsetpgrp(env.tty_fd, getpgrp()) == -1)
         err_exit("tcsetpgrp");
 
@@ -229,7 +232,8 @@ static void handle_job_event(job_event *jev) {
             /* Return instead of fatal? */
         }
 
-        xtcgetattr(env.tty_fd, &job->tio);
+        if (env.job_ctrl)
+            xtcgetattr(env.tty_fd, &job->tio);
         reclaim_terminal(true);
         print_job_event(jev, false);
     }
@@ -314,9 +318,10 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             pld.pgid = (env.subsh & SUBSH_ASYNC) ? getpgrp() : cpid;
 
         if (cpid == 0) {
-            xsetpgid(0, pld.pgid);
+            if (env.job_ctrl)
+                xsetpgid(0, pld.pgid);
 
-            if (!bg && first && !env.subsh)
+            if (!bg && first && !env.subsh && env.job_ctrl)
                 xtcsetpgrp(env.tty_fd, getpgrp());
 
             env.subsh |= SUBSH_PIPE;
@@ -355,12 +360,11 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             }
         }
 
-        if (setpgid(cpid, pld.pgid) == -1 && errno != EACCES) {
-            LOG_ERR("setpgid: %m");
-            err_exit("setpgid");
-        }
+        if (env.job_ctrl)
+            if (setpgid(cpid, pld.pgid) == -1 && errno != EACCES)
+                err_exit("setpgid");
 
-        if (!bg && first && !env.subsh)
+        if (!bg && first && !env.subsh && env.job_ctrl)
             xtcsetpgrp(env.tty_fd, pld.pgid);
 
         if (!first)
@@ -501,10 +505,9 @@ static int shell_run_andor(ps_ast *ast) {
             };
 
             free(ast_str);
-
             job_add(jid, &pld);
 
-            if (!env.subsh)
+            if (!env.subsh && env.job_ctrl)
                 printf("[%d] %d\n", jid, subsh_pgid);
 
             return status;
@@ -524,13 +527,13 @@ static int shell_run_andor(ps_ast *ast) {
 
             env.fg_jid = job_new_id();
 
-            if (!ast->bg && !env.subsh)
+            if (!ast->bg && !env.subsh && env.job_ctrl)
                 xtcgetattr(env.tty_fd, &env.tio);
 
             shell_start_pline(&andor->pline, ast->bg, env.fg_jid);
 
             if (ast->bg) {
-                if (!env.subsh) {
+                if (!env.subsh && env.job_ctrl) {
                     pid_t pgrp = job_lookup_pgrp(env.fg_jid);
                     printf("[%d] %d\n", env.fg_jid, pgrp);
                 }
@@ -544,7 +547,7 @@ static int shell_run_andor(ps_ast *ast) {
 
             env.fg_jid = NOFG;
 
-            if (rv == PLINE_INTR) {
+            if (rv == PLINE_INTR && env.job_ctrl) {
                 cursor_left_anchor();
                 break;
             }
@@ -560,7 +563,8 @@ static int shell_run_andor(ps_ast *ast) {
 static int subshell_fork(void) {
     int cpid = xfork();
 
-    setpgid(cpid, cpid);
+    if (env.job_ctrl)
+        setpgid(cpid, cpid);
 
     if (cpid != 0)
         return cpid;
@@ -604,8 +608,10 @@ static int line_to_ast(char *line, ps_ast *ast) {
 }
 
 void seashell_shutdown(void) {
-    input_deinit();
-    job_hangup();
+    if (env.job_ctrl) {
+        input_deinit();
+        job_hangup();
+    }
 
     LOG_INFO("seashell shutting down");
 }
@@ -638,7 +644,7 @@ void process_signals(void) {
 }
 
 void print_job_event(const job_event *jev, bool verbose) {
-    if (env.subsh)
+    if (env.subsh || !env.job_ctrl)
         return;
 
     linc_string msg = LINC_STRING_INIT;

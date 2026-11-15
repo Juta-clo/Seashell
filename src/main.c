@@ -9,6 +9,11 @@ int main(int argc, char *const *argv) {
     xatexit(seashell_shutdown);
     env_init(argc, argv);
 
+    if (opts[OPT_SCRIPT].found) {
+        int status = shell_run(opts[OPT_SCRIPT].val_str);
+        exit(status);
+    }
+
     while (true) {
         char *line;
         linc_string prompt = shell_get_prompt();
@@ -19,11 +24,8 @@ int main(int argc, char *const *argv) {
         if (env.lua) {
             luart_run(line);
         } else {
-            int status = shell_run(line);
-
-            if (env.subsh)
-                _exit(status);
-
+            shell_run(line);
+            ASSERT(env.subsh == 0); /* shouldn't be possible */
             process_signals();
         }
 

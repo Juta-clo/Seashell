@@ -62,7 +62,7 @@ static int validate_argc(char **argv, size_t min_argc, size_t max_argc) {
 }
 
 static int run_fg_builtin(char **argv, shell_env *env) {
-    if (env->subsh) {
+    if (env->subsh || !env->job_ctrl) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -124,7 +124,7 @@ static int run_fg_builtin(char **argv, shell_env *env) {
 }
 
 static int run_bg_builtin(char **argv, shell_env *env) {
-    if (env->subsh) {
+    if (env->subsh || !env->job_ctrl) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -162,7 +162,7 @@ static int run_bg_builtin(char **argv, shell_env *env) {
 
 /* default sig is TERM */
 static int run_kill_builtin(char **argv, shell_env *env) {
-    if (env->subsh) {
+    if (env->subsh || !env->job_ctrl) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }
@@ -228,7 +228,7 @@ static int run_kill_builtin(char **argv, shell_env *env) {
 }
 
 static int run_jobs_builtin(char **argv, shell_env *env) {
-    if (env->subsh) {
+    if (env->subsh || !env->job_ctrl) {
         fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
         return EXIT_FAILURE;
     }

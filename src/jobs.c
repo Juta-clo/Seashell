@@ -357,7 +357,9 @@ void job_add(int jid, sh_pgrp *pld) {
     job->jid = jid;
     job->stat = JOB_RUN;
     job->pgrp.pgid = pld->pgid;
-    xtcgetattr(env.tty_fd, &job->tio);
+
+    if (env.job_ctrl)
+        xtcgetattr(env.tty_fd, &job->tio);
 
     for (size_t i = 0; i < pld->procs.size; ++i) {
         jc_proc *proc = linc_array_push(&job->pgrp.procs);

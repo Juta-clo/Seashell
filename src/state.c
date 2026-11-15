@@ -54,6 +54,12 @@ linc_args opts[] = {
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_STR
     },
+    [OPT_SCRIPT] = {
+        .long_name = "script",
+        .short_name = 'c',
+        .has_arg = LINC_ARGS_ARG_REQ,
+        .arg_type = LINC_ARGS_ARG_STR
+    },
     {0}
 };
 
@@ -159,19 +165,25 @@ void env_init(int argc, char *const *argv) {
     xsetvbuf(stderr, nullptr, _IONBF, 0);
 
     env.fg_jid = NOFG;
-    env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
 
     linc_init(argc, argv);
     mp_init(&env.aliases, ALIAS_MAX);
 
     log_init();
     var_init();
-    input_init();
-    luart_init();
     sig_init();
+    luart_init();
 
-    input_set_suspend_mask(env.og_mask);
-    input_sig_cb = process_signals;
+    env.job_ctrl = !opts[OPT_SCRIPT].found;
+
+    if (env.job_ctrl) {
+        env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
+
+        input_init();
+        input_set_suspend_mask(env.og_mask);
+        input_sig_cb = process_signals;
+
+    }
 
     if (!opts[OPT_CLEAN].found)
         config_init();

@@ -23,6 +23,7 @@ typedef struct {
     int fg_jid;
     uint64_t subsh;
     bool lua;
+    bool job_ctrl;
 
     int tty_fd;
     struct termios tio;
@@ -43,6 +44,7 @@ enum {
     OPT_LOG_LEVEL,
     OPT_CLEAN,
     OPT_CONFIG,
+    OPT_SCRIPT,
     OPT_MAX,
 };
 
