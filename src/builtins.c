@@ -289,14 +289,28 @@ static int run_exit_builtin(char **argv, shell_env *_) {
     return EXIT_SUCCESS;
 }
 
-static int run_cd_builtin(char **argv, shell_env *_) {
-    if (validate_argc(argv, 1, 1) == -1)
+static int run_cd_builtin(char **argv, shell_env *env) {
+    if (validate_argc(argv, 0, 1) == -1)
         return EXIT_FAILURE;
 
-    if (chdir(argv[1]) == -1) {
+    char *path;
+
+    if (!argv[1]) {
+        sh_var *var = lookup_var(&env->vars, "HOME");
+        path = (var) ? var->value : ".";
+    } else {
+        path = argv[1];
+    }
+
+    if (chdir(path) == -1) {
         fprintf(stderr, "%s: chdir: %s\n", argv[0], strerror(errno));
         return EXIT_FAILURE;
     }
+
+    char cwd_buf[PATH_MAX];
+
+    if (getcwd(cwd_buf, PATH_MAX))
+        add_var(&env->vars, "PWD", cwd_buf, false);
 
     return EXIT_SUCCESS;
 }

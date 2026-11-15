@@ -145,6 +145,11 @@ static void var_init(void) {
         free(rhs);
     }
 
+    char cwd_buf[PATH_MAX];
+
+    if (getcwd(cwd_buf, PATH_MAX))
+        add_var(&env.vars, "PWD", cwd_buf, false);
+
     add_var(&env.vars, "?", "0", false);
 }
 
