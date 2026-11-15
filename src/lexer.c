@@ -318,9 +318,7 @@ int lx_tokenize(const char *cmd, da_tok *toks) {
                     try_end_tok(&scan, kind);
 
                     scan.c += tok_len(kind) - 1;
-                }
-
-                else if (kind == LX_TOK_UNKNOWN) {
+                } else if (kind == LX_TOK_UNKNOWN) {
                     ensure_tok(toks, LX_TOK_WORD, &scan);
                     ensure_part(&scan, LX_Q_NONE);
                 }
@@ -349,17 +347,17 @@ int lx_tokenize(const char *cmd, da_tok *toks) {
 
 char *tok_str(lx_kind kind) {
     switch (kind) {
-    case LX_TOK_PIPE:    return "PIPE[|]";
-    case LX_TOK_AMPER:   return "AMPER[&]";
-    case LX_TOK_RDR_IN:  return "RDR_IN[<]";
-    case LX_TOK_RDR_OUT: return "RDR_OUT[>]";
-    case LX_TOK_FD_OUT:  return "FD_OUT[>&]";
-    case LX_TOK_FD_IN:   return "FD_IN[<&]";
-    case LX_TOK_APPEND:  return "APPEND[>>]";
-    case LX_TOK_AND_IF:  return "AND_IF[&&]";
-    case LX_TOK_OR_IF:   return "OR_IF[||]";
-    case LX_TOK_LPAREN:  return "LPAREN[(]";
-    case LX_TOK_RPAREN:  return "RPAREN[)]";
+    case LX_TOK_PIPE:    return "|";
+    case LX_TOK_AMPER:   return "&";
+    case LX_TOK_RDR_IN:  return "<";
+    case LX_TOK_RDR_OUT: return ">";
+    case LX_TOK_FD_OUT:  return ">&";
+    case LX_TOK_FD_IN:   return "<&";
+    case LX_TOK_APPEND:  return ">>";
+    case LX_TOK_AND_IF:  return "&&";
+    case LX_TOK_OR_IF:   return "||";
+    case LX_TOK_LPAREN:  return "(";
+    case LX_TOK_RPAREN:  return ")";
     case LX_TOK_UNKNOWN: return "Unknown";
     case LX_TOK_WORD:    return "[word]";
     case LX_TOK_IO_NUM:  return "[io]";

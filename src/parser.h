@@ -24,6 +24,12 @@ typedef enum {
 } ps_cmd_kind;
 
 typedef enum {
+    PS_WORD_SIMPLE,
+    PS_WORD_CMD_SUB,
+    PS_WORD_FILE_SUB,
+} ps_word_kind;
+
+typedef enum {
     PS_INFO_SUBSH = 1,
     PS_INFO_AND_IF = 2,
     PS_INFO_OR_IF  = 4,
@@ -65,9 +71,17 @@ struct ps_segment {
 };
 
 struct ps_word {
-    da_segment segments;
+    ps_word_kind kind;
     char *arg;
     int i, n;
+
+    union {
+        struct {
+            da_segment segments;
+        };
+
+        ps_ast subsh;
+    };
 };
 
 struct ps_redir {
@@ -86,6 +100,7 @@ struct ps_cmd {
     ps_cmd_kind kind;
     da_redir redirs;
     int i, n;
+    bool has_sub;
 
     union {
         struct {

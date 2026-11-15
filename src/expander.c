@@ -190,7 +190,7 @@ int expand_word(ps_word *word, da_charp *argv, int type) {
     return 0;
 }
 
-static int create_argv(ps_cmd *cmd) {
+static int expand_cmd(ps_cmd *cmd) {
     da_charp argv = { .allo = cmd->words.allo };
 
     for (size_t i = 0; i < cmd->words.size; ++i)
@@ -208,7 +208,7 @@ int expand_pline(const ps_pline *pline) {
         ps_cmd *cmd = &pline->cmds.data[j];
 
         if (cmd->kind == PS_CMD_SIMPLE)
-            if (create_argv(cmd) == -1)
+            if (expand_cmd(cmd) == -1)
                 return -1;
 
         for (size_t k = 0; k < cmd->redirs.size; ++k) {

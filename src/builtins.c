@@ -303,7 +303,7 @@ static int run_cd_builtin(char **argv, shell_env *env) {
     }
 
     if (chdir(path) == -1) {
-        fprintf(stderr, "%s: chdir: %s\n", argv[0], strerror(errno));
+        fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
         return EXIT_FAILURE;
     }
 

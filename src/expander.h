@@ -24,8 +24,8 @@ struct ex_tok {
 typedef struct ex_tok ex_tok;
 LINC_ARRAY_TYPE(da_ex_tok, ex_tok);
 
-int expand_word(ps_word *word, da_charp *argv, int type);
 linc_string expand_seg(const char *seg, bool *has_glob);
+int expand_word(ps_word *word, da_charp *argv, int type);
 int expand_pline(const ps_pline *pline);
 
 #endif

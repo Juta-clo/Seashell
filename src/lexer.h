@@ -57,14 +57,12 @@ LINC_ARRAY_TYPE(da_part, lx_part);
 struct lx_tok {
     lx_kind kind;
     bool is_num;
+    int i, n;
 
     union {
         da_part parts;
         int io_num;
     };
-
-    int i;
-    int n;
 };
 
 typedef struct lx_tok lx_tok;

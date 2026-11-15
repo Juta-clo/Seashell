@@ -295,6 +295,81 @@ static void child_redir_setup(da_redir *redirs) {
 static int subshell_fork(void);
 static int shell_run_andor(ps_ast *ast);
 
+static void expand_substitutions(ps_cmd *cmd) {
+    for (size_t i = 0; i < cmd->words.size; ++i) {
+        ps_word *word = &cmd->words.data[i];
+        if (word->kind != PS_WORD_CMD_SUB)
+            continue;
+
+        linc_string arg = LINC_STRING_INIT;
+        arg.allo = word->subsh.allo;
+
+        int pipe_fd[2];
+        xpipe(pipe_fd);
+
+        pid_t cpid = xfork();
+
+        if (cpid == 0) {
+            xdup2_move(pipe_fd[1], STDOUT_FILENO);
+            xclose(pipe_fd[0]);
+            word->subsh.bg = false;
+            _exit(shell_run_andor(&word->subsh));
+        }
+
+        xclose(pipe_fd[1]);
+
+        struct pollfd pfd[] = {
+            { .fd = pipe_fd[0], .events = POLLIN }
+        };
+
+        bool done = false;
+        int poll_for = 1;
+        int wopt = WNOHANG;
+        int wakeup = POLLHUP | POLLIN | POLLERR | POLLNVAL;
+        char rbuf[4096];
+
+        while (!done) {
+            int rv = waitpid(cpid, NULL, wopt);
+            if (rv == -1)
+                err_exit("waitpid");
+
+             if (rv == cpid) {
+                 done = true;
+                 poll_for = -1;
+             }
+
+             while (true) {
+                int ready = xpoll(pfd, ARRLEN(pfd), poll_for);
+                if (ready == 0)
+                    break;
+
+                if (pfd->revents & wakeup) {
+                    int num_read = read(pipe_fd[0], rbuf, sizeof(rbuf) - 1);
+                    if (num_read == -1)
+                        err_exit("read");
+
+                    if (num_read == 0) {
+                        wopt = 0;
+                        break;
+                    }
+
+                    rbuf[num_read] = '\0';
+                    linc_string_append(&arg, rbuf);
+                }
+            }
+        }
+
+        size_t len = arg.len;
+        while (len && arg.cstr[len - 1] == '\n')
+            arg.cstr[--len] = '\0';
+
+        word->arg = arg.cstr;
+        cmd->argv[i] = word->arg;
+
+        xclose(pipe_fd[0]);
+    }
+}
+
 static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
     if (!pline)
         ASSERT(pline);
@@ -338,11 +413,16 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             export_vars(&env.vars);
             sig_restore(&env.og_mask);
 
-            if (cur_cmd->kind == PS_CMD_SUBSH) {
+            if (cur_cmd->kind == PS_CMD_SUBSH || cur_cmd->has_sub) {
                 env.subsh |= SUBSH_ASYNC;
                 sig_block(SIGCHLD);
                 sig_set_handler(SIGCHLD, sigchld_handler);
-                _exit(shell_run_andor(&cur_cmd->subsh));
+
+                if (cur_cmd->kind == PS_CMD_SUBSH)
+                    _exit(shell_run_andor(&cur_cmd->subsh));
+
+                if (cur_cmd->has_sub)
+                    expand_substitutions(cur_cmd);
             }
 
             int status;
@@ -449,12 +529,7 @@ static int shell_wait_pline(int jid, int *status) {
                         *status = jev->last->term_sig + 128;
                     }
 
-                    if (jev->intr_sig) {
-                        rv = PLINE_INTR;
-                    } else {
-                        rv = 0;
-                    }
-
+                    rv = (jev->intr_sig) ? PLINE_INTR : 0;
                     goto cleanup;
                 }
 
@@ -466,7 +541,6 @@ static int shell_wait_pline(int jid, int *status) {
                     }
 
                     rv = 0;
-
                     goto cleanup;
                 }
             }

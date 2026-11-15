@@ -360,7 +360,7 @@ TEST(shell, builtin_and_or_logic) {
     vt_send_str("cd /non-existant || echo ?\n");
     assert_term_clear(3, PROMPT_LEN,
         PROMPT "cd /non-existant || echo ?",
-        "cd: chdir: No such file or directory",
+        "cd: No such file or directory",
         "?",
         PROMPT
     );
@@ -368,7 +368,7 @@ TEST(shell, builtin_and_or_logic) {
     vt_send_str("cd /non-existant && echo ?\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "cd /non-existant && echo ?",
-        "cd: chdir: No such file or directory",
+        "cd: No such file or directory",
         PROMPT
     );
 }
@@ -1210,6 +1210,81 @@ TEST(shell, job_control_message_subshell_with_append_redirection) {
     );
 }
 
+TEST(shell, simple_command_substitution) {
+    vt_send_str("echo (printf foo)\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo (printf foo)",
+        "foo",
+        PROMPT
+    );
+}
+
+TEST(shell, command_substitution_with_andor_chain) {
+    vt_send_str("echo (true && echo foo)\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo (true && echo foo)",
+        "foo",
+        PROMPT
+    );
+}
+
+TEST(shell, multiple_command_substitutions) {
+    vt_send_str("echo (printf a) (printf b)\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo (printf a) (printf b)",
+        "a b",
+        PROMPT
+    );
+}
+
+TEST(shell, command_substitution_within_subshell) {
+    vt_send_str("(echo (printf foo))\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "(echo (printf foo))",
+        "foo",
+        PROMPT
+    );
+}
+
+IGNORE_TEST(shell, command_substitution_as_redirection_target) {
+    vt_send_str("echo hi > (printf /tmp/shtest)\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "echo foo > (printf /tmp/shtest)",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/shtest");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest",
+        "foo",
+        PROMPT
+    );
+}
+
+IGNORE_TEST(shell, command_substitution_embedded_in_string) {
+    vt_send_str("echo \"hello (printf world!)\"\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo \"hello (printf world!)\"",
+        "hello world!",
+        PROMPT
+    );
+}
+
+IGNORE_TEST(shell, builtin_with_command_substitution) {
+    vt_send_str("cd (echo /tmp)\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "cd (echo /tmp)",
+        PROMPT
+    );
+
+    vt_send_str("echo $PWD");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo $PWD",
+        "/tmp",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1282,4 +1357,11 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, job_control_message_with_complex_ast_in_subshell);
     RUN_TEST_CASE(shell, job_control_message_subshell_with_redirect);
     RUN_TEST_CASE(shell, job_control_message_subshell_with_append_redirection);
+    RUN_TEST_CASE(shell, simple_command_substitution);
+    RUN_TEST_CASE(shell, command_substitution_with_andor_chain);
+    RUN_TEST_CASE(shell, multiple_command_substitutions);
+    RUN_TEST_CASE(shell, command_substitution_within_subshell);
+    RUN_TEST_CASE(shell, command_substitution_as_redirection_target);
+    RUN_TEST_CASE(shell, command_substitution_embedded_in_string);
+    RUN_TEST_CASE(shell, builtin_with_command_substitution);
 }

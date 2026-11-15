@@ -20,7 +20,7 @@ TEST_TEAR_DOWN(highlight) {
 
 // NOLINTBEGIN(bugprone-suspicious-missing-comma)
 
-TEST(highlight, highlight_syntax_node_beyond_viewport) {
+TEST(highlight, syntax_node_beyond_viewport) {
     test_resize_term(2, 5);
 
     vt_send_str("echo x\n");
@@ -52,7 +52,7 @@ TEST(highlight, highlight_syntax_node_beyond_viewport) {
     );
 }
 
-TEST(highlight, highlight_control_characters_dont_reset_highlighting) {
+TEST(highlight, control_characters_dont_reset_highlighting) {
     /* For this test the second ' should be highlighted
      * like a string. */
 
@@ -65,84 +65,84 @@ TEST(highlight, highlight_control_characters_dont_reset_highlighting) {
     );
 }
 
-TEST(highlight, highlight_option) {
+TEST(highlight, option) {
     vt_send_str("echo -o");
     assert_term_attr(0, PROMPT_LEN + 7,
         PROMPT HL_CMD(echo) " " HL_OPT(-o)
     );
 }
 
-TEST(highlight, highlight_long_option) {
+TEST(highlight, long_option) {
     vt_send_str("echo --long");
     assert_term_attr(0, PROMPT_LEN + 11,
         PROMPT HL_CMD(echo) " " HL_OPT_LONG(--long)
     );
 }
 
-TEST(highlight, highlight_command_name_with_directory_prefix) {
+TEST(highlight, command_name_with_directory_prefix) {
     vt_send_str("/bin/echo");
     assert_term_attr(0, PROMPT_LEN + 9,
         PROMPT HL_CMD(/bin/echo)
     );
 }
 
-TEST(highlight, highlight_command_name_after_pipeline) {
+TEST(highlight, command_name_after_pipeline) {
     vt_send_str("echo | echo");
     assert_term_attr(0, PROMPT_LEN + 11,
         PROMPT HL_CMD(echo) " " HL_PIPE " " HL_CMD(echo)
     );
 }
 
-TEST(highlight, highlight_command_name_in_subshell) {
+TEST(highlight, command_name_in_subshell) {
     vt_send_str("(echo)");
     assert_term_attr(0, PROMPT_LEN + 6,
         PROMPT HL_LPAREN HL_CMD(echo) HL_RPAREN
     );
 }
 
-TEST(highlight, highlight_redirect) {
+TEST(highlight, redirect) {
     vt_send_str("echo foo >/tmp");
     assert_term_attr(0, PROMPT_LEN + 14,
         PROMPT HL_CMD(echo) " foo " HL_RDR_OUT HL_PATH(/tmp)
     );
 }
 
-TEST(highlight, highlight_redirect_with_io_number) {
+TEST(highlight, redirect_with_io_number) {
     vt_send_str("echo foo 35>./bar");
     assert_term_attr(0, PROMPT_LEN + 17,
         PROMPT HL_CMD(echo) " foo " HL_IO(35) HL_RDR_OUT "./bar"
     );
 }
 
-TEST(highlight, highlight_unterminated_subshell_contents) {
+TEST(highlight, unterminated_subshell_contents) {
     vt_send_str("(echo");
     assert_term_attr(0, PROMPT_LEN + 5,
         PROMPT HL_LPAREN HL_CMD(echo)
     );
 }
 
-TEST(highlight, highlight_subshell_after_pipeline) {
+TEST(highlight, subshell_after_pipeline) {
     vt_send_str("echo | (echo)");
     assert_term_attr(0, PROMPT_LEN + 13,
         PROMPT HL_CMD(echo) " " HL_PIPE " " HL_LPAREN HL_CMD(echo) HL_RPAREN
     );
 }
 
-TEST(highlight, highlight_subshell_redirect) {
+TEST(highlight, subshell_redirect) {
     vt_send_str("(echo) > echo");
     assert_term_attr(0, PROMPT_LEN + 13,
         PROMPT HL_LPAREN HL_CMD(echo) HL_RPAREN " " HL_RDR_OUT " echo"
     );
 }
 
-TEST(highlight, highlight_command_not_found) {
+TEST(highlight, command_not_found) {
     vt_send_str("non-existant");
     assert_term_attr(0, PROMPT_LEN + 12,
         PROMPT HL_NO_CMD(non-existant)
     );
 }
 
-TEST(highlight, highlight_partially_quoted_command) {
+TEST(highlight, partially_quoted_command) {
     vt_send_str("'ec'ho");
     assert_term_attr(0, PROMPT_LEN + 6,
         PROMPT HL_CMD_RAW("'ec'ho")
@@ -155,7 +155,7 @@ TEST(highlight, highlight_partially_quoted_command) {
     );
 }
 
-TEST(highlight, highlight_multiple_quoted_segments) {
+TEST(highlight, multiple_quoted_segments) {
     vt_send_str("echo 'hello'beautiful\"world\"");
     assert_term_attr(0, PROMPT_LEN + 28,
         PROMPT HL_CMD(echo) " " HL_STR("'hello'")
@@ -163,14 +163,14 @@ TEST(highlight, highlight_multiple_quoted_segments) {
     );
 }
 
-TEST(highlight, highlight_unterminated_quotes) {
+TEST(highlight, unterminated_quotes) {
     vt_send_str("echo 'hello");
     assert_term_attr(0, PROMPT_LEN + 11,
         PROMPT HL_CMD(echo) " " HL_STR("'hello")
     );
 }
 
-TEST(highlight, highlight_alias_in_command_position) {
+TEST(highlight, alias_in_command_position) {
     vt_send_str("alias abc foo\n");
     assert_term_clear(1, PROMPT_LEN,
         PROMPT "alias abc foo",
@@ -183,14 +183,14 @@ TEST(highlight, highlight_alias_in_command_position) {
     );
 }
 
-TEST(highlight, highlight_builtin_in_command_position) {
+TEST(highlight, builtin_in_command_position) {
     vt_send_str("set FOO bar");
     assert_term_attr(0, PROMPT_LEN + 11,
         PROMPT HL_CMD(set) " FOO bar"
     );
 }
 
-TEST(highlight, highlight_after_unsetting_path) {
+TEST(highlight, after_unsetting_path) {
     vt_send_str("unset PATH\n");
     assert_term_attr_clear(1, PROMPT_LEN,
         PROMPT HL_CMD(unset) " PATH",
@@ -203,7 +203,7 @@ TEST(highlight, highlight_after_unsetting_path) {
     );
 }
 
-TEST(highlight, highlight_async_andor_chain) {
+TEST(highlight, async_andor_chain) {
     vt_send_str("true && false || true &");
     assert_term_attr(0, PROMPT_LEN + 23,
         PROMPT HL_CMD(true) " " HL_AND_IF " " HL_CMD(false) " " HL_OR_IF
@@ -211,49 +211,49 @@ TEST(highlight, highlight_async_andor_chain) {
     );
 }
 
-TEST(highlight, highlight_contiguous_tokens) {
+TEST(highlight, contiguous_tokens) {
     vt_send_str("true&&false>foo");
     assert_term_attr(0, PROMPT_LEN + 15,
         PROMPT HL_CMD(true) HL_AND_IF HL_CMD(false) HL_RDR_OUT "foo"
     );
 }
 
-TEST(highlight, highlight_partially_quoted_file_path) {
+TEST(highlight, partially_quoted_file_path) {
     vt_send_str("cat './te's");
     assert_term_attr(0, PROMPT_LEN + 11,
         PROMPT HL_CMD(cat) " " HL_STR_PATH("'./te'") HL_PATH(s)
     );
 }
 
-TEST(highlight, highlight_invalid_fd_dup_target_error) {
+TEST(highlight, invalid_fd_dup_target_error) {
     vt_send_str("cat >& foo");
     assert_term_attr(0, PROMPT_LEN + 10,
         PROMPT HL_CMD(cat) " " HL_FD_OUT " " HL_SYNTAX(foo)
     );
 }
 
-TEST(highlight, highlight_pipe_error) {
+TEST(highlight, pipe_error) {
     vt_send_str("|");
     assert_term_attr(0, PROMPT_LEN + 1,
         PROMPT HL_SYNTAX(|)
     );
 }
 
-TEST(highlight, highlight_pipe_after_pipe_error) {
+TEST(highlight, pipe_after_pipe_error) {
     vt_send_str("cat ||");
     assert_term_attr(0, PROMPT_LEN + 6,
         PROMPT HL_CMD(cat) " " HL_SYNTAX(||)
     );
 }
 
-TEST(highlight, highlight_andor_error) {
+TEST(highlight, andor_error) {
     vt_send_str("&&");
     assert_term_attr(0, PROMPT_LEN + 2,
         PROMPT HL_SYNTAX(&&)
     );
 }
 
-TEST(highlight, highlight_error_in_subshell) {
+TEST(highlight, error_in_subshell) {
     vt_send_str("(true && & echo");
     assert_term_attr(0, PROMPT_LEN + 15,
         PROMPT HL_LPAREN HL_CMD(true) " " HL_AND_IF " " HL_SYNTAX(&)
@@ -261,17 +261,17 @@ TEST(highlight, highlight_error_in_subshell) {
     );
 }
 
-IGNORE_TEST(highlight, higlight_subshell_errors_are_contained) {
-    vt_send_str("(&&) > out");
-    assert_term_attr(0, PROMPT_LEN + 10,
-        PROMPT HL_LPAREN HL_AND_IF HL_RPAREN " " HL_RDR_OUT " out"
-    );
-}
-
-TEST(highlight, highlight_error_after_initial_error) {
+TEST(highlight, error_after_initial_error) {
     vt_send_str("| echo");
     assert_term_attr(0, PROMPT_LEN + 6,
         PROMPT HL_SYNTAX(|) " " HL_CMD(echo)
+    );
+}
+
+IGNORE_TEST(highlight, subshell_errors_are_contained) {
+    vt_send_str("(&&) > out");
+    assert_term_attr(0, PROMPT_LEN + 10,
+        PROMPT HL_LPAREN HL_AND_IF HL_RPAREN " " HL_RDR_OUT " out"
     );
 }
 
@@ -280,32 +280,32 @@ TEST(highlight, highlight_error_after_initial_error) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(highlight) {
-    RUN_TEST_CASE(highlight, highlight_syntax_node_beyond_viewport);
-    RUN_TEST_CASE(highlight, highlight_control_characters_dont_reset_highlighting);
-    RUN_TEST_CASE(highlight, highlight_option);
-    RUN_TEST_CASE(highlight, highlight_long_option);
-    RUN_TEST_CASE(highlight, highlight_command_name_with_directory_prefix);
-    RUN_TEST_CASE(highlight, highlight_command_name_after_pipeline);
-    RUN_TEST_CASE(highlight, highlight_command_name_in_subshell);
-    RUN_TEST_CASE(highlight, highlight_redirect);
-    RUN_TEST_CASE(highlight, highlight_redirect_with_io_number);
-    RUN_TEST_CASE(highlight, highlight_unterminated_subshell_contents);
-    RUN_TEST_CASE(highlight, highlight_subshell_after_pipeline);
-    RUN_TEST_CASE(highlight, highlight_subshell_redirect);
-    RUN_TEST_CASE(highlight, highlight_command_not_found);
-    RUN_TEST_CASE(highlight, highlight_partially_quoted_command);
-    RUN_TEST_CASE(highlight, highlight_multiple_quoted_segments);
-    RUN_TEST_CASE(highlight, highlight_unterminated_quotes);
-    RUN_TEST_CASE(highlight, highlight_alias_in_command_position);
-    RUN_TEST_CASE(highlight, highlight_builtin_in_command_position);
-    RUN_TEST_CASE(highlight, highlight_after_unsetting_path);
-    RUN_TEST_CASE(highlight, highlight_async_andor_chain);
-    RUN_TEST_CASE(highlight, highlight_contiguous_tokens);
-    RUN_TEST_CASE(highlight, highlight_partially_quoted_file_path);
-    RUN_TEST_CASE(highlight, highlight_invalid_fd_dup_target_error);
-    RUN_TEST_CASE(highlight, highlight_pipe_error);
-    RUN_TEST_CASE(highlight, highlight_andor_error);
-    RUN_TEST_CASE(highlight, highlight_error_in_subshell);
-    RUN_TEST_CASE(highlight, higlight_subshell_errors_are_contained);
-    RUN_TEST_CASE(highlight, highlight_error_after_initial_error);
+    RUN_TEST_CASE(highlight, syntax_node_beyond_viewport);
+    RUN_TEST_CASE(highlight, control_characters_dont_reset_highlighting);
+    RUN_TEST_CASE(highlight, option);
+    RUN_TEST_CASE(highlight, long_option);
+    RUN_TEST_CASE(highlight, command_name_with_directory_prefix);
+    RUN_TEST_CASE(highlight, command_name_after_pipeline);
+    RUN_TEST_CASE(highlight, command_name_in_subshell);
+    RUN_TEST_CASE(highlight, redirect);
+    RUN_TEST_CASE(highlight, redirect_with_io_number);
+    RUN_TEST_CASE(highlight, unterminated_subshell_contents);
+    RUN_TEST_CASE(highlight, subshell_after_pipeline);
+    RUN_TEST_CASE(highlight, subshell_redirect);
+    RUN_TEST_CASE(highlight, command_not_found);
+    RUN_TEST_CASE(highlight, partially_quoted_command);
+    RUN_TEST_CASE(highlight, multiple_quoted_segments);
+    RUN_TEST_CASE(highlight, unterminated_quotes);
+    RUN_TEST_CASE(highlight, alias_in_command_position);
+    RUN_TEST_CASE(highlight, builtin_in_command_position);
+    RUN_TEST_CASE(highlight, after_unsetting_path);
+    RUN_TEST_CASE(highlight, async_andor_chain);
+    RUN_TEST_CASE(highlight, contiguous_tokens);
+    RUN_TEST_CASE(highlight, partially_quoted_file_path);
+    RUN_TEST_CASE(highlight, invalid_fd_dup_target_error);
+    RUN_TEST_CASE(highlight, pipe_error);
+    RUN_TEST_CASE(highlight, andor_error);
+    RUN_TEST_CASE(highlight, error_in_subshell);
+    RUN_TEST_CASE(highlight, error_after_initial_error);
+    RUN_TEST_CASE(highlight, subshell_errors_are_contained);
 }

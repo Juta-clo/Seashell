@@ -234,7 +234,7 @@ static int expand_alias(ps_scan *scan) {
     return 0;
 }
 
-static int parse_subshell(ps_scan *scan) {
+static int parse_subshell(ps_ast *subsh, ps_scan *scan) {
     int status = 0;
 
     if (scan->toks->data[scan->i].kind != LX_TOK_LPAREN) {
@@ -278,9 +278,7 @@ static int parse_subshell(ps_scan *scan) {
         *linc_array_push(&subsh_toks) = tok;
     }
 
-    scan->cur_cmd->kind = PS_CMD_SUBSH;
-
-    scan->cur_cmd->subsh = (ps_ast){
+    *subsh = (ps_ast){
         .allo = scan->ast->allo,
         .nested = true
     };
@@ -291,7 +289,7 @@ static int parse_subshell(ps_scan *scan) {
         .alias = scan->alias,
     };
 
-    if (ps_parse(&subsh_scan, &scan->cur_cmd->subsh) == -1)
+    if (ps_parse(&subsh_scan, subsh) == -1)
         status = -1;
 
     int shift = subsh_scan.alias_shift;
@@ -366,7 +364,6 @@ static bool in_word(int i, ps_cmd *cmd, ps_info *info) {
             info->kinds |= PS_INFO_ARG;
         }
 
-        info->kinds |= PS_INFO_CMD;
         info->word = word;
 
         return true;
@@ -429,7 +426,11 @@ void ps_get_info(int i, ps_ast *ast, ps_info *info) {
             } else if (info->cmd->kind == PS_CMD_SUBSH) {
                 ps_get_info(i, &info->cmd->subsh, info);
             } else if (in_word(i, info->cmd, info)) {
-                in_segment(i, info->word, info);
+                if (info->word->kind == PS_WORD_CMD_SUB) {
+                    ps_get_info(i, &info->word->subsh, info);
+                } else {
+                    in_segment(i, info->word, info);
+                }
             }
         }
     }
@@ -500,7 +501,6 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
             if (!scan->cur_cmd)
                 add_cmd(&scan->cur_andor->pline.cmds, scan);
 
-            scan->cur_cmd->words.allo = scan->ast->allo;
             ps_word *word = linc_array_push(&scan->cur_cmd->words);
             *word = (ps_word){ .segments.allo = scan->ast->allo };
 
@@ -545,13 +545,36 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
             if (!scan->cur_andor)
                 add_andor(&ast->andors, scan->andor_op, scan);
 
-            if (scan->cur_cmd)
-                goto fail_tok;
+            if (scan->cur_cmd) {
+                scan->cur_cmd->has_sub = true;
 
-            add_cmd(&scan->cur_andor->pline.cmds, scan);
+                ps_word *word = linc_array_push(&scan->cur_cmd->words);
+                *word = (ps_word){
+                    .kind = PS_WORD_CMD_SUB,
+                    .i = scan->cur_tok->i
+                };
 
-            if (parse_subshell(scan) == -1)
-                goto fail;
+                int rv = parse_subshell(&word->subsh, scan);
+
+                lx_tok *last;
+                if (scan->i < scan->toks->size) {
+                    last = scan->cur_tok;
+                } else {
+                    last = &scan->toks->data[scan->toks->size - 1];
+                }
+
+                word->n = last->i + last->n - word->i;
+
+                if (rv == -1)
+                    goto fail;
+            } else {
+                add_cmd(&scan->cur_andor->pline.cmds, scan);
+                scan->cur_cmd->kind = PS_CMD_SUBSH;
+
+                if (parse_subshell(&scan->cur_cmd->subsh, scan) == -1)
+                    goto fail;
+            }
+
             break;
         case LX_TOK_RPAREN:
             goto fail_tok;

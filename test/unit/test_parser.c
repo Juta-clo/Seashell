@@ -535,7 +535,6 @@ TEST(parser, multiple_redirects) {
 }
 
 TEST(parser, subshell_fail_rejections) {
-    validate_fail("a (b && c)");
     validate_fail("a > (b && c)");
     validate_fail("(a |)");
 }
