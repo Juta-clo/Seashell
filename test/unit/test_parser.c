@@ -245,7 +245,7 @@ static void validate_ast(const ps_ast *exp, const ps_ast *act) {
 }
 
 static void validate(const char *shell_cmd, const ps_ast *exp) {
-    if (lx_tokenize(shell_cmd, &expected_tokens) != LX_OK)
+    if (lx_tokenize(shell_cmd, strlen(shell_cmd), &expected_tokens) != LX_OK)
         TEST_FAIL_MESSAGE("lx_tokenize() failed");
 
     ps_scan scan = {
@@ -261,7 +261,7 @@ static void validate(const char *shell_cmd, const ps_ast *exp) {
 }
 
 static void validate_alias(const char *shell_cmd, const ps_ast *exp) {
-    if (lx_tokenize(shell_cmd, &expected_tokens) != LX_OK)
+    if (lx_tokenize(shell_cmd, strlen(shell_cmd), &expected_tokens) != LX_OK)
         TEST_FAIL_MESSAGE("lx_tokenize() failed");
 
     ps_scan scan = {
@@ -277,7 +277,7 @@ static void validate_alias(const char *shell_cmd, const ps_ast *exp) {
 }
 
 static void validate_fail(const char *shell_cmd) {
-    if (lx_tokenize(shell_cmd, &expected_tokens) == -1)
+    if (lx_tokenize(shell_cmd, strlen(shell_cmd), &expected_tokens) == -1)
         TEST_FAIL_MESSAGE("lx_tokenize() failed");
 
     ps_scan scan = {

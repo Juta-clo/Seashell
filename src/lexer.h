@@ -20,6 +20,7 @@ typedef enum {
     LX_TOK_IO_NUM,
     LX_TOK_UNKNOWN,
     LX_TOK_WORD,
+    LX_CMD_SUB_START,
     LX_WHITE_SPACE,
     LX_EOL,
 } lx_kind;
@@ -33,10 +34,9 @@ typedef enum {
 typedef enum {
     LX_FAIL = -1,
     LX_OK,
-    LX_ERRMEM,
-    LX_ERRINPUT,
     LX_ERRNOENDQUOTE,
-    LX_ERREMPTYESC
+    LX_ERREMPTYESC,
+    LX_ERRCMDSUB
 } lx_status;
 
 typedef enum {
@@ -68,7 +68,9 @@ struct lx_tok {
 typedef struct lx_tok lx_tok;
 LINC_ARRAY_TYPE(da_tok, lx_tok);
 
-int lx_tokenize(const char *cmd, da_tok *tokens);
+int lx_get_rparen(const char *str, size_t n);
+int lx_tokenize(const char *cmd, size_t n, da_tok *tokens);
+
 void lx_free_tok(lx_tok *tok);
 void lx_free(da_tok *tokens);
 void lx_tok_copy(lx_tok *dest, lx_tok *src);

@@ -1211,49 +1211,58 @@ TEST(shell, job_control_message_subshell_with_append_redirection) {
 }
 
 TEST(shell, simple_command_substitution) {
-    vt_send_str("echo (printf foo)\n");
+    vt_send_str("echo $(printf foo)\n");
     assert_term_clear(2, PROMPT_LEN,
-        PROMPT "echo (printf foo)",
+        PROMPT "echo $(printf foo)",
         "foo",
         PROMPT
     );
 }
 
 TEST(shell, command_substitution_with_andor_chain) {
-    vt_send_str("echo (true && echo foo)\n");
+    vt_send_str("echo $(true && echo foo)\n");
     assert_term_clear(2, PROMPT_LEN,
-        PROMPT "echo (true && echo foo)",
+        PROMPT "echo $(true && echo foo)",
         "foo",
         PROMPT
     );
 }
 
 TEST(shell, multiple_command_substitutions) {
-    vt_send_str("echo (printf a) (printf b)\n");
+    vt_send_str("echo $(printf a) $(printf b)\n");
     assert_term_clear(2, PROMPT_LEN,
-        PROMPT "echo (printf a) (printf b)",
+        PROMPT "echo $(printf a) $(printf b)",
         "a b",
         PROMPT
     );
 }
 
-TEST(shell, command_substitution_within_subshell) {
-    vt_send_str("(echo (printf foo))\n");
+TEST(shell, multiple_command_substitutions_in_one_part) {
+    vt_send_str("echo $(printf a)$(printf b)\n");
     assert_term_clear(2, PROMPT_LEN,
-        PROMPT "(echo (printf foo))",
+        PROMPT "echo $(printf a)$(printf b)",
+        "ab",
+        PROMPT
+    );
+}
+
+TEST(shell, command_substitution_within_subshell) {
+    vt_send_str("(echo $(printf foo))\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "(echo $(printf foo))",
         "foo",
         PROMPT
     );
 }
 
-IGNORE_TEST(shell, command_substitution_as_redirection_target) {
-    vt_send_str("echo hi > (printf /tmp/shtest)\n");
+TEST(shell, command_substitution_as_redirection_target) {
+    vt_send_str("echo foo > $(printf /tmp/shtest)\n");
     assert_term_clear(1, PROMPT_LEN,
-        PROMPT "echo foo > (printf /tmp/shtest)",
+        PROMPT "echo foo > $(printf /tmp/shtest)",
         PROMPT
     );
 
-    vt_send_str("cat /tmp/shtest");
+    vt_send_str("cat /tmp/shtest\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "cat /tmp/shtest",
         "foo",
@@ -1261,26 +1270,44 @@ IGNORE_TEST(shell, command_substitution_as_redirection_target) {
     );
 }
 
-IGNORE_TEST(shell, command_substitution_embedded_in_string) {
-    vt_send_str("echo \"hello (printf world!)\"\n");
+TEST(shell, command_substitution_embedded_in_string) {
+    vt_send_str("echo \"hello $(printf world!)\"\n");
     assert_term_clear(2, PROMPT_LEN,
-        PROMPT "echo \"hello (printf world!)\"",
+        PROMPT "echo \"hello $(printf world!)\"",
         "hello world!",
         PROMPT
     );
 }
 
-IGNORE_TEST(shell, builtin_with_command_substitution) {
-    vt_send_str("cd (echo /tmp)\n");
+TEST(shell, command_substitution_in_quotes_with_quotes) {
+    vt_send_str("echo \"$(printf \"%s\" foo)\"\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo \"$(printf \"%%s\" foo)\"",
+        "foo",
+        PROMPT
+    );
+}
+
+TEST(shell, builtin_with_command_substitution) {
+    vt_send_str("set tmp_dir $(echo /tmp)\n");
     assert_term_clear(1, PROMPT_LEN,
-        PROMPT "cd (echo /tmp)",
+        PROMPT "set tmp_dir $(echo /tmp)",
         PROMPT
     );
 
-    vt_send_str("echo $PWD");
+    vt_send_str("echo $tmp_dir\n");
     assert_term_clear(2, PROMPT_LEN,
-        PROMPT "echo $PWD",
+        PROMPT "echo $tmp_dir",
         "/tmp",
+        PROMPT
+    );
+}
+
+TEST(shell, command_substitution_with_nested_quoted_cmd_sub) {
+    vt_send_str("echo \"$(echo \"$(printf foo)\")\"\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo \"$(echo \"$(printf foo)\")\"",
+        "foo",
         PROMPT
     );
 }
@@ -1363,5 +1390,7 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, command_substitution_within_subshell);
     RUN_TEST_CASE(shell, command_substitution_as_redirection_target);
     RUN_TEST_CASE(shell, command_substitution_embedded_in_string);
+    RUN_TEST_CASE(shell, command_substitution_in_quotes_with_quotes);
     RUN_TEST_CASE(shell, builtin_with_command_substitution);
+    RUN_TEST_CASE(shell, command_substitution_with_nested_quoted_cmd_sub);
 }

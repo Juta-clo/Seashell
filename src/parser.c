@@ -45,8 +45,12 @@
 static lx_tok *scan_advance(size_t n, ps_scan *scan) {
     ASSERT_(LEQ, n, scan->toks->size - scan->i);
 
-    scan->cur_tok += n;
-    scan->i += n;
+    if (!scan->skip_advance) {
+        scan->cur_tok += n;
+        scan->i += n;
+    } else {
+        scan->skip_advance = false;
+    }
 
     return scan->cur_tok;
 }
@@ -124,7 +128,7 @@ static void queue_redir(int io_num, bool fd_dup, ps_scan *scan) {
     scan->queued_redir = redir;
 }
 
-static void add_cmd(da_cmd *cmds, ps_scan *scan) {
+static void add_cmd(da_cmd *cmds, ps_cmd_kind kind, ps_scan *scan) {
     ASSERT(scan);
 
     ps_cmd *cmd = linc_array_push(cmds);
@@ -132,11 +136,11 @@ static void add_cmd(da_cmd *cmds, ps_scan *scan) {
     *cmd = (ps_cmd){
         .i = scan->cur_tok->i,
         .words.allo = scan->ast->allo,
-        .redirs.allo = scan->ast->allo
+        .redirs.allo = scan->ast->allo,
+        .kind = kind
     };
 
     scan->cur_cmd = cmd;
-    scan->cur_cmd->kind = PS_CMD_SIMPLE;
 }
 
 static void add_andor(da_andor *andors, ps_andor_op op, ps_scan *scan) {
@@ -175,36 +179,41 @@ static void end_andor(ps_scan *scan) {
     scan->cur_andor = nullptr;
 }
 
-static int expand_alias(ps_scan *scan) {
-    /* Is the word a potential alias expansion candidate? */
-    ASSERT(scan->cur_tok->kind == LX_TOK_WORD);
-    bool expandable = scan->cur_tok->parts.size == 1 &&
-                      scan->cur_tok->parts.data[0].quote == LX_Q_NONE;
-    if (!expandable)
-        return 0;
+static bool try_get_alias(lx_tok *tok, char **alias, char **value) {
+    if (tok->parts.size != 1 || tok->parts.data[0].quote != LX_Q_NONE)
+        return false;
 
-    /* Is there an actual defined alias match? */
-    char *alias = scan->cur_tok->parts.data[0].raw;
-    void *value;
+    void *out;
 
-    mp_str_lookup(&env.aliases, alias, &value);
-    if (!value)
-        return 0;
+    *alias = tok->parts.data[0].raw;
+    int rv = mp_str_lookup(&env.aliases, *alias, &out);
+    *value = out;
 
+    return (rv != -1);
+}
+
+static int expand_alias(ps_scan *scan, const char *alias, const char *value) {
     /* Is the alias value lexically valid? */
     da_tok alias_toks;
-    int rv = lx_tokenize((char *)value, &alias_toks);
+    int rv = lx_tokenize((char *)value, strlen(value), &alias_toks);
     if (rv != LX_OK) {
-        ERR_MSG("on alias: %s", lx_errstr(rv));
+        ERR_MSG("%s", lx_errstr(rv));
         return -1;
     }
 
-    /* Is the result syntactically valid given the context? */
-    if (alias_toks.size == 0 || alias_toks.data[0].kind != LX_TOK_WORD) {
-        ERR_MSG("on alias: %s -> '%s'", alias, (char *)value);
+    if (mp_str_lookup(&env.aliases, value, NULL) != -1) {
+        ERR_MSG("on recursive alias expansion");
         lx_free(&alias_toks);
         return -1;
     }
+
+    if (strncmp(alias, value, strlen(value)) == 0)
+        return 0;
+
+    if (alias_toks.size == 0)
+        return 0;
+
+    scan->skip_advance = true;
 
     lx_shift_toks(scan->cur_tok->i, alias_toks.size, alias_toks.data);
     int len = strlen(value) - strlen(alias);
@@ -426,11 +435,7 @@ void ps_get_info(int i, ps_ast *ast, ps_info *info) {
             } else if (info->cmd->kind == PS_CMD_SUBSH) {
                 ps_get_info(i, &info->cmd->subsh, info);
             } else if (in_word(i, info->cmd, info)) {
-                if (info->word->kind == PS_WORD_CMD_SUB) {
-                    ps_get_info(i, &info->word->subsh, info);
-                } else {
-                    in_segment(i, info->word, info);
-                }
+                in_segment(i, info->word, info);
             }
         }
     }
@@ -491,15 +496,20 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
                 break;
             }
 
-            if (!scan->cur_cmd && scan->alias)
-                if (expand_alias(scan) == -1)
-                    goto fail;
+            if (!scan->cur_cmd && scan->alias) {
+                char *alias, *value;
+                if (try_get_alias(scan->cur_tok, &alias, &value)) {
+                    if (expand_alias(scan, alias, value) == -1)
+                        goto fail;
+                    continue;
+                }
+            }
 
             if (!scan->cur_andor)
                 add_andor(&ast->andors, scan->andor_op, scan);
 
             if (!scan->cur_cmd)
-                add_cmd(&scan->cur_andor->pline.cmds, scan);
+                add_cmd(&scan->cur_andor->pline.cmds, PS_CMD_SIMPLE, scan);
 
             ps_word *word = linc_array_push(&scan->cur_cmd->words);
             *word = (ps_word){ .segments.allo = scan->ast->allo };
@@ -545,35 +555,13 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
             if (!scan->cur_andor)
                 add_andor(&ast->andors, scan->andor_op, scan);
 
-            if (scan->cur_cmd) {
-                scan->cur_cmd->has_sub = true;
+            if (scan->cur_cmd)
+                goto fail_tok;
 
-                ps_word *word = linc_array_push(&scan->cur_cmd->words);
-                *word = (ps_word){
-                    .kind = PS_WORD_CMD_SUB,
-                    .i = scan->cur_tok->i
-                };
+            add_cmd(&scan->cur_andor->pline.cmds, PS_CMD_SUBSH, scan);
 
-                int rv = parse_subshell(&word->subsh, scan);
-
-                lx_tok *last;
-                if (scan->i < scan->toks->size) {
-                    last = scan->cur_tok;
-                } else {
-                    last = &scan->toks->data[scan->toks->size - 1];
-                }
-
-                word->n = last->i + last->n - word->i;
-
-                if (rv == -1)
-                    goto fail;
-            } else {
-                add_cmd(&scan->cur_andor->pline.cmds, scan);
-                scan->cur_cmd->kind = PS_CMD_SUBSH;
-
-                if (parse_subshell(&scan->cur_cmd->subsh, scan) == -1)
-                    goto fail;
-            }
+            if (parse_subshell(&scan->cur_cmd->subsh, scan) == -1)
+                goto fail;
 
             break;
         case LX_TOK_RPAREN:

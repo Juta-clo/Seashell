@@ -11,13 +11,16 @@
 typedef struct {
     lx_mode mode;
     lx_mode prev_mode;
-    lx_tok *t;
+    lx_tok *cur_tok;
     const char *part_start;
-    const char *c;
+    const char *cur_ch;
+    size_t i;
     const char *cmd;
+    size_t n;
     bool fd_dup_pending;
     bool esc_pending;
     int status;
+    lx_kind kind;
 } lx_scan;
 
 void log_toks(da_tok *toks) {
@@ -54,17 +57,21 @@ void log_toks(da_tok *toks) {
     LOG_INFO("}");
 }
 
-static lx_kind get_kind(const char *cur_char) {
-    if (strncmp(">>", cur_char, 2) == 0)
-        return LX_TOK_APPEND;
-    if (strncmp("&&", cur_char, 2) == 0)
-        return LX_TOK_AND_IF;
-    if (strncmp("||", cur_char, 2) == 0)
-        return LX_TOK_OR_IF;
-    if (strncmp(">&", cur_char, 2) == 0)
-        return LX_TOK_FD_OUT;
-    if (strncmp("<&", cur_char, 2) == 0)
-        return LX_TOK_FD_IN;
+static lx_kind get_kind(const char *cur_char, bool last) {
+    if (!last) {
+        if (strncmp(">>", cur_char, 2) == 0)
+            return LX_TOK_APPEND;
+        if (strncmp("&&", cur_char, 2) == 0)
+            return LX_TOK_AND_IF;
+        if (strncmp("||", cur_char, 2) == 0)
+            return LX_TOK_OR_IF;
+        if (strncmp(">&", cur_char, 2) == 0)
+            return LX_TOK_FD_OUT;
+        if (strncmp("<&", cur_char, 2) == 0)
+            return LX_TOK_FD_IN;
+        if (strncmp("$(", cur_char, 2) == 0)
+            return LX_CMD_SUB_START;
+    }
 
     if (strncmp("|", cur_char, 1) == 0)
         return LX_TOK_PIPE;
@@ -96,6 +103,7 @@ static size_t tok_len(lx_kind kind) {
     case LX_TOK_APPEND:
     case LX_TOK_AND_IF:
     case LX_TOK_OR_IF:
+    case LX_CMD_SUB_START:
         return 2;
     default:
         return 0;
@@ -122,23 +130,23 @@ static bool kind_is_delim(lx_kind kind) {
 }
 
 static void ensure_tok(da_tok *toks, lx_kind kind, lx_scan *scan) {
-    if (!scan->t) {
+    if (!scan->cur_tok) {
         lx_tok *tok = linc_array_push(toks);
 
         *tok = (lx_tok){
             .kind = kind,
-            .i = scan->c - scan->cmd
+            .i = scan->cur_ch - scan->cmd
         };
 
-        scan->t = tok;
+        scan->cur_tok = tok;
     }
 }
 
 static void ensure_part(lx_scan *scan, lx_quote quote) {
     if (!scan->part_start) {
-        lx_part *part = linc_array_push(&scan->t->parts);
+        lx_part *part = linc_array_push(&scan->cur_tok->parts);
         *part = (lx_part){ .quote = quote };
-        scan->part_start = scan->c;
+        scan->part_start = scan->cur_ch;
     }
 }
 
@@ -156,7 +164,7 @@ static int lex_io_num(lx_kind delim, const lx_scan *scan) {
     if (!(lx_kind_is_redir(delim) || scan->fd_dup_pending))
         return LX_FAIL;
 
-    const lx_tok *tok = scan->t;
+    const lx_tok *tok = scan->cur_tok;
     int io_num;
 
     for (const char *c = tok->parts.data[0].raw; *c != '\0'; ++c)
@@ -172,54 +180,54 @@ static int lex_io_num(lx_kind delim, const lx_scan *scan) {
 }
 
 static void try_end_tok(lx_scan *scan, lx_kind delim) {
-    if (!scan->t)
+    if (!scan->cur_tok)
         return;
 
-    if (scan->t->kind == LX_TOK_WORD) {
-        scan->t->n = (scan->c - scan->cmd) - scan->t->i;
+    if (scan->cur_tok->kind == LX_TOK_WORD) {
+        scan->cur_tok->n = (scan->cur_ch - scan->cmd) - scan->cur_tok->i;
     } else {
-        scan->t->i = scan->c - scan->cmd;
-        scan->t->n = tok_len(scan->t->kind);
+        scan->cur_tok->i = scan->cur_ch - scan->cmd;
+        scan->cur_tok->n = tok_len(scan->cur_tok->kind);
     }
 
-    if (!tok_is_number(scan->t)) {
+    if (!tok_is_number(scan->cur_tok)) {
         scan->fd_dup_pending = (
-            scan->t->kind == LX_TOK_FD_IN ||
-            scan->t->kind == LX_TOK_FD_OUT
+            scan->cur_tok->kind == LX_TOK_FD_IN ||
+            scan->cur_tok->kind == LX_TOK_FD_OUT
         );
     } else {
         char *endptr;
 
-        strtol(scan->t->parts.data[0].raw, &endptr, 10);
-        scan->t->is_num = (*endptr == '\0');
+        strtol(scan->cur_tok->parts.data[0].raw, &endptr, 10);
+        scan->cur_tok->is_num = (*endptr == '\0');
 
-        if (scan->t->is_num) {
+        if (scan->cur_tok->is_num) {
             int io_num = lex_io_num(delim, scan);
 
             if (io_num != LX_FAIL) {
-                lx_free_tok(scan->t);
-                scan->t->kind = LX_TOK_IO_NUM;
-                scan->t->io_num = io_num;
+                lx_free_tok(scan->cur_tok);
+                scan->cur_tok->kind = LX_TOK_IO_NUM;
+                scan->cur_tok->io_num = io_num;
             }
         }
 
         scan->fd_dup_pending = false;
     }
 
-    scan->t = nullptr;
+    scan->cur_tok = nullptr;
 }
 
 static void try_end_part(lx_scan *scan) {
     ASSERT(scan);
 
-    if (!scan->t || !scan->part_start)
+    if (!scan->cur_tok || !scan->part_start)
         return;
 
-    da_part *parts = &scan->t->parts;
+    da_part *parts = &scan->cur_tok->parts;
     lx_part *part = &parts->data[parts->size - 1];
 
     size_t len = 0;
-    for (const char *c = scan->part_start; c != scan->c; ++c)
+    for (const char *c = scan->part_start; c != scan->cur_ch; ++c)
         ++len;
 
     part->raw = xmalloc(len + 1);
@@ -233,98 +241,171 @@ static void try_end_part(lx_scan *scan) {
     scan->part_start = nullptr;
 }
 
+static void scan_advance(lx_scan *scan, size_t n) {
+    ASSERT_(LEQ, n, scan->n - scan->i);
+
+    scan->i += n;
+    scan->cur_ch += n;
+    scan->kind = get_kind(scan->cur_ch, (scan->i == scan->n - 1));
+}
+
 static void handle_single_quote(lx_scan *scan) {
-    if (*scan->c == '\'') {
+    if (*scan->cur_ch == '\'') {
         try_end_part(scan);
         scan->mode = LX_M_NORMAL;
     }
 }
 
-static void handle_double_quote(lx_scan *scan) {
+static void handle_double_quote(lx_scan *scan, lx_kind kind) {
     if (scan->esc_pending) {
         scan->esc_pending = false;
-    } else if (*scan->c == '\\') {
+    } else if (*scan->cur_ch == '\\') {
         scan->esc_pending = true;
-    } else if (*scan->c == '"') {
+    } else if (*scan->cur_ch == '"') {
         try_end_part(scan);
         scan->mode = LX_M_NORMAL;
+    } else if (kind == LX_CMD_SUB_START) {
+        int rp = lx_get_rparen(
+            &scan->cur_ch[1],
+            scan->n - (&scan->cur_ch[1] - scan->cmd)
+        );
+
+        if (rp == -1) {
+            scan->cur_ch = &scan->cmd[scan->n - 1];
+            scan->i = scan->n - 1;
+            scan->status = LX_ERRCMDSUB;
+        } else {
+            scan_advance(scan, rp + 1);
+        }
     }
 }
 
-int lx_tokenize(const char *cmd, da_tok *toks) {
-    if (!cmd || !toks)
-        return LX_ERRINPUT;
+int lx_get_rparen(const char *str, size_t n) {
+    ASSERT(str);
 
-    size_t cmd_len = strlen(cmd);
-    if (cmd_len <= 0)
-        return LX_ERRINPUT;
+    if (n == 0 || str[0] != '(')
+        return -1;
+
+    da_tok toks = {0};
+    int rv = lx_tokenize(str, n, &toks);
+
+    if (toks.data[0].kind != LX_TOK_LPAREN || rv == LX_ERRCMDSUB) {
+        lx_free(&toks);
+        return -1;
+    }
+
+    lx_tok *tok;
+    int paren_count = 0;
+
+    for (size_t i = 0; i < toks.size; ++i, ++n) {
+        tok = &toks.data[i];
+
+        if (tok->kind == LX_TOK_LPAREN)
+            ++paren_count;
+
+        if (tok->kind == LX_TOK_RPAREN)
+            --paren_count;
+
+        if (paren_count == 0)
+            break;
+    }
+
+    if (paren_count != 0) {
+        lx_free(&toks);
+        return -1;
+    }
+
+    size_t out = tok->i;
+    lx_free(&toks);
+
+    return out;
+}
+
+int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
+    ASSERT(cmd && toks);
+
+    *toks = (da_tok){0};
+
+    if (n == 0)
+        return LX_OK;
 
     lx_scan scan = {
         .mode = LX_M_NORMAL,
         .prev_mode = LX_M_NORMAL,
-        .c = cmd,
+        .cur_ch = cmd,
         .cmd = cmd,
-        .status = LX_OK
+        .n = n,
+        .status = LX_OK,
+        .kind = get_kind(cmd, n == 1)
     };
 
-    *toks = (da_tok){0};
-
-    for (; *scan.c != '\0'; ++scan.c) {
+    for (; scan.i < scan.n; scan_advance(&scan, 1)) {
         if (scan.mode == LX_M_NORMAL) {
             if (scan.esc_pending) {
                 scan.esc_pending = false;
                 continue;
             }
 
-            if (*scan.c == '"') {
+            if (*scan.cur_ch == '"') {
                 scan.mode = LX_M_DOUBLEQ;
 
                 try_end_part(&scan);
                 ensure_tok(toks, LX_TOK_WORD, &scan);
-                ++scan.c;
+                scan_advance(&scan, 1);
                 ensure_part(&scan, LX_Q_DOUBLE);
 
-                if (*scan.c == '\0')
+                if (scan.i >= scan.n)
                     break;
 
-                handle_double_quote(&scan);
-            } else if (*scan.c == '\'') {
+                handle_double_quote(&scan, scan.kind);
+            } else if (*scan.cur_ch == '\'') {
                 scan.mode = LX_M_SINGLEQ;
 
                 try_end_part(&scan);
                 ensure_tok(toks, LX_TOK_WORD, &scan);
-                ++scan.c;
+                scan_advance(&scan, 1);
                 ensure_part(&scan, LX_Q_SINGLE);
 
-                if (*scan.c == '\0')
+                if (scan.i >= scan.n)
                     break;
 
                 handle_single_quote(&scan);
-            } else if (*scan.c == ' ') {
+            } else if (*scan.cur_ch == ' ') {
                 try_end_part(&scan);
                 try_end_tok(&scan, LX_WHITE_SPACE);
-            } else if(*scan.c == '\\') {
+            } else if(*scan.cur_ch == '\\') {
                 ensure_tok(toks, LX_TOK_WORD, &scan);
                 ensure_part(&scan, LX_Q_NONE);
                 scan.esc_pending = true;
-            } else {
-                lx_kind kind = get_kind(scan.c);
+            } else if (scan.kind == LX_CMD_SUB_START) {
+                ensure_tok(toks, LX_TOK_WORD, &scan);
+                ensure_part(&scan, LX_Q_NONE);
 
-                if (kind_is_delim(kind)) {
-                    try_end_part(&scan);
-                    try_end_tok(&scan, kind);
+                int rp = lx_get_rparen(
+                    &scan.cur_ch[1],
+                    n - (&scan.cur_ch[1] - cmd)
+                );
 
-                    ensure_tok(toks, kind, &scan);
-                    try_end_tok(&scan, kind);
-
-                    scan.c += tok_len(kind) - 1;
-                } else if (kind == LX_TOK_UNKNOWN) {
-                    ensure_tok(toks, LX_TOK_WORD, &scan);
-                    ensure_part(&scan, LX_Q_NONE);
+                if (rp == -1) {
+                    scan_advance(&scan, scan.n - 1 - scan.i);
+                    scan.status = LX_ERRCMDSUB;
+                } else {
+                    scan_advance(&scan, rp + 1);
                 }
+            } else if (kind_is_delim(scan.kind)) {
+                    try_end_part(&scan);
+                    try_end_tok(&scan, scan.kind);
+
+                    ensure_tok(toks, scan.kind, &scan);
+                    try_end_tok(&scan, scan.kind);
+
+                    scan_advance(&scan, tok_len(scan.kind) - 1);
+            } else if (scan.kind == LX_TOK_UNKNOWN) {
+                ensure_tok(toks, LX_TOK_WORD, &scan);
+                ensure_part(&scan, LX_Q_NONE);
             }
         } else if (scan.mode == LX_M_DOUBLEQ) {
-            handle_double_quote(&scan);
+            handle_double_quote(&scan, scan.kind);
         } else {
             handle_single_quote(&scan);
         }
@@ -432,10 +513,9 @@ void lx_free(da_tok *toks) {
 
 char *lx_errstr(lx_status stat) {
     switch (stat) {
-    case LX_ERRMEM:        return "malloc failure";
-    case LX_ERRNOENDQUOTE: return "unterminated quote";
-    case LX_ERREMPTYESC:   return "bad escape";
-    case LX_ERRINPUT:      return "empty input";
+    case LX_ERRNOENDQUOTE: return "lex error finding matching '\"'";
+    case LX_ERREMPTYESC:   return "lex error on '\\'";
+    case LX_ERRCMDSUB:     return "lex error finding matching ')'";
     case LX_OK:            return "success";
     default:               return "???";
     }

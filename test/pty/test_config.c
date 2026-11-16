@@ -308,7 +308,7 @@ TEST(config, alias_with_non_first_word) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "seashell: parse error on alias: p -> '&& echo hi'",
+        "seashell: parse error near '&&'",
         PROMPT
     );
 }
@@ -322,7 +322,21 @@ TEST(config, alias_with_no_value) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "seashell: parse error on alias: empty input",
+        "seashell: parse error near '\\n'",
+        PROMPT
+    );
+}
+
+TEST(config, alias_with_recursive_expansion) {
+    set_aliases("p = 'p'");
+    assert_term(0, PROMPT_LEN,
+        PROMPT
+    );
+
+    vt_send_str("p\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "p",
+        "seashell: parse error on recursive alias expansion",
         PROMPT
     );
 }
@@ -380,6 +394,7 @@ TEST_GROUP_RUNNER(config) {
     RUN_TEST_CASE(config, alias_expands_after_pipe_from_alias);
     RUN_TEST_CASE(config, alias_with_non_first_word);
     RUN_TEST_CASE(config, alias_with_no_value);
+    RUN_TEST_CASE(config, alias_with_recursive_expansion);
     RUN_TEST_CASE(config, alias_that_contains_redirect);
     RUN_TEST_CASE(config, alias_that_contains_variable_expansion);
 }

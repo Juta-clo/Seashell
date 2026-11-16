@@ -2,17 +2,18 @@
 #define EXPANDER_H
 
 #include <linc/array.h>
-#include "linc/string.h"
 #include "parser.h"
 #include "utils.h"
 
-#define EXPAND_REDIR 1
-#define EXPAND_CMD   2
-#define EXPAND_COMP  3
+#define EXPAND_REDIR   1
+#define EXPAND_CMD     2
+#define EXPAND_COMP    3
+#define EXPAND_BUILTIN 4
 
 typedef enum {
-    EXT_REG,
-    EXT_KEY,
+    EXT_REGULAR,
+    EXT_VARIABLE,
+    EXT_CMD_SUB,
 } ex_tok_type;
 
 struct ex_tok {
@@ -24,8 +25,7 @@ struct ex_tok {
 typedef struct ex_tok ex_tok;
 LINC_ARRAY_TYPE(da_ex_tok, ex_tok);
 
-linc_string expand_seg(const char *seg, bool *has_glob);
 int expand_word(ps_word *word, da_charp *argv, int type);
-int expand_pline(const ps_pline *pline);
+int expand_cmd(ps_cmd *cmd, int type);
 
 #endif

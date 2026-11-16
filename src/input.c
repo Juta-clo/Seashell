@@ -212,7 +212,7 @@ static int input_index_tok(index_tok *itok, int ind) {
         .toks = &toks
     };
 
-    lx_tokenize(lstart(), &toks);
+    lx_tokenize(lstart(), line_len(), &toks);
     ps_parse(&scan, &itok->ast);
     ps_get_info(ind, &itok->ast, &info);
     lx_free(&toks);
@@ -706,12 +706,12 @@ static bool is_err_tok(lx_tok *tok, ps_scan *scan) {
     return false;
 }
 
-static void input_highlight(input_buf *ibuf) {
+static void input_highlight(input_buf *ibuf, const char *line, size_t n) {
     bool hl_complete = false;
     size_t err_tok_i;
     da_tok toks = {0};
 
-    lx_tokenize(lstart(), &toks);
+    lx_tokenize(line, n, &toks);
 
     while (!hl_complete) {
         ps_ast ast = {0};
@@ -726,19 +726,19 @@ static void input_highlight(input_buf *ibuf) {
                 err_tok_i = i + 1;
             } else if (tok->kind != LX_TOK_WORD) {
                 highlight_tok(tok, ibuf);
-            } else  {
+            } else {
                 ps_info pinfo = {0};
                 ps_get_info(tok->i, &ast, &pinfo);
 
                 if (pinfo.kinds & PS_INFO_NAME) {
-                    expand_word(pinfo.word, NULL, EXPAND_COMP);
-                    highlight_command(pinfo.word, ibuf);
+                    if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
+                        highlight_command(pinfo.word, ibuf);
                 } else if (pinfo.kinds & PS_INFO_REDIR) {
-                    expand_word(pinfo.word, NULL, EXPAND_COMP);
-                    highlight_arg(pinfo.word, true, ibuf);
+                    if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
+                        highlight_arg(pinfo.word, true, ibuf);
                 } else if (pinfo.kinds & PS_INFO_ARG) {
-                    expand_word(pinfo.word, NULL, EXPAND_COMP);
-                    highlight_arg(pinfo.word, false, ibuf);
+                    if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
+                        highlight_arg(pinfo.word, false, ibuf);
                 }
             }
         }
@@ -757,7 +757,6 @@ static void input_highlight(input_buf *ibuf) {
 
         ps_free(&ast);
     }
-
 
     char *shadow = history_get_shadow();
 
@@ -787,7 +786,7 @@ static void input_update(void) {
     int rows = input.rows;
     input_buf ibuf = get_cells();
 
-    input_highlight(&ibuf);
+    input_highlight(&ibuf, lstart(), line_len());
 
     input.prompt_len = ibuf.prompt_len;
 
