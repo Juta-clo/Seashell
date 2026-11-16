@@ -257,8 +257,10 @@ int job_update(wait_event wev) {
     jc_job *job;
     jc_proc *proc;
 
-    if (!identify_proc(wev.pid, &job, &proc))
-        fatal("bad jctl state");
+    if (!identify_proc(wev.pid, &job, &proc)) {
+        LOG_INFO("collected wait stat from %d", wev.pid);
+        return 0;
+    }
 
     update_proc(proc, wev);
 

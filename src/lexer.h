@@ -21,6 +21,7 @@ typedef enum {
     LX_TOK_UNKNOWN,
     LX_TOK_WORD,
     LX_CMD_SUB_START,
+    LX_PROC_SUB_START,
     LX_WHITE_SPACE,
     LX_EOL,
 } lx_kind;
@@ -36,7 +37,7 @@ typedef enum {
     LX_OK,
     LX_ERRNOENDQUOTE,
     LX_ERREMPTYESC,
-    LX_ERRCMDSUB
+    LX_ERRMISSINGPARAEN
 } lx_status;
 
 typedef enum {

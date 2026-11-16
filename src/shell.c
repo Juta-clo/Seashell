@@ -19,6 +19,28 @@
 #define WAIT_EXIT 193 /* +1 highest signal exit status */
 #define PLINE_INTR -1
 
+static void subshell_setup(void) {
+    env.subsh |= SUBSH_ASYNC;
+
+    job_clear();
+    sig_restore(&env.og_mask);
+    sig_block(SIGCHLD);
+    sig_set_handler(SIGCHLD, sigchld_handler);
+}
+
+static int subshell_fork(void) {
+    int cpid = xfork();
+
+    if (env.job_ctrl)
+        setpgid(cpid, cpid);
+
+    if (cpid != 0)
+        return cpid;
+
+    subshell_setup();
+    return 0;
+}
+
 static void cursor_left_anchor(void) {
     struct winsize ws;
     if (ioctl(env.tty_fd, TIOCGWINSZ, &ws) == -1)
@@ -365,8 +387,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg, bool expand) {
 
             if (cur_cmd->kind == PS_CMD_SUBSH) {
                 env.subsh |= SUBSH_ASYNC;
-                sig_block(SIGCHLD);
-                sig_set_handler(SIGCHLD, sigchld_handler);
+                subshell_setup();
                 _exit(shell_run_andor(&cur_cmd->subsh));
             }
 
@@ -403,6 +424,9 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg, bool expand) {
             xclose(next_pipe[1]);
         }
 
+        if (cur_cmd->kind != PS_CMD_SUBSH)
+            close_proc_subs(cur_cmd);
+
         sh_proc *proc = linc_array_push(&pld.procs);
         proc->pid = cpid;
         proc->cmd = make_cmd_str(cur_cmd);
@@ -413,7 +437,6 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg, bool expand) {
 
 static void shell_start_pline(ps_pline *pline, bool bg, int jid) {
     bool handled = false;
-
     bool try_builtin = (
         pline->cmds.size == 1 && pline->cmds.data[0].kind == PS_CMD_SIMPLE &&
         pline->cmds.data[0].redirs.size == 0 &&
@@ -426,6 +449,7 @@ static void shell_start_pline(ps_pline *pline, bool bg, int jid) {
 
         if (expand_cmd(&pline->cmds.data[0], EXPAND_CMD) == -1) {
             job_queue_builtin_exit(jid, cmd_str, EXIT_FAILURE);
+            close_proc_subs(cmd);
             handled = true;
         } else {
             sh_builtin *builtin = get_builtin(cmd->argv[0]);
@@ -443,6 +467,7 @@ static void shell_start_pline(ps_pline *pline, bool bg, int jid) {
                     job_queue_builtin_exit(jid, cmd_str, status);
                 }
 
+                close_proc_subs(cmd);
                 handled = true;
             }
         }
@@ -502,79 +527,6 @@ cleanup:
     flush_job_events();
     return rv;
 }
-
-char *shell_run_capture(ps_ast *ast) {
-    linc_string arg = LINC_STRING_INIT;
-    arg.allo = ast->allo;
-
-    int pipe_fd[2];
-    xpipe(pipe_fd);
-
-    pid_t cpid = xfork();
-
-    if (cpid == 0) {
-        xdup2_move(pipe_fd[1], STDOUT_FILENO);
-        xclose(pipe_fd[0]);
-        ast->bg = false;
-        env.subsh |= SUBSH_ASYNC;
-        int status = shell_run_andor(ast);
-        LOG_INFO("capture shell exited with status %d", status);
-        _exit(status);
-    }
-
-    xclose(pipe_fd[1]);
-
-    struct pollfd pfd[] = {
-        { .fd = pipe_fd[0], .events = POLLIN }
-    };
-
-    bool done = false;
-    int poll_for = 1;
-    int wopt = WNOHANG;
-    int wakeup = POLLHUP | POLLIN | POLLERR | POLLNVAL;
-    char rbuf[4096] = "";
-
-    while (!done) {
-        int rv = waitpid(cpid, NULL, wopt);
-        if (rv == -1)
-            err_exit("waitpid");
-
-            if (rv == cpid) {
-                done = true;
-                poll_for = -1;
-            }
-
-        while (true) {
-            int ready = xpoll(pfd, ARRLEN(pfd), poll_for);
-            if (ready == 0)
-                break;
-
-            if (pfd->revents & wakeup) {
-                int num_read = read(pipe_fd[0], rbuf, sizeof(rbuf) - 1);
-                if (num_read == -1)
-                    err_exit("read");
-
-                if (num_read == 0) {
-                    wopt = 0;
-                    break;
-                }
-
-                rbuf[num_read] = '\0';
-                linc_string_append(&arg, rbuf);
-            }
-        }
-    }
-
-    size_t len = arg.len;
-    while (len && arg.cstr[len - 1] == '\n')
-        arg.cstr[--len] = '\0';
-
-    xclose(pipe_fd[0]);
-
-    return arg.cstr;
-}
-
-static int subshell_fork(void);
 
 int shell_run_andor(ps_ast *ast) {
     int status = EXIT_SUCCESS;
@@ -647,25 +599,6 @@ int shell_run_andor(ps_ast *ast) {
         _exit(status);
 
     return status;
-}
-
-static int subshell_fork(void) {
-    int cpid = xfork();
-
-    if (env.job_ctrl)
-        setpgid(cpid, cpid);
-
-    if (cpid != 0)
-        return cpid;
-
-    env.subsh |= SUBSH_ASYNC;
-
-    job_clear();
-    sig_restore(&env.og_mask);
-    sig_block(SIGCHLD);
-    sig_set_handler(SIGCHLD, sigchld_handler);
-
-    return 0;
 }
 
 int line_to_ast(const char *line, size_t n, ps_ast *ast) {
@@ -744,6 +677,101 @@ linc_string shell_get_prompt(void) {
     }
 
     return prompt;
+}
+
+char *shell_run_capture(const char *line, size_t n, int *file) {
+    ps_ast ast = {0};
+
+    if (file)
+        *file = -1;
+
+    if (line_to_ast(line, n, &ast) == -1)
+        return nullptr;
+
+    int pipe_fd[2];
+    xpipe(pipe_fd);
+
+    pid_t cpid = xfork();
+
+    if (cpid == 0) {
+        xdup2_move(pipe_fd[1], STDOUT_FILENO);
+        xclose(pipe_fd[0]);
+        ast.bg = false;
+
+        subshell_setup();
+        _exit(shell_run_andor(&ast));
+    }
+
+    xclose(pipe_fd[1]);
+
+    if (file) {
+        ps_free(&ast);
+        *file = pipe_fd[0];
+        return 0;
+    }
+
+    struct pollfd pfd[] = {
+        { .fd = pipe_fd[0], .events = POLLIN }
+    };
+
+    linc_string arg = LINC_STRING_INIT;
+    arg.allo = ast.allo;
+
+    bool done = false;
+    int poll_for = 1;
+    int wopt = WNOHANG;
+    int wakeup = POLLHUP | POLLIN | POLLERR | POLLNVAL;
+    char rbuf[4096] = "";
+    int wstat;
+
+    while (!done) {
+        int rv = waitpid(cpid, &wstat, wopt);
+        if (rv == -1)
+            err_exit("waitpid");
+
+        if (rv == cpid) {
+            done = true;
+            poll_for = -1;
+
+            if (WIFSIGNALED(wstat) && WTERMSIG(wstat) == SIGINT) {
+                ps_free(&ast);
+                xclose(pipe_fd[0]);
+                sig_consume(SIGINT);
+                cursor_left_anchor();
+                return nullptr;
+            }
+        }
+
+        while (true) {
+            int ready = xpoll(pfd, ARRLEN(pfd), poll_for);
+            if (ready == 0)
+                break;
+
+            if (pfd->revents & wakeup) {
+                int num_read = read(pipe_fd[0], rbuf, sizeof(rbuf) - 1);
+                if (num_read == -1)
+                    err_exit("read");
+
+                if (num_read == 0) {
+                    wopt = 0;
+                    break;
+                }
+
+                rbuf[num_read] = '\0';
+                linc_string_append(&arg, rbuf);
+            }
+        }
+    }
+
+    size_t len = arg.len;
+    while (len && arg.cstr[len - 1] == '\n')
+        arg.cstr[--len] = '\0';
+
+    xclose(pipe_fd[0]);
+
+    char *out = xstrdup(arg.cstr);
+    ps_free(&ast);
+    return out;
 }
 
 int shell_run(const char *cmd) {

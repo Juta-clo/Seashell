@@ -1312,6 +1312,61 @@ TEST(shell, command_substitution_with_nested_quoted_cmd_sub) {
     );
 }
 
+TEST(shell, process_substitution_simple) {
+    vt_send_str("cat <(echo foo)\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat <(echo foo)",
+        "foo",
+        PROMPT
+    );
+}
+
+TEST(shell, process_substitution_multiple) {
+    vt_send_str("cat <(echo foo) <(echo bar)\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "cat <(echo foo) <(echo bar)",
+        "foo",
+        "bar",
+        PROMPT
+    );
+}
+
+TEST(shell, interupting_command_substitution) {
+    vt_send_str("echo $(write_sleep >&2)\n");
+    assert_term(2, 0,
+        PROMPT "echo $(write_sleep >&2)",
+        "x"
+    );
+
+    vt_send_ch('c', VTERM_MOD_CTRL);
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "echo $(write_sleep >&2)",
+        "x",
+        "^C%s",
+        PROMPT
+    );
+}
+
+IGNORE_TEST(shell, interrupting_cmd_sub_propogates_exit_status) {
+    vt_send_str("echo $(write_sleep >&2) || echo unexpected\n");
+    assert_term(2, 0,
+        PROMPT "echo $(write_sleep >&2) || echo unexpected",
+        "x"
+    );
+
+    vt_send_ch('c', VTERM_MOD_CTRL);
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "echo $(write_sleep >&2) || echo unexpected",
+        "x",
+        "^C",
+        PROMPT
+    );
+}
+
+/* Interrupt process substitution */
+/* Interrupt command/process substitution should set $? to 130 */
+/* Suspending command/process substitution should be ignored */
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1393,4 +1448,8 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, command_substitution_in_quotes_with_quotes);
     RUN_TEST_CASE(shell, builtin_with_command_substitution);
     RUN_TEST_CASE(shell, command_substitution_with_nested_quoted_cmd_sub);
+    RUN_TEST_CASE(shell, process_substitution_simple);
+    RUN_TEST_CASE(shell, process_substitution_multiple);
+    RUN_TEST_CASE(shell, interupting_command_substitution);
+    RUN_TEST_CASE(shell, interrupting_cmd_sub_propogates_exit_status);
 }

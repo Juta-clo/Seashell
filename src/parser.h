@@ -50,6 +50,7 @@ LINC_ARRAY_TYPE(da_word, ps_word);
 LINC_ARRAY_TYPE(da_redir, ps_redir);
 LINC_ARRAY_TYPE(da_cmd, ps_cmd);
 LINC_ARRAY_TYPE(da_andor, ps_andor);
+LINC_ARRAY_TYPE(da_int, int);
 
 struct ps_ast {
     da_andor andors;
@@ -68,6 +69,7 @@ struct ps_word {
     char *arg;
     int i, n;
     da_segment segments;
+    da_int proc_sub_fds;
 };
 
 struct ps_redir {

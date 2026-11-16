@@ -71,6 +71,8 @@ static lx_kind get_kind(const char *cur_char, bool last) {
             return LX_TOK_FD_IN;
         if (strncmp("$(", cur_char, 2) == 0)
             return LX_CMD_SUB_START;
+        if (strncmp("<(", cur_char, 2) == 0)
+            return LX_PROC_SUB_START;
     }
 
     if (strncmp("|", cur_char, 1) == 0)
@@ -104,6 +106,7 @@ static size_t tok_len(lx_kind kind) {
     case LX_TOK_AND_IF:
     case LX_TOK_OR_IF:
     case LX_CMD_SUB_START:
+    case LX_PROC_SUB_START:
         return 2;
     default:
         return 0;
@@ -264,7 +267,7 @@ static void handle_double_quote(lx_scan *scan, lx_kind kind) {
     } else if (*scan->cur_ch == '"') {
         try_end_part(scan);
         scan->mode = LX_M_NORMAL;
-    } else if (kind == LX_CMD_SUB_START) {
+    } else if (kind == LX_CMD_SUB_START || kind == LX_PROC_SUB_START) {
         int rp = lx_get_rparen(
             &scan->cur_ch[1],
             scan->n - (&scan->cur_ch[1] - scan->cmd)
@@ -273,7 +276,7 @@ static void handle_double_quote(lx_scan *scan, lx_kind kind) {
         if (rp == -1) {
             scan->cur_ch = &scan->cmd[scan->n - 1];
             scan->i = scan->n - 1;
-            scan->status = LX_ERRCMDSUB;
+            scan->status = LX_ERRMISSINGPARAEN;
         } else {
             scan_advance(scan, rp + 1);
         }
@@ -289,7 +292,7 @@ int lx_get_rparen(const char *str, size_t n) {
     da_tok toks = {0};
     int rv = lx_tokenize(str, n, &toks);
 
-    if (toks.data[0].kind != LX_TOK_LPAREN || rv == LX_ERRCMDSUB) {
+    if (toks.data[0].kind != LX_TOK_LPAREN || rv == LX_ERRMISSINGPARAEN) {
         lx_free(&toks);
         return -1;
     }
@@ -297,7 +300,7 @@ int lx_get_rparen(const char *str, size_t n) {
     lx_tok *tok;
     int paren_count = 0;
 
-    for (size_t i = 0; i < toks.size; ++i, ++n) {
+    for (size_t i = 0; i < toks.size; ++i) {
         tok = &toks.data[i];
 
         if (tok->kind == LX_TOK_LPAREN)
@@ -377,7 +380,8 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
                 ensure_tok(toks, LX_TOK_WORD, &scan);
                 ensure_part(&scan, LX_Q_NONE);
                 scan.esc_pending = true;
-            } else if (scan.kind == LX_CMD_SUB_START) {
+            } else if (scan.kind == LX_CMD_SUB_START ||
+                    scan.kind == LX_PROC_SUB_START) {
                 ensure_tok(toks, LX_TOK_WORD, &scan);
                 ensure_part(&scan, LX_Q_NONE);
 
@@ -388,7 +392,7 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
 
                 if (rp == -1) {
                     scan_advance(&scan, scan.n - 1 - scan.i);
-                    scan.status = LX_ERRCMDSUB;
+                    scan.status = LX_ERRMISSINGPARAEN;
                 } else {
                     scan_advance(&scan, rp + 1);
                 }
@@ -513,10 +517,10 @@ void lx_free(da_tok *toks) {
 
 char *lx_errstr(lx_status stat) {
     switch (stat) {
-    case LX_ERRNOENDQUOTE: return "lex error finding matching '\"'";
-    case LX_ERREMPTYESC:   return "lex error on '\\'";
-    case LX_ERRCMDSUB:     return "lex error finding matching ')'";
-    case LX_OK:            return "success";
-    default:               return "???";
+    case LX_ERRNOENDQUOTE:    return "lex error finding matching '\"'";
+    case LX_ERREMPTYESC:      return "lex error on '\\'";
+    case LX_ERRMISSINGPARAEN: return "lex error finding matching ')'";
+    case LX_OK:               return "success";
+    default:                  return "???";
     }
 }

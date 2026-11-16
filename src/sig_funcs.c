@@ -15,6 +15,13 @@ bool sig_is_pending(int sig) {
     return (bool)is_member;
 }
 
+void sig_consume(int sig) {
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, sig);
+    sigtimedwait(&set, NULL, &(struct timespec){0});
+}
+
 sig_handler *sig_set_handler(int sig, sig_handler *handler) {
     struct sigaction sa;
     struct sigaction osa;

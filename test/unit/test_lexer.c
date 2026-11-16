@@ -781,7 +781,7 @@ TEST(lexer, command_substitution_incomplete) {
         WORD_SIMPLE("$(abc", I(0), N(5)),
     );
 
-    validate_fail("$(abc", &exp, LX_ERRCMDSUB);
+    validate_fail("$(abc", &exp, LX_ERRMISSINGPARAEN);
 }
 
 TEST(lexer, command_substitution_after_string) {
@@ -824,6 +824,83 @@ TEST(lexer, command_substitution_in_double_quotes) {
     );
 
     validate("\"$(abc)\"", &exp);
+}
+
+TEST(lexer, process_substitution_recognized) {
+    da_tok exp = TOKS(
+        WORD_SIMPLE("<(abc)", I(0), N(6)),
+    );
+
+    validate("<(abc)", &exp);
+}
+
+TEST(lexer, process_substitution_after_word) {
+    da_tok exp = TOKS(
+        WORD_SIMPLE("echo", I(0), N(4)),
+        WORD_SIMPLE("<(abc)", I(5), N(6)),
+    );
+
+    validate("echo <(abc)", &exp);
+}
+
+TEST(lexer, process_substitution_incomplete) {
+    da_tok exp = TOKS(
+        WORD_SIMPLE("<(abc", I(0), N(5)),
+    );
+
+    validate_fail("<(abc", &exp, LX_ERRMISSINGPARAEN);
+}
+
+TEST(lexer, process_substitution_after_string) {
+    da_tok exp = TOKS(
+        WORD(I(0), N(11), false,
+            PART("foo", LX_Q_SINGLE, I(1), N(3)),
+            PART("<(bar)", LX_Q_NONE, I(5), N(6)),
+        ),
+    );
+
+    validate("'foo'<(bar)", &exp);
+}
+
+TEST(lexer, process_substitution_before_string) {
+    da_tok exp = TOKS(
+        WORD(I(0), N(11), false,
+            PART("<(bar)", LX_Q_NONE, I(0), N(6)),
+            PART("foo", LX_Q_SINGLE, I(7), N(3)),
+        ),
+    );
+
+    validate("<(bar)'foo'", &exp);
+}
+
+TEST(lexer, process_substitution_after_process_substitution) {
+    da_tok exp = TOKS(
+        WORD(I(0), N(12), false,
+            PART("<(foo)<(bar)", LX_Q_NONE, I(0), N(12)),
+        ),
+    );
+
+    validate("<(foo)<(bar)", &exp);
+}
+
+TEST(lexer, process_substitution_in_double_quotes) {
+    da_tok exp = TOKS(
+        WORD(I(0), N(8), false,
+            PART("<(abc)", LX_Q_DOUBLE, I(1), N(6)),
+        ),
+    );
+
+    validate("\"<(abc)\"", &exp);
+}
+
+TEST(lexer, process_substitution_and_command_substitution) {
+    da_tok exp = TOKS(
+        WORD(I(0), N(12), false,
+            PART("<(abc)$(def)", LX_Q_NONE, I(0), N(12)),
+        ),
+    );
+
+    validate("<(abc)$(def)", &exp);
 }
 
 /************ Test runner ************/
@@ -888,7 +965,6 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, word_token_span_is_preserved);
     RUN_TEST_CASE(lexer, mixed_operators_and_tokens_span_preservation);
     RUN_TEST_CASE(lexer, unfinished_parts_are_completed);
-
     RUN_TEST_CASE(lexer, command_substitution_recognized);
     RUN_TEST_CASE(lexer, command_substitution_after_word);
     RUN_TEST_CASE(lexer, command_substitution_incomplete);
@@ -896,4 +972,12 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, command_substitution_before_string);
     RUN_TEST_CASE(lexer, command_substitution_after_command_substitution);
     RUN_TEST_CASE(lexer, command_substitution_in_double_quotes);
+    RUN_TEST_CASE(lexer, process_substitution_recognized);
+    RUN_TEST_CASE(lexer, process_substitution_after_word);
+    RUN_TEST_CASE(lexer, process_substitution_incomplete);
+    RUN_TEST_CASE(lexer, process_substitution_after_string);
+    RUN_TEST_CASE(lexer, process_substitution_before_string);
+    RUN_TEST_CASE(lexer, process_substitution_after_process_substitution);
+    RUN_TEST_CASE(lexer, process_substitution_in_double_quotes);
+    RUN_TEST_CASE(lexer, process_substitution_and_command_substitution);
 }
