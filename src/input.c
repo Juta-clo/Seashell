@@ -62,25 +62,6 @@ typedef struct {
 } index_tok;
 
 typedef struct {
-    char *data;
-    int i;
-    int n;
-    bool hl;
-    bool attr_off;
-    int fg;
-    int bg;
-    bool bold;
-    bool under;
-} input_cell;
-
-LINC_ARRAY_TYPE(da_cell, input_cell);
-
-typedef struct {
-    da_cell cells;
-    int prompt_len;
-} input_buf;
-
-typedef struct {
     size_t i;
     linc_hds glob;
     linc_hds orig;
@@ -370,9 +351,22 @@ static void input_complete_file(const char *glob, const char *cli,
     }
 }
 
-static void input_draw_ch_cell(char c, input_cell *hl) {
-    if (c >= 32 && c < 127) {
-        printf("%c", c);
+void input_draw_cell(input_cell *cell, input_cell *hl) {
+    if (cell->hl) {
+        if (cell->attr_off) {
+            xprintty_write(pt, unibi_exit_attribute_mode);
+        } else {
+            xprintty_set_color(pt, cell->fg, cell->bg);
+
+            if (cell->bold)
+                xprintty_write(pt, unibi_enter_bold_mode);
+            if (cell->under)
+                xprintty_write(pt, unibi_enter_underline_mode);
+        }
+    } else if (cell->n > 1) {
+        printf("%s", cell->data);
+    } else if (*cell->data >= 32 && *cell->data < 127) {
+        printf("%c", *cell->data);
     } else {
         xprintty_write(pt, unibi_exit_attribute_mode);
 
@@ -392,14 +386,14 @@ static void input_draw_ch_cell(char c, input_cell *hl) {
     }
 }
 
-static void free_cells(input_buf *ibuf) {
+void free_cells(input_buf *ibuf) {
     for (size_t i = 0; i < ibuf->cells.size; ++i)
         free(ibuf->cells.data[i].data);
 
     linc_array_free(&ibuf->cells);
 }
 
-static void push_cell(char *data, size_t n, size_t i, da_cell *cells) {
+static void push_cell(const char *data, size_t n, size_t i, da_cell *cells) {
     input_cell *cell = linc_array_push(cells);
 
     *cell = (input_cell){
@@ -409,27 +403,27 @@ static void push_cell(char *data, size_t n, size_t i, da_cell *cells) {
     };
 }
 
-static input_buf get_cells(void) {
+input_buf input_get_cells(const char *line, int start_i) {
     input_buf ibuf = {0};
     bool pending_csi = false;
     bool pending_esc = false;
     int i = 0;
     int n = 0;
 
-    for (char *b = input.line; *b != '\0'; ++b, ++i) {
-        if (i >= input.start_i) {
+    for (const char *b = line; *b != '\0'; ++b, ++i) {
+        if (i >= start_i) {
             /* Push unfinished prompt csi characters literally */
             for (; n > 0; --n)
-                push_cell(&input.line[i - n], 1, i - n, &ibuf.cells);
+                push_cell(&line[i - n], 1, i - n, &ibuf.cells);
 
-            push_cell(&input.line[i], 1, i, &ibuf.cells);
+            push_cell(&line[i], 1, i, &ibuf.cells);
         } else if (pending_csi) {
             ++n;
 
             if (*b >= '@' && *b <= '~') {
                 pending_csi = false;
                 int csi_i = i - (n - 1);
-                push_cell(&input.line[csi_i], n, csi_i, &ibuf.cells);
+                push_cell(&line[csi_i], n, csi_i, &ibuf.cells);
                 n = 0;
             }
         } else if (pending_esc) {
@@ -439,14 +433,14 @@ static input_buf get_cells(void) {
                 pending_csi = true;
                 n = 2;
             } else {
-                push_cell(&input.line[i - 1], 1, i - 1, &ibuf.cells);
-                push_cell(&input.line[i], 1, i, &ibuf.cells);
+                push_cell(&line[i - 1], 1, i - 1, &ibuf.cells);
+                push_cell(&line[i], 1, i, &ibuf.cells);
             }
         } else if (*b == '\x1b') {
             pending_esc = true;
         } else {
             ++ibuf.prompt_len;
-            push_cell(&input.line[i], 1, i, &ibuf.cells);
+            push_cell(&line[i], 1, i, &ibuf.cells);
         }
     }
 
@@ -463,26 +457,15 @@ static void input_draw(int rows, int start_row, da_cell cells) {
     for (size_t i = 0; i < cells.size; ++i) {
         input_cell cell = cells.data[i];
 
-        if (cell.hl) {
-            if (cell.attr_off) {
-                xprintty_write(pt, unibi_exit_attribute_mode);
-            } else {
-                xprintty_set_color(pt, cell.fg, cell.bg);
+        if (cell.hl || cell.n > 1) {
+            if (cell.hl)
+                last_hl = &cells.data[i];
 
-                if (cell.bold)
-                    xprintty_write(pt, unibi_enter_bold_mode);
-                if (cell.under)
-                    xprintty_write(pt, unibi_enter_underline_mode);
-            }
-
-            last_hl = &cells.data[i];
-            ++cell_content_start_i;
-        } else if (cell.n > 1) {
-            printf("%s", cell.data);
+            input_draw_cell(&cell, last_hl);
             ++cell_content_start_i;
         } else if (i >= cell_content_start_i && scr_i < input.cols * rows) {
             ncol_cell(&crow, &ccol, input.start_row, scr_i++);
-            input_draw_ch_cell(*cell.data, last_hl);
+            input_draw_cell(&cell, last_hl);
 
             if (ccol == input.cols - 1) {
                 if (crow != rows - 1) {
@@ -496,13 +479,13 @@ static void input_draw(int rows, int start_row, da_cell cells) {
     }
 }
 
-static int cell_index(int *start, int *end, da_cell *cells) {
+static int cell_index(int *start, int *end, da_cell *cells, int start_i) {
     ASSERT(start);
     ASSERT(end);
     ASSERT(cells);
 
-    int tok_start = *start + input.start_i;
-    int tok_end = *end + input.start_i;
+    int tok_start = *start + start_i;
+    int tok_end = *end + start_i;
 
     for (size_t i = 0; i < cells->size; ++i) {
         input_cell *cell = &cells->data[i];
@@ -520,8 +503,11 @@ static int cell_index(int *start, int *end, da_cell *cells) {
 }
 
 static void input_add_highlight(int start, int end, int fg, int bg, bool bold,
-        bool under, input_buf *ibuf) {
+        bool under, input_buf *ibuf, int start_i) {
     ASSERT(ibuf);
+
+    if (cell_index(&start, &end, &ibuf->cells, start_i) == -1)
+        return;
 
     input_cell *cell = linc_array_insert(&ibuf->cells, start, 1);
     *cell = (input_cell){
@@ -590,36 +576,42 @@ static bool is_name(const char *text) {
     return name_found;
 }
 
-static void highlight_tok(lx_tok *tok, input_buf *ibuf) {
-    int start = tok->i;
-    int end = tok->i + (tok->n - 1);
+void input_highlight_tok(int start, int end, lx_kind kind, input_buf *ibuf,
+        int start_i) {
+    int fg = -1;
+    int bg = -1;
+    int bold = false;
+    bool under = false;
 
-    if (cell_index(&start, &end, &ibuf->cells) == -1)
-        return;
-
-    if (tok->kind == LX_TOK_PIPE || tok->kind == LX_TOK_AND_IF ||
-        tok->kind == LX_TOK_OR_IF) {
-        input_add_highlight(start, end, PRINTTY_YELLOW, -1, false, false, ibuf);
-    } else if (tok->kind == LX_TOK_LPAREN || tok->kind == LX_TOK_RPAREN) {
-        input_add_highlight(start, end, PRINTTY_MAGENTA, -1, false, false, ibuf);
-    } else if (lx_kind_is_redir(tok->kind) || tok->kind == LX_TOK_IO_NUM) {
-        input_add_highlight(start, end, PRINTTY_CYAN, -1, false, false, ibuf);
-    } else if (tok->kind == LX_TOK_AMPER) {
-        input_add_highlight(start, end, PRINTTY_CYAN, -1, true, false, ibuf);
+    if (kind == LX_TOK_PIPE || kind == LX_TOK_AND_IF ||
+        kind == LX_TOK_OR_IF) {
+        fg = PRINTTY_YELLOW;
+    } else if (kind == LX_TOK_LPAREN || kind == LX_TOK_RPAREN) {
+        fg = PRINTTY_MAGENTA;
+    } else if (lx_kind_is_redir(kind) || kind == LX_TOK_IO_NUM) {
+        fg = PRINTTY_CYAN;
+    } else if (kind == LX_TOK_AMPER) {
+        fg = PRINTTY_CYAN;
+        bold = true;
     }
+
+    input_add_highlight(
+        start, end,
+        fg, bg, bold, under,
+        ibuf, start_i
+    );
 }
 
-static void highlight_err(int start, int end, input_buf *ibuf) {
+static void highlight_err(int start, int end, input_buf *ibuf, int start_i) {
     int fg = PRINTTY_RED;
     int bg = -1;
     int bold = true;
     int under = false;
 
-    if (cell_index(&start, &end, &ibuf->cells) != -1)
-        input_add_highlight(start, end, fg, bg, bold, under, ibuf);
+    input_add_highlight(start, end, fg, bg, bold, under, ibuf, start_i);
 }
 
-static void highlight_command(ps_word *word, input_buf *ibuf) {
+static void highlight_command(ps_word *word, input_buf *ibuf, int start_i) {
     ASSERT(word && ibuf);
     ASSERT(word->arg);
 
@@ -637,15 +629,15 @@ static void highlight_command(ps_word *word, input_buf *ibuf) {
     } else if (path_found) {
         under = true;
     } else {
-        highlight_err(start, end, ibuf);
+        highlight_err(start, end, ibuf, start_i);
         return;
     }
 
-    if (cell_index(&start, &end, &ibuf->cells) != -1)
-        input_add_highlight(start, end, fg, -1, bold, under, ibuf);
+    input_add_highlight(start, end, fg, -1, bold, under, ibuf, start_i);
 }
 
-static void highlight_arg(ps_word *word, bool redir, input_buf *ibuf) {
+static void highlight_arg(ps_word *word, bool redir, input_buf *ibuf,
+        int start_i, const char *str) {
     bool path_found = is_path(word->arg);
 
     for (size_t i = 0; i < word->segments.size; ++i) {
@@ -674,12 +666,12 @@ static void highlight_arg(ps_word *word, bool redir, input_buf *ibuf) {
             fg = PRINTTY_GREEN + 8;
 
             /* Is the quote terminated? */
-            if (lstart()[seg->i + seg->n] == '\0')
+            if (str[seg->i + seg->n] == '\0')
                 --end;
         }
 
-        if (cell_index(&start, &end, &ibuf->cells) != -1)
-            input_add_highlight(start, end, fg, -1, bold, under, ibuf);
+        input_add_highlight(start, end, fg, -1, bold, under, ibuf,
+                start_i);
     }
 }
 
@@ -706,7 +698,7 @@ static bool is_err_tok(lx_tok *tok, ps_scan *scan) {
     return false;
 }
 
-static void input_highlight(input_buf *ibuf, const char *line, size_t n) {
+void input_highlight(input_buf *ibuf, const char *line, size_t n, int start_i) {
     bool hl_complete = false;
     size_t err_tok_i;
     da_tok toks = {0};
@@ -722,23 +714,24 @@ static void input_highlight(input_buf *ibuf, const char *line, size_t n) {
             lx_tok *tok = &toks.data[i];
 
             if (is_err_tok(tok, &scan)) {
-                highlight_err(tok->i, tok->i + (tok->n - 1), ibuf);
+                highlight_err(tok->i, tok->i + (tok->n - 1), ibuf, start_i);
                 err_tok_i = i + 1;
             } else if (tok->kind != LX_TOK_WORD) {
-                highlight_tok(tok, ibuf);
+                input_highlight_tok(tok->i, tok->i + (tok->n - 1), tok->kind,
+                        ibuf, start_i);
             } else {
                 ps_info pinfo = {0};
                 ps_get_info(tok->i, &ast, &pinfo);
 
                 if (pinfo.kinds & PS_INFO_NAME) {
                     if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
-                        highlight_command(pinfo.word, ibuf);
+                        highlight_command(pinfo.word, ibuf, start_i);
                 } else if (pinfo.kinds & PS_INFO_REDIR) {
                     if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
-                        highlight_arg(pinfo.word, true, ibuf);
+                        highlight_arg(pinfo.word, true, ibuf, start_i, line);
                 } else if (pinfo.kinds & PS_INFO_ARG) {
                     if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
-                        highlight_arg(pinfo.word, false, ibuf);
+                        highlight_arg(pinfo.word, false, ibuf, start_i, line);
                 }
             }
         }
@@ -758,6 +751,10 @@ static void input_highlight(input_buf *ibuf, const char *line, size_t n) {
         ps_free(&ast);
     }
 
+    lx_free(&toks);
+}
+
+void input_shadow(input_buf *ibuf) {
     char *shadow = history_get_shadow();
 
     if (shadow) {
@@ -774,8 +771,6 @@ static void input_highlight(input_buf *ibuf, const char *line, size_t n) {
             .hl = true, .attr_off = true
         };
     }
-
-    lx_free(&toks);
 }
 
 static void input_update(void) {
@@ -784,9 +779,9 @@ static void input_update(void) {
 
     int crow, ccol;
     int rows = input.rows;
-    input_buf ibuf = get_cells();
-
-    input_highlight(&ibuf, lstart(), line_len());
+    input_buf ibuf = input_get_cells(input.line, input.start_i);
+    input_highlight(&ibuf, lstart(), line_len(), input.start_i);
+    input_shadow(&ibuf);
 
     input.prompt_len = ibuf.prompt_len;
 

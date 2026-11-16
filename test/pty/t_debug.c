@@ -521,6 +521,7 @@ void new_curses_ui() {
 
     int offsets[WIN_MAX] = {0};
     size_t snap_i = ptyh.tests.data[test_i].snaps.size - 1;
+    bool vterm_exp = false;
 
     while (true) {
         sp_refresh(quad, get_quad_rect());
@@ -537,8 +538,13 @@ void new_curses_ui() {
         render_debug_win(wins[WIN_LOG], &test->shlog_lines, offsets[WIN_LOG]);
         render_debug_win(wins[WIN_VAL], &test->val_lines, offsets[WIN_VAL]);
 
-        if (test->snaps.size != 0)
-            render_vterm_snap(wins[WIN_RAW], &test->snaps.data[snap_i]);
+        if (test->snaps.size != 0) {
+            if (vterm_exp) {
+                render_vterm_snap(wins[WIN_RAW], &test->vt_exp_render);
+            } else {
+                render_vterm_snap(wins[WIN_RAW], &test->snaps.data[snap_i]);
+            }
+        }
 
         int ch = getch();
 
@@ -547,6 +553,9 @@ void new_curses_ui() {
 
         if (ch == 'q')
             break;
+
+        if (ch == 'e')
+            vterm_exp = !vterm_exp;
 
         if (ch == KEY_MOUSE)
             process_mevs(wins, offsets);

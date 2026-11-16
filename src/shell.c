@@ -159,52 +159,71 @@ char *make_ast_str(ps_ast *ast) {
     return ast_str;
 }
 
-static linc_string get_job_str(const job_event *jev, int off, int argv_off,
-        bool verbose) {
-    linc_string out = LINC_STRING_INIT;
-    int min_offset = 1;
+void print_job_event(const job_event *jev, bool verbose) {
+    if (env.subsh || !env.job_ctrl)
+        return;
+
+    cursor_left_anchor();
+
+    int init_off = printf("[%d] ", jev->jid);
+    int last_len;
+    int argv_off = 21;
 
     for (size_t i = 0; i < jev->pviews.size; ++i) {
         proc_view *pview = &jev->pviews.data[i];
-        size_t prev_len = out.len;
 
         if (verbose || i == 0 || !same_ev_type(pview, &pview[-1])) {
             if (pview->stat == PROC_EXIT) {
                 if (pview->exit_stat == 0) {
-                    linc_string_appendf(&out, "done");
+                    last_len = printf("done");
                 } else {
-                    linc_string_appendf(&out, "exit %d", pview->exit_stat);
+                    last_len = printf("exit %d", pview->exit_stat);
                 }
             } else if (pview->stat == PROC_RUN) {
-                linc_string_append(&out, "running");
+                last_len = printf("running");
             } else if (pview->stat == PROC_SIG) {
-                linc_string_appendf(&out, "%s", strsignal(pview->term_sig));
+                last_len = printf("%s", strsignal(pview->term_sig));
             } else if (pview->stat == PROC_STOP) {
-                linc_string_appendf(&out, "%s", strsignal(pview->stop_sig));
+                last_len = printf("%s", strsignal(pview->stop_sig));
             } else {
                 argv_off -= 1;
             }
 
-            int len = off + (out.len - prev_len);
-            int off = MAX(argv_off - len, min_offset);
-            linc_string_appendf(&out, "%*s", off, "");
+            int off = MAX(argv_off - (last_len + init_off), 1);
+            printf("%*s", off, "");
         }
 
         if (verbose)
-            linc_string_appendf(&out, "%d ", pview->pid);
+            printf("%d ", pview->pid);
 
-        linc_string_appendf(&out, "%s", pview->cmd);
+        input_buf ibuf = input_get_cells(pview->cmd, 0);
+        input_highlight(&ibuf, pview->cmd, strlen(pview->cmd), 0);
+
+        for (size_t i = 0; i < ibuf.cells.size; ++i)
+            input_draw_cell(&ibuf.cells.data[i], nullptr);
+
+        free_cells(&ibuf);
 
         if (i != jev->pviews.size - 1) {
+            printf (" ");
+
+            input_buf ibuf = input_get_cells("|", 0);
+            input_highlight_tok(0, 0, LX_TOK_PIPE, &ibuf, 0);
+
+            for (size_t i = 0; i < ibuf.cells.size; ++i)
+                input_draw_cell(&ibuf.cells.data[i], nullptr);
+
+            free_cells(&ibuf);
+
             if (!verbose && same_ev_type(pview, &pview[1])) {
-                linc_string_appendf(&out, " | ");
+                printf(" ");
             } else {
-                linc_string_appendf(&out, " |\n%*s", off, "");
+                printf("\n%*s", init_off, "");
             }
         }
     }
 
-    return out;
+    printf("\n");
 }
 
 static void reclaim_terminal(bool restore_termios) {
@@ -712,26 +731,6 @@ void process_signals(void) {
 
         exit(EXIT_FAILURE);
     }
-}
-
-void print_job_event(const job_event *jev, bool verbose) {
-    if (env.subsh || !env.job_ctrl)
-        return;
-
-    linc_string msg = LINC_STRING_INIT;
-    linc_string_appendf(&msg, "[%d] ", jev->jid);
-
-    int offset = msg.len;
-
-    linc_string s = get_job_str(jev, offset, 21, verbose);
-    linc_string_append(&msg, s.cstr);
-    linc_string_free(&s);
-
-    cursor_left_anchor();
-    printf("%s\n", msg.cstr);
-
-    LOG_INFO("%s", msg.cstr);
-    linc_string_free(&msg);
 }
 
 linc_string shell_get_prompt(void) {

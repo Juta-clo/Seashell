@@ -268,6 +268,22 @@ TEST(highlight, error_after_initial_error) {
     );
 }
 
+TEST(highlight, job_control_message_with_quotes) {
+    vt_send_str("sleep '100' &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep '100' &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("jobs\n");
+    assert_term_attr(2, PROMPT_LEN,
+        PROMPT HL_CMD(jobs),
+        "[1] running          " HL_CMD(sleep) " " HL_STR("'100'") "%s",
+        PROMPT
+    );
+}
+
 IGNORE_TEST(highlight, subshell_errors_are_contained) {
     vt_send_str("(&&) > out");
     assert_term_attr(0, PROMPT_LEN + 10,
@@ -307,5 +323,6 @@ TEST_GROUP_RUNNER(highlight) {
     RUN_TEST_CASE(highlight, andor_error);
     RUN_TEST_CASE(highlight, error_in_subshell);
     RUN_TEST_CASE(highlight, error_after_initial_error);
+    RUN_TEST_CASE(highlight, job_control_message_with_quotes);
     RUN_TEST_CASE(highlight, subshell_errors_are_contained);
 }

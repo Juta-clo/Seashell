@@ -130,20 +130,33 @@ static bool handle_test_spec_ch(char *c, linc_string *out, int *ind) {
     }
 }
 
-static linc_string expand_test_specifiers(char *line, vt_snap *snap) {
+static linc_string expand_test_specifiers(char *line, vt_snap *snap,
+        bool render) {
     linc_string out = LINC_STRING_INIT;
-    linc_string_push(&out, '^');
+
+    if (!render)
+        linc_string_push(&out, '^');
 
     int line_len = (line) ? strlen(line) : 0;
     int cells_created = 0;
 
     for (int i = 0; i < line_len; ++i) {
         if (line[i] == '%') {
-            if (handle_test_spec_ch(&line[i], &out, &i))
+            if (render) {
+                if (line[i + 1] == '[') {
+                    ++i;
+                    handle_vt_color(&line[i + 1], &i);
+                    continue;
+                } else {
+                    linc_string_push(&out, line[i]);
+                }
+            } else if (handle_test_spec_ch(&line[i], &out, &i))
                 continue;
         } else {
-            if (is_regex_char(line[i]))
-                linc_string_push(&out, '\\');
+            if (!render) {
+                if (is_regex_char(line[i]))
+                    linc_string_push(&out, '\\');
+            }
 
             linc_string_push(&out, line[i]);
         }
@@ -158,10 +171,16 @@ static linc_string expand_test_specifiers(char *line, vt_snap *snap) {
         ++cells_created;
     }
 
-    for (int i = 0; i < snap->cols - cells_created; ++i)
+    for (int i = 0; i < snap->cols - cells_created; ++i) {
         *linc_array_push(&snap->cells) = (vt_cell){ .fg = -1, .bg = -1, };
 
-    linc_string_append(&out, "`*$");
+        if (render)
+            linc_string_push(&out, '`');
+    }
+
+    if (!render)
+        linc_string_append(&out, "`*$");
+
     return out;
 }
 
@@ -361,7 +380,8 @@ vt_snap vt_get_snap(void) {
     return snap;
 }
 
-void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol) {
+void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol,
+        bool render) {
 #define VTERM_ROWS_MAX 4096
     assert(lines);
     assert(test->vt.rows <= 4096);
@@ -391,9 +411,9 @@ void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol) {
         linc_string s;
 
         if (!lines_done) {
-            s = expand_test_specifiers(lines[i], snap);
+            s = expand_test_specifiers(lines[i], snap, render);
         } else {
-            s = expand_test_specifiers(NULL, snap);
+            s = expand_test_specifiers(NULL, snap, render);
         }
 
         *linc_array_push(&snap->lines) = xstrdup(s.cstr);

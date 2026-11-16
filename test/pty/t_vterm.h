@@ -58,7 +58,8 @@ bool vt_snap_cmp(vt_snap *exp, bool attr);
 da_int vt_ch_dirty(vt_snap *exp, vt_snap *act, bool *curs_dirty);
 vt_snap vt_get_snap(void);
 void vt_free_snap(vt_snap *snap);
-void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol);
+void vt_lines_to_snap(char **lines, vt_snap *snap, int crow, int ccol,
+        bool render);
 
 void vt_send_str(const char *msg);
 void vt_send_ch(char ch, VTermModifier mod);

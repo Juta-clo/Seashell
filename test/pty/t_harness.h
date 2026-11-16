@@ -34,6 +34,7 @@ typedef struct {
 
     vt_vterm vt;
     vt_snap vt_exp, vt_act;
+    vt_snap vt_exp_render;
     da_vt_snap snaps;
 
     char *test_name;

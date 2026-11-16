@@ -112,7 +112,7 @@ bool verify_term(char **lines, int crow, int ccol, bool attr) {
     assert(crow >= 0 && ccol >= 0);
     assert(crow < test->vt.rows && ccol < test->vt.cols);
 
-    vt_lines_to_snap(lines, &test->vt_exp, crow, ccol);
+    vt_lines_to_snap(lines, &test->vt_exp, crow, ccol, false);
 
     if (vt_snap_cmp(&test->vt_exp, attr)) {
         vt_free_snap(&test->vt_exp);
@@ -135,6 +135,7 @@ bool verify_term(char **lines, int crow, int ccol, bool attr) {
     }
 
     test->vt_act = vt_get_snap();
+    vt_lines_to_snap(lines, &test->vt_exp_render, crow, ccol, true);
     test->diff_snaps = true;
 
     if (close(tfd) == -1)
