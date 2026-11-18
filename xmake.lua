@@ -40,7 +40,7 @@ target("seashell")
 -- TESTING --
 
 local test_bins = {
-    "change_tio", "interrupt_me", "self_kill", "write_sleep"
+    "change_tio", "interrupt_me", "self_kill", "write_sleep", "fill_pipe"
 }
 
 for _, name in ipairs(test_bins) do

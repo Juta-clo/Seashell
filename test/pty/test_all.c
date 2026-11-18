@@ -29,6 +29,7 @@ void run_all(void) {
     mute_unity = true;
 
     RUN_TEST_GROUP(shell);
+    RUN_TEST_GROUP(substitution);
     RUN_TEST_GROUP(variable);
     RUN_TEST_GROUP(glob);
     RUN_TEST_GROUP(termios);

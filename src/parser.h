@@ -88,11 +88,13 @@ struct ps_cmd {
     ps_cmd_kind kind;
     da_redir redirs;
     int i, n;
+    bool expanded;
 
     union {
         struct {
             da_word words;
             char **argv;
+            int argc;
         };
 
         ps_ast subsh;

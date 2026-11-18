@@ -38,7 +38,7 @@ int line_to_ast(const char *line, size_t n, ps_ast *ast);
 linc_string shell_get_prompt(void);
 
 int shell_run_andor(ps_ast *ast);
-char *shell_run_capture(const char *line, size_t n, int *file);
+int shell_run_capture(const char *line, size_t n, int *pid);
 int shell_run(const char *line);
 
 #endif

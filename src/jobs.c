@@ -258,7 +258,7 @@ int job_update(wait_event wev) {
     jc_proc *proc;
 
     if (!identify_proc(wev.pid, &job, &proc)) {
-        LOG_INFO("collected wait stat from %d", wev.pid);
+        LOG_INFO("waited for process not in job table: %d", wev.pid);
         return 0;
     }
 

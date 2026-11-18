@@ -33,7 +33,7 @@ void input_deinit(void);
 
 input_buf input_get_cells(const char *line, int start_i);
 void input_draw_cell(input_cell *cell, input_cell *hl);
-void free_cells(input_buf *ibuf);
+void input_free_cells(input_buf *ibuf);
 void input_highlight(input_buf *ibuf, const char *line, size_t n, int start_i);
 void input_highlight_tok(int start, int end, lx_kind kind, input_buf *ibuf,
         int start_i);

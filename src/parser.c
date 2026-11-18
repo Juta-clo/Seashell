@@ -77,6 +77,7 @@ static void copy_word(ps_word *dst, lx_tok *src, ps_scan *scan) {
 
     dst->i = src->i;
     dst->n = src->n;
+    dst->proc_sub_fds.allo = scan->ast->allo;
 
     for (size_t i = 0; i < src->parts.size; ++i) {
         lx_part *src_part = &src->parts.data[i];
@@ -457,8 +458,10 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
     scan->ast = ast;
     scan->cur_tok = &scan->toks->data[0];
 
-    if (!scan->toks || !ast || scan->toks->size == 0)
+    if (!scan->toks || !ast || scan->toks->size == 0) {
+        ps_free(ast);
         goto fail;
+    }
 
     for (; scan->i != scan->toks->size; scan_advance(1, scan)) {
         lx_kind kind = scan->cur_tok->kind;

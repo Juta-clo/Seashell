@@ -456,31 +456,9 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
 };
 
 sh_builtin *get_builtin(const char *arg) {
-    const char *name = arg;
-
     for (size_t i = 0; i < BUILTIN_COUNT; ++i)
-        if (STREQ(builtins[i].name, name))
+        if (STREQ(builtins[i].name, arg))
             return &builtins[i];
 
     return nullptr;
-}
-
-bool try_run_builtin(char **argv, int *status) {
-    if (!argv || !argv[0]) {
-        LOG_ERR("receieved bad argv structure");
-        fatal("internal error check logs\n");
-    }
-
-    sh_builtin *builtin = get_builtin(argv[0]);
-
-    if (builtin) {
-        int builtin_status = builtin->func(argv, &env);
-
-        if (status)
-            *status = builtin_status;
-
-        return true;
-    }
-
-    return false;
 }

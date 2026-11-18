@@ -7,6 +7,8 @@
 #include "utils.h"
 #include "wait_stat.h"
 
+wait_event last_exit_event = {0};
+
 char *get_wstat_str(pid_t pid, int wstat) {
     static char buf[4096];
 
@@ -30,18 +32,26 @@ char *get_wstat_str(pid_t pid, int wstat) {
     return buf;
 }
 
-int get_wstat(wait_event *wev) {
+int get_wstat(wait_event *wev, pid_t pid, int wopt) {
     ASSERT(wev);
 
-    int wstat;
-    pid_t cpid = waitpid(-1, &wstat, WUNTRACED | WCONTINUED | WNOHANG);
+    *wev = (wait_event){0};
 
-    if (cpid == -1 && errno != ECHILD) {
-        LOG_ERR("waitpid: %m");
-        err_exit_imp("waitpid");
+    int wstat;
+    pid_t cpid = waitpid(pid, &wstat, wopt);
+
+    if (cpid == -1) {
+        if (errno != ECHILD)
+            err_exit("waitpid");
+
+        if (pid == -1) {
+            return -1;
+        } else {
+            fatal("tried waiting for non-existant process");
+        }
     }
 
-    if (cpid == 0 || (cpid == -1 && errno == ECHILD))
+    if (cpid == 0)
         return -1;
 
     wev->pid = cpid;
@@ -49,15 +59,14 @@ int get_wstat(wait_event *wev) {
     if (WIFEXITED(wstat)) {
         wev->type = PEXITED;
         wev->exit_stat = WEXITSTATUS(wstat);
-
+        last_exit_event = *wev;
     } else if (WIFSIGNALED(wstat)) {
         wev->type = PSIGNALED;
         wev->term_sig = WTERMSIG(wstat);
-
+        last_exit_event = *wev;
     } else if (WIFSTOPPED(wstat)) {
         wev->type = PSTOPPED;
         wev->stop_sig = WSTOPSIG(wstat);
-
     } else if (WIFCONTINUED(wstat)) {
         wev->type = PCONTINUED;
     }

@@ -3,7 +3,9 @@
 
 #include <sys/wait.h>
 
-#include <linc/array.h>
+#include "linc/array.h"
+
+#define WOPT_JOB (WUNTRACED | WCONTINUED | WNOHANG)
 
 typedef enum {
     PEXITED,
@@ -26,7 +28,9 @@ struct wait_event {
 typedef struct wait_event wait_event;
 LINC_ARRAY_TYPE(da_wevent, wait_event);
 
+extern wait_event last_exit_event;
+
 char *get_wstat_str(pid_t pid, int wstat);
-int get_wstat(wait_event *wev);
+int get_wstat(wait_event *wev, pid_t pid, int wopt);
 
 #endif

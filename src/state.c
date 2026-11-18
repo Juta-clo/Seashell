@@ -97,6 +97,12 @@ void sig_restore(sigset_t *og_mask) {
     sig_set_handler(SIGINT, SIG_DFL);
 }
 
+void ignore_job_ctrl_signals(void) {
+    sig_set_handler(SIGTTOU, SIG_IGN);
+    sig_set_handler(SIGTTIN, SIG_IGN);
+    sig_set_handler(SIGTSTP, SIG_IGN);
+}
+
 static void sig_init(void) {
     sig_set_handler(SIGTTOU, SIG_IGN);
     sig_set_handler(SIGTTIN, SIG_IGN);

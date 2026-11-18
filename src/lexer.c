@@ -381,7 +381,7 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
                 ensure_part(&scan, LX_Q_NONE);
                 scan.esc_pending = true;
             } else if (scan.kind == LX_CMD_SUB_START ||
-                    scan.kind == LX_PROC_SUB_START) {
+                       scan.kind == LX_PROC_SUB_START) {
                 ensure_tok(toks, LX_TOK_WORD, &scan);
                 ensure_part(&scan, LX_Q_NONE);
 

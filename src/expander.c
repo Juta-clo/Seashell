@@ -11,6 +11,7 @@
 #include "parser.h"
 #include "expander.h"
 #include "path_glob.h"
+#include "sig_funcs.h"
 #include "utils.h"
 #include "variable.h"
 #include "state.h"
@@ -112,9 +113,12 @@ static int ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob,
 
 static int expand_seg(ps_segment *seg, bool *has_glob, linc_string *out,
         int type, ps_word *word) {
+    int status = -1;
     da_ex_tok toks = {0};
     int print_err = (type != EXPAND_COMP);
-    word->proc_sub_fds.allo = word->segments.allo;
+    wait_event wev = {0};
+    int pid = 0;
+    linc_string data;
 
     if (ex_tokenize(seg->raw, &toks, has_glob, print_err) == -1)
         return -1;
@@ -129,33 +133,38 @@ static int expand_seg(ps_segment *seg, bool *has_glob, linc_string *out,
             linc_string_append_n(out, tok->str, tok->str_len);
         } else if (tok->type == EXT_CMD_SUB) {
             if (type != EXPAND_COMP) {
-                char *data = shell_run_capture( tok->str, tok->str_len, nullptr);
+                int rfd = shell_run_capture(tok->str, tok->str_len, &pid);
+                if (rfd == -1)
+                    goto cleanup;
 
-                if (!data) {
-                    linc_array_free(&toks);
-                    return -1;
+                read_to_eof(rfd, &data);
+                trim_newlines(&data);
+                get_wstat(&wev, pid, 0);
+
+                if (wev.type == PSIGNALED && wev.term_sig == SIGINT) {
+                    sig_consume(SIGINT);
+                    linc_string_free(&data);
+                    xclose(rfd);
+                    goto cleanup;
                 }
 
-                linc_string_append(out, data);
-                free(data);
+                linc_string_append_n(out, data.cstr, data.len);
+                linc_string_free(&data);
+                xclose(rfd);
             } else {
                 linc_string_append_n(out, tok->str, tok->str_len);
             }
         } else if (tok->type == EXT_PROC_SUB) {
             if (type != EXPAND_COMP) {
-                int pipe_fd;
-                shell_run_capture(tok->str, tok->str_len, &pipe_fd);
-
-                if (pipe_fd == -1) {
-                    linc_array_free(&toks);
-                    return -1;
-                }
+                int rfd = shell_run_capture(tok->str, tok->str_len, NULL);
+                if (rfd == -1)
+                    goto cleanup;
 
                 linc_string path = LINC_STRING_INIT;
-                linc_string_appendf(&path, "/dev/fd/%d", pipe_fd);
+                linc_string_appendf(&path, "/dev/fd/%d", rfd);
                 linc_string_append(out, path.cstr);
                 linc_string_free(&path);
-                *linc_array_push(&word->proc_sub_fds) = pipe_fd;
+                *linc_array_push(&word->proc_sub_fds) = rfd;
             } else {
                 linc_string_append_n(out, tok->str, tok->str_len);
             }
@@ -164,8 +173,11 @@ static int expand_seg(ps_segment *seg, bool *has_glob, linc_string *out,
         }
     }
 
+    status = 0;
+
+cleanup:
     linc_array_free(&toks);
-    return 0;
+    return status;
 }
 
 void close_proc_subs(ps_cmd *cmd) {
@@ -198,6 +210,13 @@ int expand_word(ps_word *word, da_charp *argv, int type) {
         } else if (seg->quote == PS_Q_NONE) {
             if (expand_seg(seg, &has_glob, &exp_seg, type, word) == -1)
                 return -1;
+
+            /* Variable or sub expanded to nothing, don't create arg */
+            if (word->segments.size == 1 && STREQ(exp_seg.cstr, "")) {
+                word->arg = strdup_alloc(arg.cstr, &allo);
+                linc_string_free(&exp_seg);
+                return 0;
+            }
 
             linc_string_append(&arg, exp_seg.cstr);
         } else {
@@ -264,6 +283,7 @@ int expand_cmd(ps_cmd *cmd, int type) {
 
         *linc_array_push(&argv) = nullptr;
         cmd->argv = argv.data;
+        cmd->argc = argv.size - 1;
     }
 
     for (size_t k = 0;  k < cmd->redirs.size; ++k) {
@@ -274,5 +294,6 @@ int expand_cmd(ps_cmd *cmd, int type) {
             return -1;
     }
 
+    cmd->expanded = true;
     return 0;
 }

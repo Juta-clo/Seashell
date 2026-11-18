@@ -232,8 +232,16 @@ TEST(variable, set_builtin_with_exit_status_variable) {
     );
 }
 
+TEST(variable, undefined_variable_does_not_create_empty_arg) {
+    vt_send_str("$non-existant\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "$non-existant",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
-//
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(variable) {
@@ -255,4 +263,5 @@ TEST_GROUP_RUNNER(variable) {
     RUN_TEST_CASE(variable, exit_status_variable);
     RUN_TEST_CASE(variable, unset_builtin_with_exit_status_variable);
     RUN_TEST_CASE(variable, set_builtin_with_exit_status_variable);
+    RUN_TEST_CASE(variable, undefined_variable_does_not_create_empty_arg);
 }

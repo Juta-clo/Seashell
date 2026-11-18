@@ -59,6 +59,7 @@ void sigchld_handler(int);
 void sighup_handler(int);
 void sigint_handler(int);
 
+void ignore_job_ctrl_signals(void);
 void sig_restore(sigset_t *og_mask);
 void env_init(int argc, char *const *argv);
 

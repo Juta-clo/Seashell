@@ -181,7 +181,7 @@ static void free_index_tok(index_tok *itok) {
     ps_free(&itok->ast);
 }
 
-static int input_index_tok(index_tok *itok, int ind) {
+static int get_index_tok(index_tok *itok, int ind) {
     ASSERT(itok);
 
     *itok = (index_tok){0};
@@ -264,7 +264,7 @@ static da_charp build_path_candidates(const char *name) {
     return pents;
 }
 
-static void input_complete_command(const char *cmd, da_charp *hits) {
+static void complete_command(const char *cmd, da_charp *hits) {
     ASSERT(hits);
 
     *hits = (da_charp){0};
@@ -312,7 +312,7 @@ static void escape_spaces(linc_string *str) {
     *str = out;
 }
 
-static void input_complete_file(const char *glob, const char *cli,
+static void complete_file(const char *glob, const char *cli,
         da_charp *hits) {
     glob_pattern(glob, strlen(glob), hits);
 
@@ -386,7 +386,7 @@ void input_draw_cell(input_cell *cell, input_cell *hl) {
     }
 }
 
-void free_cells(input_buf *ibuf) {
+void input_free_cells(input_buf *ibuf) {
     for (size_t i = 0; i < ibuf->cells.size; ++i)
         free(ibuf->cells.data[i].data);
 
@@ -448,7 +448,7 @@ input_buf input_get_cells(const char *line, int start_i) {
     return ibuf;
 }
 
-static void input_draw(int rows, int start_row, da_cell cells) {
+static void draw(int rows, int start_row, da_cell cells) {
     int scr_i = 0;
     size_t cell_content_start_i = start_row * input.cols;
     int crow, ccol;
@@ -502,7 +502,7 @@ static int cell_index(int *start, int *end, da_cell *cells, int start_i) {
     return -1;
 }
 
-static void input_add_highlight(int start, int end, int fg, int bg, bool bold,
+static void add_highlight(int start, int end, int fg, int bg, bool bold,
         bool under, input_buf *ibuf, int start_i) {
     ASSERT(ibuf);
 
@@ -595,7 +595,7 @@ void input_highlight_tok(int start, int end, lx_kind kind, input_buf *ibuf,
         bold = true;
     }
 
-    input_add_highlight(
+    add_highlight(
         start, end,
         fg, bg, bold, under,
         ibuf, start_i
@@ -608,7 +608,7 @@ static void highlight_err(int start, int end, input_buf *ibuf, int start_i) {
     int bold = true;
     int under = false;
 
-    input_add_highlight(start, end, fg, bg, bold, under, ibuf, start_i);
+    add_highlight(start, end, fg, bg, bold, under, ibuf, start_i);
 }
 
 static void highlight_command(ps_word *word, input_buf *ibuf, int start_i) {
@@ -633,7 +633,7 @@ static void highlight_command(ps_word *word, input_buf *ibuf, int start_i) {
         return;
     }
 
-    input_add_highlight(start, end, fg, -1, bold, under, ibuf, start_i);
+    add_highlight(start, end, fg, -1, bold, under, ibuf, start_i);
 }
 
 static void highlight_arg(ps_word *word, bool redir, input_buf *ibuf,
@@ -670,8 +670,7 @@ static void highlight_arg(ps_word *word, bool redir, input_buf *ibuf,
                 --end;
         }
 
-        input_add_highlight(start, end, fg, -1, bold, under, ibuf,
-                start_i);
+        add_highlight(start, end, fg, -1, bold, under, ibuf, start_i);
     }
 }
 
@@ -819,13 +818,13 @@ static void input_update(void) {
                 printf("\n");
             }
         } else {
-            free_cells(&ibuf);
+            input_free_cells(&ibuf);
             return;
         }
     }
 
-    input_draw(rows, start_row, ibuf.cells);
-    free_cells(&ibuf);
+    draw(rows, start_row, ibuf.cells);
+    input_free_cells(&ibuf);
 
     if (paging) {
         ncol_cell(&crow, &ccol, input.start_row,
@@ -1053,7 +1052,7 @@ static void input_complete(void) {
     da_charp hits = {0};
     index_tok itok = {0};
 
-    if (input_index_tok(&itok, input.off) == -1) {
+    if (get_index_tok(&itok, input.off) == -1) {
         input_reset_comp();
         free_index_tok(&itok);
         return;
@@ -1085,10 +1084,10 @@ static void input_complete(void) {
     LOG_INFO("    orig = %s", input.comp.orig);
 
     if (itok.kind == ITOK_NAME)
-        input_complete_command(input.comp.glob, &hits);
+        complete_command(input.comp.glob, &hits);
 
     if (itok.kind == ITOK_ARG || itok.kind == ITOK_REDIR || hits.size == 0)
-        input_complete_file(input.comp.glob, input.comp.orig, &hits);
+        complete_file(input.comp.glob, input.comp.orig, &hits);
 
     if (hits.size == 0) {
         LOG_INFO("    Fail!");

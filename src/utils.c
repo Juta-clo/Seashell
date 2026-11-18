@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "linc/array.h"
+#include "linc/string.h"
 #include "linc/xsys.h"
 
 #include "state.h"
@@ -73,7 +74,7 @@ void err_exit_imp(const char *fmt, ...) {
     output_err(fmt, &va, true);
     va_end(va);
 
-    fatal(nullptr);
+    fatal_imp(nullptr);
 }
 
 void err_msg(const char *fmt, ...) {
@@ -84,6 +85,48 @@ void err_msg(const char *fmt, ...) {
 }
 
 /* general */
+
+void trim_newlines(linc_string *data) {
+    if (data->len == 0)
+        return;
+
+    for (size_t i = data->len - 1; data->cstr[i] == '\n'; --i) {
+        data->cstr[i] = '\0';
+        --data->len;
+
+        if (i == 0)
+            break;
+    }
+}
+
+/* Block endlessly until EOF. All poll errors are fatal
+ * including EAGAIN and EINTR. */
+
+void read_to_eof(int fd, linc_string *data) {
+    *data = LINC_STRING_INIT;
+    char read_buf[4096] = "";
+
+    struct pollfd pollfd = { .fd = fd, .events = POLLIN };
+    int wakeup = POLLHUP | POLLIN | POLLERR | POLLNVAL;
+
+    while (true) {
+        xpoll(&pollfd, 1, -1);
+
+        if (pollfd.revents & wakeup) {
+            if (pollfd.revents & POLLNVAL)
+                fatal("poll: invalid file descriptor");
+
+            ssize_t num_read = read(fd, read_buf, sizeof(read_buf));
+            if (num_read == -1)
+                err_exit("read");
+
+            linc_string_append_n(data, read_buf, num_read);
+
+            if (num_read == 0)
+                break;
+        }
+    }
+}
 
 void xdup2_move(int fd1, int fd2) {
     if (fd1 == fd2)

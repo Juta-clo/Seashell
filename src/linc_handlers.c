@@ -68,10 +68,11 @@ void shell_log_sink(const linc_log_ctx *ctx, void *_) {
 
     linc_string output_msg = LINC_STRING_INIT;
 
-    linc_string_appendf(&output_msg, "%s %s:%d: %s\n",
+    linc_string_appendf(&output_msg, "%s %s:%d:%d %s\n",
         linc_log_level_str(ctx->level),
         ctx->site.file,
         ctx->site.line,
+        getpid(),
         ctx->msg
     );
 

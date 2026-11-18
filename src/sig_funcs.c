@@ -19,7 +19,8 @@ void sig_consume(int sig) {
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, sig);
-    sigtimedwait(&set, NULL, &(struct timespec){0});
+    if (sigtimedwait(&set, NULL, &(struct timespec){0}) > 0)
+        LOG_INFO("cleared pending SIGINT");
 }
 
 sig_handler *sig_set_handler(int sig, sig_handler *handler) {

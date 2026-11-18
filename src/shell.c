@@ -19,26 +19,14 @@
 #define WAIT_EXIT 193 /* +1 highest signal exit status */
 #define PLINE_INTR -1
 
-static void subshell_setup(void) {
-    env.subsh |= SUBSH_ASYNC;
+static void subshell_setup(int type) {
+    env.subsh |= type;
 
     job_clear();
     sig_restore(&env.og_mask);
+
     sig_block(SIGCHLD);
     sig_set_handler(SIGCHLD, sigchld_handler);
-}
-
-static int subshell_fork(void) {
-    int cpid = xfork();
-
-    if (env.job_ctrl)
-        setpgid(cpid, cpid);
-
-    if (cpid != 0)
-        return cpid;
-
-    subshell_setup();
-    return 0;
 }
 
 static void cursor_left_anchor(void) {
@@ -224,7 +212,7 @@ void print_job_event(const job_event *jev, bool verbose) {
         for (size_t i = 0; i < ibuf.cells.size; ++i)
             input_draw_cell(&ibuf.cells.data[i], nullptr);
 
-        free_cells(&ibuf);
+        input_free_cells(&ibuf);
 
         if (i != jev->pviews.size - 1) {
             printf (" ");
@@ -235,7 +223,7 @@ void print_job_event(const job_event *jev, bool verbose) {
             for (size_t i = 0; i < ibuf.cells.size; ++i)
                 input_draw_cell(&ibuf.cells.data[i], nullptr);
 
-            free_cells(&ibuf);
+            input_free_cells(&ibuf);
 
             if (!verbose && same_ev_type(pview, &pview[1])) {
                 printf(" ");
@@ -288,7 +276,7 @@ static void handle_job_event(job_event *jev) {
 
 static void flush_wait_events(void) {
     wait_event wev;
-    while (get_wstat(&wev) != -1)
+    while (get_wstat(&wev, -1, WOPT_JOB) != -1)
         job_update(wev);
 }
 
@@ -339,7 +327,7 @@ static void child_redir_setup(da_redir *redirs) {
     }
 }
 
-static sh_pgrp exec_pline(const ps_pline *pline, bool bg, bool expand) {
+static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
     if (!pline)
         ASSERT(pline);
 
@@ -378,33 +366,34 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg, bool expand) {
                 xclose(next_pipe[0]);
             }
 
-            if (expand && expand_cmd(cur_cmd, EXPAND_CMD) == -1)
-                _exit(EXIT_FAILURE);
+            sig_restore(&env.og_mask);
+
+            if (!cur_cmd->expanded)
+                if (expand_cmd(cur_cmd, EXPAND_CMD) == -1)
+                    _exit(EXIT_FAILURE);
 
             child_redir_setup(&cur_cmd->redirs);
             export_vars(&env.vars);
-            sig_restore(&env.og_mask);
 
             if (cur_cmd->kind == PS_CMD_SUBSH) {
-                env.subsh |= SUBSH_ASYNC;
-                subshell_setup();
+                subshell_setup(SUBSH_ASYNC);
                 _exit(shell_run_andor(&cur_cmd->subsh));
             }
 
-            int status;
-            if (try_run_builtin(cur_cmd->argv, &status))
-                _exit(status);
+            if (cur_cmd->argc == 0)
+                _exit(EXIT_SUCCESS);
+
+            sh_builtin *builtin = get_builtin(cur_cmd->argv[0]);
+
+            if (builtin)
+                _exit(builtin->func(cur_cmd->argv, &env));
 
             execvp(cur_cmd->argv[0], cur_cmd->argv);
 
             if (errno == ENOENT) {
-                LOG_INFO("command not found. subsh=%zu, job_ctrl=%d, pid=%d",
-                        env.subsh, env.job_ctrl, getpid());
-
                 err_msg("command not found: %s", cur_cmd->argv[0]);
                 _exit(127);
             } else {
-                LOG_ERR("execvp: %m");
                 err_exit("execvp");
             }
         }
@@ -435,50 +424,72 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg, bool expand) {
     return pld;
 }
 
-static void shell_start_pline(ps_pline *pline, bool bg, int jid) {
-    bool handled = false;
+static bool can_run_in_shell(ps_pline *pline) {
+    ASSERT(pline && pline->cmds.size > 0);
+
+    if (pline->cmds.size > 1)
+        return false;
+
+    if (pline->cmds.data[0].kind != PS_CMD_SIMPLE)
+        return false;
+
+    return true;
+}
+
+static bool try_run_builtin(ps_pline *pline, int jid) {
+    ps_cmd *cmd = &pline->cmds.data[0];
+
+    if (cmd->argc == 0)
+        return false;
+
+    sh_builtin *builtin = get_builtin(cmd->argv[0]);
+    if (!builtin)
+        return false;
+
+    int status = builtin->func(cmd->argv, &env);
+    char *cmd_str = make_cmd_str(cmd);
+
+    /* fg "replaces" itself with the existing job. Because we
+    * don't queue fg's exit event we only reclaim the terminal
+    * when the job that was fg'd exits (or stops) */
+    if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
+        LOG_INFO("queued \"%s\" exit event", builtin->name);
+        job_queue_builtin_exit(jid, cmd_str, status);
+    }
+
+    close_proc_subs(cmd);
+    free(cmd_str);
+    return true;
+}
+
+static int shell_start_pline(ps_pline *pline, bool bg, int jid) {
+    int status = -1;
+
     bool try_builtin = (
-        pline->cmds.size == 1 && pline->cmds.data[0].kind == PS_CMD_SIMPLE &&
-        pline->cmds.data[0].redirs.size == 0 &&
+        can_run_in_shell(pline) &&
         (!bg || env.subsh & SUBSH_ASYNC)
     );
 
     if (try_builtin) {
-        ps_cmd *cmd = &pline->cmds.data[0];
-        char *cmd_str = make_cmd_str(cmd);
+        if (expand_cmd(&pline->cmds.data[0], EXPAND_CMD) == -1)
+            goto cleanup;
 
-        if (expand_cmd(&pline->cmds.data[0], EXPAND_CMD) == -1) {
-            job_queue_builtin_exit(jid, cmd_str, EXIT_FAILURE);
-            close_proc_subs(cmd);
-            handled = true;
-        } else {
-            sh_builtin *builtin = get_builtin(cmd->argv[0]);
-
-            if (builtin) {
-                LOG_INFO("[%d] Started %s (no fork)", jid, cmd_str);
-
-                int status = builtin->func(cmd->argv, &env);
-
-                /* fg "replaces" itself with the existing job. Because we
-                * don't queue fg's exit event we only reclaim the termianl
-                * when the job that was fg'd exits (or stops) */
-                if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
-                    LOG_INFO("queued \"%s\" exit event", builtin->name);
-                    job_queue_builtin_exit(jid, cmd_str, status);
-                }
-
-                close_proc_subs(cmd);
-                handled = true;
-            }
+        if (try_run_builtin(pline, jid)) {
+            status = 0;
+            goto cleanup;
         }
-
-        free(cmd_str);
     }
 
-    if (!handled) {
-        sh_pgrp pld = exec_pline(pline, bg, !try_builtin);
-        job_add(jid, &pld);
-    }
+    sh_pgrp pld = exec_pline(pline, bg);
+    job_add(jid, &pld);
+
+    status = 0;
+
+cleanup:
+    if (pline->cmds.data[0].kind == PS_CMD_SIMPLE)
+        close_proc_subs(&pline->cmds.data[0]);
+
+    return status;
 }
 
 static int shell_wait_pline(int jid, int *status) {
@@ -533,9 +544,12 @@ int shell_run_andor(ps_ast *ast) {
     bool caller = true;
 
     if (ast->bg && ast->andors.size > 1) {
-        int subsh_pgid = subshell_fork();
-
         ast->bg = false;
+
+        int subsh_pgid = xfork();
+
+        if (env.job_ctrl)
+            setpgid(subsh_pgid, subsh_pgid);
 
         if (subsh_pgid != 0) {
             int jid = job_new_id();
@@ -558,12 +572,14 @@ int shell_run_andor(ps_ast *ast) {
 
             return status;
         } else {
+            subshell_setup(SUBSH_ASYNC);
             caller = false;
         }
     }
 
     for (size_t i = 0; i < ast->andors.size; ++i) {
         ps_andor *andor = &ast->andors.data[i];
+        int rv = 0;
 
         if (andor_should_run(andor, status)) {
             env.fg_jid = job_new_id();
@@ -571,21 +587,29 @@ int shell_run_andor(ps_ast *ast) {
             if (!ast->bg && !env.subsh && env.job_ctrl)
                 xtcgetattr(env.tty_fd, &env.tio);
 
-            shell_start_pline(&andor->pline, ast->bg, env.fg_jid);
+            if (shell_start_pline(&andor->pline, ast->bg, env.fg_jid) == -1) {
+                if (last_exit_event.type == PSIGNALED &&
+                    last_exit_event.term_sig == SIGINT) {
+                    rv = PLINE_INTR;
+                    status = SIGINT + 128;
+                } else {
+                    status = EXIT_FAILURE;
+                }
+            } else {
+                if (ast->bg) {
+                    if (!env.subsh && env.job_ctrl) {
+                        pid_t pgrp = job_lookup_pgrp(env.fg_jid);
+                        printf("[%d] %d\n", env.fg_jid, pgrp);
+                    }
 
-            if (ast->bg) {
-                if (!env.subsh && env.job_ctrl) {
-                    pid_t pgrp = job_lookup_pgrp(env.fg_jid);
-                    printf("[%d] %d\n", env.fg_jid, pgrp);
+                    env.fg_jid = NOFG;
+                    break;
                 }
 
-                env.fg_jid = NOFG;
-                break;
+                rv = shell_wait_pline(env.fg_jid, &status);
             }
 
-            int rv = shell_wait_pline(env.fg_jid, &status);
             update_status_variable(status);
-
             env.fg_jid = NOFG;
 
             if (rv == PLINE_INTR && env.job_ctrl) {
@@ -602,12 +626,13 @@ int shell_run_andor(ps_ast *ast) {
 }
 
 int line_to_ast(const char *line, size_t n, ps_ast *ast) {
-    da_tok toks;
+    da_tok toks = {0};
 
     int rv = lx_tokenize(line, n, &toks);
     if (rv != LX_OK) {
         err_msg("%s", lx_errstr(rv));
         lx_free(&toks);
+        ps_free(ast);
         return -1;
     }
 
@@ -622,11 +647,11 @@ int line_to_ast(const char *line, size_t n, ps_ast *ast) {
 
     if (ps_parse(&scan, ast) == -1) {
         lx_free(&toks);
+        ps_free(ast);
         return -1;
     }
 
     lx_free(&toks);
-
     return 0;
 }
 
@@ -679,14 +704,11 @@ linc_string shell_get_prompt(void) {
     return prompt;
 }
 
-char *shell_run_capture(const char *line, size_t n, int *file) {
+int shell_run_capture(const char *line, size_t n, int *pid) {
     ps_ast ast = {0};
 
-    if (file)
-        *file = -1;
-
     if (line_to_ast(line, n, &ast) == -1)
-        return nullptr;
+        return -1;
 
     int pipe_fd[2];
     xpipe(pipe_fd);
@@ -694,98 +716,31 @@ char *shell_run_capture(const char *line, size_t n, int *file) {
     pid_t cpid = xfork();
 
     if (cpid == 0) {
+        subshell_setup(SUBSH_ASYNC);
+        ignore_job_ctrl_signals();
+
         xdup2_move(pipe_fd[1], STDOUT_FILENO);
         xclose(pipe_fd[0]);
-        ast.bg = false;
 
-        subshell_setup();
         _exit(shell_run_andor(&ast));
     }
 
+    if (pid)
+        *pid = cpid;
+
     xclose(pipe_fd[1]);
-
-    if (file) {
-        ps_free(&ast);
-        *file = pipe_fd[0];
-        return 0;
-    }
-
-    struct pollfd pfd[] = {
-        { .fd = pipe_fd[0], .events = POLLIN }
-    };
-
-    linc_string arg = LINC_STRING_INIT;
-    arg.allo = ast.allo;
-
-    bool done = false;
-    int poll_for = 1;
-    int wopt = WNOHANG;
-    int wakeup = POLLHUP | POLLIN | POLLERR | POLLNVAL;
-    char rbuf[4096] = "";
-    int wstat;
-
-    while (!done) {
-        int rv = waitpid(cpid, &wstat, wopt);
-        if (rv == -1)
-            err_exit("waitpid");
-
-        if (rv == cpid) {
-            done = true;
-            poll_for = -1;
-
-            if (WIFSIGNALED(wstat) && WTERMSIG(wstat) == SIGINT) {
-                ps_free(&ast);
-                xclose(pipe_fd[0]);
-                sig_consume(SIGINT);
-                cursor_left_anchor();
-                return nullptr;
-            }
-        }
-
-        while (true) {
-            int ready = xpoll(pfd, ARRLEN(pfd), poll_for);
-            if (ready == 0)
-                break;
-
-            if (pfd->revents & wakeup) {
-                int num_read = read(pipe_fd[0], rbuf, sizeof(rbuf) - 1);
-                if (num_read == -1)
-                    err_exit("read");
-
-                if (num_read == 0) {
-                    wopt = 0;
-                    break;
-                }
-
-                rbuf[num_read] = '\0';
-                linc_string_append(&arg, rbuf);
-            }
-        }
-    }
-
-    size_t len = arg.len;
-    while (len && arg.cstr[len - 1] == '\n')
-        arg.cstr[--len] = '\0';
-
-    xclose(pipe_fd[0]);
-
-    char *out = xstrdup(arg.cstr);
     ps_free(&ast);
-    return out;
+    return pipe_fd[0];
 }
 
 int shell_run(const char *cmd) {
-    char *line = xstrdup(cmd);
-    int status = -1;
     ps_ast ast = {0};
 
-    if (line_to_ast(line, strlen(line), &ast) == -1)
-        goto cleanup;
+    if (line_to_ast(cmd, strlen(cmd), &ast) == -1)
+        return -1;
 
-    status = shell_run_andor(&ast);
+    int status = shell_run_andor(&ast);
 
-cleanup:
     ps_free(&ast);
-    free(line);
     return status;
 }

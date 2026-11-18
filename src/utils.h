@@ -5,6 +5,7 @@
 
 #include "linc.h"
 #include "linc/array.h"
+#include "linc/string.h"
 #include "linc/log.h" // IWYU pragma: export
 #include "state.h" // IWYU pragma: export
 
@@ -106,6 +107,8 @@ size_t argv_len(char **argv);
 void argv_free(char **argv);
 void argv_free_free(da_charp *arr);
 
+void trim_newlines(linc_string *data);
+void read_to_eof(int fd, linc_string *data);
 void xdup2_move(int fd1, int fd2);
 int get_int(const char *arg, int *num);
 bool is_bin(const char *path);
