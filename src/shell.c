@@ -301,9 +301,14 @@ static bool andor_should_run(ps_andor *andor, int status) {
     return true;
 }
 
-static void child_redir_setup(da_redir *redirs) {
+static void apply_redirs(da_redir *redirs, bool builtin) {
     for (size_t i = 0; i < redirs->size; ++i) {
         ps_redir *redir = &redirs->data[i];
+
+        if (builtin && redir->io_num > 2) {
+            LOG_INFO("builtin redirect rejected: %d", redir->io_num);
+            continue;
+        }
 
         if (redir->fd_dup) {
             xdup2(redir->fd_target, redir->io_num);
@@ -372,7 +377,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
                 if (expand_cmd(cur_cmd, EXPAND_CMD) == -1)
                     _exit(EXIT_FAILURE);
 
-            child_redir_setup(&cur_cmd->redirs);
+            apply_redirs(&cur_cmd->redirs, false);
             export_vars(&env.vars);
 
             if (cur_cmd->kind == PS_CMD_SUBSH) {
@@ -446,19 +451,28 @@ static bool try_run_builtin(ps_pline *pline, int jid) {
     if (!builtin)
         return false;
 
+    int saved_fds[3];
+    for (size_t i = 0; i < 3; ++i)
+        if ((saved_fds[i] = dup(i)) == -1 && errno != EBADF)
+            err_exit("dup");
+
+    apply_redirs(&cmd->redirs, true);
     int status = builtin->func(cmd->argv, &env);
-    char *cmd_str = make_cmd_str(cmd);
+
+    for (size_t i = 0; i < 3; ++i)
+        xdup2_move(saved_fds[i], i);
 
     /* fg "replaces" itself with the existing job. Because we
     * don't queue fg's exit event we only reclaim the terminal
     * when the job that was fg'd exits (or stops) */
     if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
         LOG_INFO("queued \"%s\" exit event", builtin->name);
+        char *cmd_str = make_cmd_str(cmd);
         job_queue_builtin_exit(jid, cmd_str, status);
+        free(cmd_str);
     }
 
     close_proc_subs(cmd);
-    free(cmd_str);
     return true;
 }
 

@@ -1210,6 +1210,58 @@ TEST(shell, job_control_message_subshell_with_append_redirection) {
     );
 }
 
+TEST(shell, main_shell_builtin_with_redirections) {
+    vt_send_str("sleep 100 &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "sleep 100 &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("jobs >/tmp/jobs-out\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "jobs >/tmp/jobs-out",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/jobs-out\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat /tmp/jobs-out",
+        "[1] running          sleep 100%s",
+        PROMPT
+    );
+}
+
+TEST(shell, main_shell_redirections_preserve_previous_fd_state) {
+    vt_send_str("./seashell -c 'cd /tmp >/tmp/foo && pwd' >/tmp/shtest\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "./seashell -c 'cd /tmp >/tmp/foo && pwd' >/tmp/shtest",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/shtest\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest",
+        "/tmp",
+        PROMPT
+    );
+}
+
+TEST(shell, main_shell_redirections_above_two_are_rejected) {
+    vt_send_str("cd . 10>/tmp/file\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "cd . 10>/tmp/file",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/file\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat /tmp/file",
+        "cat: /tmp/file: No such file or directory",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1282,4 +1334,7 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, job_control_message_with_complex_ast_in_subshell);
     RUN_TEST_CASE(shell, job_control_message_subshell_with_redirect);
     RUN_TEST_CASE(shell, job_control_message_subshell_with_append_redirection);
+    RUN_TEST_CASE(shell, main_shell_builtin_with_redirections);
+    RUN_TEST_CASE(shell, main_shell_redirections_preserve_previous_fd_state);
+    RUN_TEST_CASE(shell, main_shell_redirections_above_two_are_rejected);
 }
