@@ -68,8 +68,8 @@ TEST(completion, cycles_results) {
 
     vt_send_str("stat /tmp/sh-tmp/f");
 
-    for (size_t i = 0; i < ARR_LEN(lines) * 2; ++i) {
-        char *exp = lines[i % ARR_LEN(lines)];
+    for (size_t i = 0; i < ARRLEN(lines) * 2; ++i) {
+        char *exp = lines[i % ARRLEN(lines)];
 
         vt_send_str("\t");
         assert_term(0, strlen(exp), exp);

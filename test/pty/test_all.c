@@ -9,6 +9,41 @@
 #include "t_harness.h"
 #include "t_debug.h"
 
+#define DECLARE_GROUP(group) \
+    extern void TEST_##group##_GROUP_RUNNER(void)
+
+#define GROUP_ENTRY(group) \
+    { #group, TEST_##group##_GROUP_RUNNER }
+
+DECLARE_GROUP(shell);
+DECLARE_GROUP(substitution);
+DECLARE_GROUP(variable);
+DECLARE_GROUP(glob);
+DECLARE_GROUP(termios);
+DECLARE_GROUP(input);
+DECLARE_GROUP(highlight);
+DECLARE_GROUP(completion);
+DECLARE_GROUP(shadow);
+DECLARE_GROUP(resize);
+DECLARE_GROUP(config);
+
+struct {
+    const char *name;
+    void (*run)(void);
+} groups[] = {
+    GROUP_ENTRY(shell),
+    GROUP_ENTRY(substitution),
+    GROUP_ENTRY(variable),
+    GROUP_ENTRY(glob),
+    GROUP_ENTRY(termios),
+    GROUP_ENTRY(input),
+    GROUP_ENTRY(highlight),
+    GROUP_ENTRY(completion),
+    GROUP_ENTRY(shadow),
+    GROUP_ENTRY(resize),
+    GROUP_ENTRY(config)
+};
+
 static bool mute_unity = false;
 static bool skip_nls = false;
 
@@ -28,17 +63,8 @@ void unity_output_cb(char ch) {
 void run_all(void) {
     mute_unity = true;
 
-    RUN_TEST_GROUP(shell);
-    RUN_TEST_GROUP(substitution);
-    RUN_TEST_GROUP(variable);
-    RUN_TEST_GROUP(glob);
-    RUN_TEST_GROUP(termios);
-    RUN_TEST_GROUP(input);
-    RUN_TEST_GROUP(highlight);
-    RUN_TEST_GROUP(completion);
-    RUN_TEST_GROUP(shadow);
-    RUN_TEST_GROUP(resize);
-    RUN_TEST_GROUP(config);
+    for (size_t i = 0; i < ARRLEN(groups); ++i)
+        groups[i].run();
 
     mute_unity = false;
     skip_nls = true;

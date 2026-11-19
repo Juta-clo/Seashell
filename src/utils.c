@@ -128,12 +128,45 @@ void read_to_eof(int fd, linc_string *data) {
     }
 }
 
-void xdup2_move(int fd1, int fd2) {
-    if (fd1 == fd2)
-        return;
+int fd_move(int fd1, int fd2, bool cloexec, bool replace) {
+    if (fd1 == fd2) {
+        if (cloexec) {
+            int flags = fcntl(fd1, F_GETFD);
+            if (flags == -1)
+                err_exit("fcntl");
 
-    xdup2(fd1, fd2);
+            if (cloexec) {
+                flags |= FD_CLOEXEC;
+            } else {
+                flags &= ~FD_CLOEXEC;
+            }
+
+            if (fcntl(fd1, F_SETFD, flags) == -1)
+                err_exit("fcntl");
+        }
+
+        return fd1;
+    }
+
+    int newfd;
+
+    if (replace) {
+        int flags = (cloexec) ? O_CLOEXEC : 0;
+
+        if (dup3(fd1, fd2, flags) == -1)
+            err_exit("dup3");
+
+        newfd = fd2;
+    } else {
+        int type = (cloexec) ? F_DUPFD_CLOEXEC : F_DUPFD;
+
+        newfd = fcntl(fd1, type, fd2);
+        if (newfd == -1)
+            err_exit("fcntl");
+    }
+
     xclose(fd1);
+    return newfd;
 }
 
 int get_int(const char *arg, int *num) {

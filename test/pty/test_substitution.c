@@ -55,7 +55,7 @@ TEST(substitution, multiple_command_substitutions_in_one_part) {
     );
 }
 
-TEST(substitution, command_substitution_within_subshell) {
+TEST(substitution, cmd_sub_within_subshell) {
     vt_send_str("(echo $(printf foo))\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "(echo $(printf foo))",
@@ -64,7 +64,7 @@ TEST(substitution, command_substitution_within_subshell) {
     );
 }
 
-TEST(substitution, command_substitution_as_redirection_target) {
+TEST(substitution, cmd_sub_as_redirection_target) {
     vt_send_str("echo foo > $(printf /tmp/shtest)\n");
     assert_term_clear(1, PROMPT_LEN,
         PROMPT "echo foo > $(printf /tmp/shtest)",
@@ -79,7 +79,7 @@ TEST(substitution, command_substitution_as_redirection_target) {
     );
 }
 
-TEST(substitution, command_substitution_embedded_in_string) {
+TEST(substitution, cmd_sub_embedded_in_string) {
     vt_send_str("echo \"hello $(printf world!)\"\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "echo \"hello $(printf world!)\"",
@@ -88,7 +88,7 @@ TEST(substitution, command_substitution_embedded_in_string) {
     );
 }
 
-TEST(substitution, command_substitution_in_quotes_with_quotes) {
+TEST(substitution, cmd_sub_in_quotes_with_quotes) {
     vt_send_str("echo \"$(printf \"%s\" foo)\"\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "echo \"$(printf \"%%s\" foo)\"",
@@ -112,7 +112,7 @@ TEST(substitution, builtin_with_command_substitution) {
     );
 }
 
-TEST(substitution, command_substitution_with_nested_quoted_cmd_sub) {
+TEST(substitution, cmd_sub_with_nested_quoted_cmd_sub) {
     vt_send_str("echo \"$(echo \"$(printf foo)\")\"\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "echo \"$(echo \"$(printf foo)\")\"",
@@ -220,6 +220,15 @@ TEST(substitution, empty_substitution_does_not_create_empty_arg) {
     );
 }
 
+TEST(substitution, user_redirection_does_not_overwrite_proc_sub) {
+    vt_send_str("cat <(echo foo) 3</dev/null\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat <(echo foo) 3</dev/null",
+        "foo",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -228,12 +237,12 @@ TEST_GROUP_RUNNER(substitution) {
     RUN_TEST_CASE(substitution, simple_command_substitution);
     RUN_TEST_CASE(substitution, command_substitution_with_andor_chain);
     RUN_TEST_CASE(substitution, multiple_command_substitutions);
-    RUN_TEST_CASE(substitution, command_substitution_within_subshell);
-    RUN_TEST_CASE(substitution, command_substitution_as_redirection_target);
-    RUN_TEST_CASE(substitution, command_substitution_embedded_in_string);
-    RUN_TEST_CASE(substitution, command_substitution_in_quotes_with_quotes);
+    RUN_TEST_CASE(substitution, cmd_sub_within_subshell);
+    RUN_TEST_CASE(substitution, cmd_sub_as_redirection_target);
+    RUN_TEST_CASE(substitution, cmd_sub_embedded_in_string);
+    RUN_TEST_CASE(substitution, cmd_sub_in_quotes_with_quotes);
     RUN_TEST_CASE(substitution, builtin_with_command_substitution);
-    RUN_TEST_CASE(substitution, command_substitution_with_nested_quoted_cmd_sub);
+    RUN_TEST_CASE(substitution, cmd_sub_with_nested_quoted_cmd_sub);
     RUN_TEST_CASE(substitution, process_substitution_simple);
     RUN_TEST_CASE(substitution, process_substitution_multiple);
     RUN_TEST_CASE(substitution, interupting_command_substitution);
@@ -241,4 +250,5 @@ TEST_GROUP_RUNNER(substitution) {
     RUN_TEST_CASE(substitution, interactive_stop_is_ignored);
     RUN_TEST_CASE(substitution, substitution_pipe_does_not_deadlock);
     RUN_TEST_CASE(substitution, empty_substitution_does_not_create_empty_arg);
+    RUN_TEST_CASE(substitution, user_redirection_does_not_overwrite_proc_sub);
 }

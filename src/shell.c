@@ -327,7 +327,7 @@ static void apply_redirs(da_redir *redirs, bool builtin) {
                 fd = xopen(arg, O_RDONLY);
             }
 
-            xdup2_move(fd, redir->io_num);
+            fd_move(fd, redir->io_num, false, true);
         }
     }
 }
@@ -364,10 +364,10 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             env.subsh |= SUBSH_PIPE;
 
             if (!first)
-                xdup2_move(prev_rfd, STDIN_FILENO);
+                fd_move(prev_rfd, STDIN_FILENO, false, true);
 
             if (!last) {
-                xdup2_move(next_pipe[1], STDOUT_FILENO);
+                fd_move(next_pipe[1], STDOUT_FILENO, false, true);
                 xclose(next_pipe[0]);
             }
 
@@ -460,7 +460,7 @@ static bool try_run_builtin(ps_pline *pline, int jid) {
     int status = builtin->func(cmd->argv, &env);
 
     for (size_t i = 0; i < 3; ++i)
-        xdup2_move(saved_fds[i], i);
+        fd_move(saved_fds[i], i, false, true);
 
     /* fg "replaces" itself with the existing job. Because we
     * don't queue fg's exit event we only reclaim the terminal
@@ -727,13 +727,19 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
     int pipe_fd[2];
     xpipe(pipe_fd);
 
+    pipe_fd[0] = fd_move(
+        pipe_fd[0],
+        STATE_FD_PRIVATE_BASE,
+        false, false
+    );
+
     pid_t cpid = xfork();
 
     if (cpid == 0) {
-        subshell_setup(SUBSH_ASYNC);
+        subshell_setup(SUBSH_ASYNC | SUBSH_CAPTURE);
         ignore_job_ctrl_signals();
 
-        xdup2_move(pipe_fd[1], STDOUT_FILENO);
+        fd_move(pipe_fd[1], STDOUT_FILENO, false, true);
         xclose(pipe_fd[0]);
 
         _exit(shell_run_andor(&ast));
@@ -743,6 +749,7 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
         *pid = cpid;
 
     xclose(pipe_fd[1]);
+
     ps_free(&ast);
     return pipe_fd[0];
 }

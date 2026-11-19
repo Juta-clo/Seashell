@@ -73,7 +73,7 @@ void test_relink(const char *target, const char *link) {
 }
 
 FILE *new_tmp_file(char *path) {
-    int fd = mkstemp(path);
+    int fd = mkostemp(path, O_CLOEXEC);
     if (fd == -1)
         xtest_fatal("mkstemp(%s): %m", path);
 

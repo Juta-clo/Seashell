@@ -1239,8 +1239,8 @@ void input_deinit(void) {
     pt = nullptr;
 }
 
-void input_init(void) {
-    if (!(pt = printty_create(nullptr)))
+void input_init(int input_fd) {
+    if (!(pt = printty_create(&input_fd)))
         fatal("printty_create");
     if (printty_cbreak(pt) == PRINTTY_ERR)
         fatal("printty_cbreak");

@@ -16,8 +16,13 @@
 
 #define NOFG -1
 
-#define SUBSH_PIPE  1
-#define SUBSH_ASYNC 2
+#define SUBSH_PIPE    1
+#define SUBSH_ASYNC   2
+#define SUBSH_CAPTURE 4
+
+#define STATE_FD_LOG          50
+#define STATE_FD_TTY          51
+#define STATE_FD_PRIVATE_BASE 64
 
 typedef struct {
     int fg_jid;

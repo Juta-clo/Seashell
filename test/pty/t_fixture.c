@@ -14,6 +14,8 @@
 #include "t_harness.h"
 #include "t_utils.h"
 
+#define FD_START 25
+
 static struct timespec tstart, tend;
 
 static void get_diff_msg(void) {
@@ -142,6 +144,15 @@ static char **create_exec_argv(char **args) {
     if (pipe2(test->val_p, O_NONBLOCK) == -1)
         xtest_fatal("pipe2: %m");
 
+    if (test->val_p[1] < FD_START) {
+        int newfd = fcntl(test->val_p[1], F_DUPFD, test->val_p[1] + FD_START);
+        if (newfd == -1)
+            xtest_fatal("fcntl: %m");
+
+        xclose(test->val_p[1]);
+        test->val_p[1] = newfd;
+    }
+
     if (memcheck) {
         char *val_cmd[] = {
             "valgrind",
@@ -171,6 +182,16 @@ static char **create_exec_argv(char **args) {
 
     if (pipe2(test->sh_p, O_NONBLOCK) == -1)
         xtest_fatal("pipe2: %m");
+
+    if (test->sh_p[1] < FD_START) {
+        int newfd = fcntl(test->sh_p[1], F_DUPFD, test->sh_p[1] + FD_START);
+        if (newfd == -1)
+            xtest_fatal("fcntl: %m");
+
+        xclose(test->sh_p[1]);
+        test->sh_p[1] = newfd;
+    }
+
     if (snprintf(lfd_arg, ARG_MAX, "--log-fd=%d", test->sh_p[1]) < 0)
         xtest_fatal("snprintf: %m");
     linc_hds_append(*linc_hda_push(out, nullptr), lfd_arg);
@@ -306,6 +327,18 @@ void test_setup_imp(char **argv) {
         xtest_fatal("forkpty");
 
     if (test->cpid == 0) {
+        xclose(test->sh_p[0]);
+        xclose(test->val_p[0]);
+
+        /* Sometimes 'Xmake r' leaves behind descriptors */
+        for (size_t i = 3; i < FD_START; ++i)
+            close(i);
+
+        /* Also Xmake changes SIGPIPE disposition... */
+        struct sigaction sa = { .sa_handler = SIG_DFL };
+        xsigemptyset(&sa.sa_mask);
+        xsigaction(SIGPIPE, &sa, nullptr);
+
         execvp(test->argv[0], test->argv);
         fprintf(stderr, "test_setup: execvp: %m\n");
         fflush(stderr);

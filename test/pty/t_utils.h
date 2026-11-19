@@ -16,7 +16,7 @@
 #define MIN(a, b) \
     ((a) < (b)) ? a : b
 
-#define ARR_LEN(arr) \
+#define ARRLEN(arr) \
     (sizeof(arr) / sizeof(typeof(*arr)))
 
 #define flush_pty(_fd) \

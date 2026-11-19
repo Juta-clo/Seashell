@@ -86,9 +86,12 @@ void sigint_handler(int _) { sigint_caught = true; }
 void sig_restore(sigset_t *og_mask) {
     xsigprocmask(SIG_SETMASK, og_mask, nullptr);
 
-    sig_set_handler(SIGTTOU, SIG_DFL);
-    sig_set_handler(SIGTTIN, SIG_DFL);
-    sig_set_handler(SIGTSTP, SIG_DFL);
+    if (!(env.subsh & SUBSH_CAPTURE)) {
+        sig_set_handler(SIGTTOU, SIG_DFL);
+        sig_set_handler(SIGTTIN, SIG_DFL);
+        sig_set_handler(SIGTSTP, SIG_DFL);
+    }
+
     sig_set_handler(SIGQUIT, SIG_DFL);
     sig_set_handler(SIGTERM, SIG_DFL);
 
@@ -120,23 +123,22 @@ static void sig_init(void) {
 }
 
 static void log_init(void) {
-    if (opts[OPT_LOG_FD].found) {
-        if (fcntl(opts[OPT_LOG_FD].val_int, F_GETFD) == -1) {
-            perror("Error using log fd");
-            exit(EXIT_FAILURE);
-        }
+#define LOG_FILE_OPTS (O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC)
+    env.log_fd = -1;
 
-        env.log_fd = opts[OPT_LOG_FD].val_int;
+    if (opts[OPT_LOG_FD].found) {
+        int logfd = opts[OPT_LOG_FD].val_int;
+        env.log_fd = fd_move(logfd, STATE_FD_LOG, true, true);
     } else if (opts[OPT_LOG_FILE].found) {
-        env.log_fd = open(opts[OPT_LOG_FILE].val_str,
-                O_WRONLY | O_CREAT | O_APPEND, 0666);
-        if (env.log_fd == -1) {
+        int logfd = open(opts[OPT_LOG_FILE].val_str, LOG_FILE_OPTS, 0666);
+        if (logfd == -1) {
             perror("Failed to open log file");
             exit(EXIT_FAILURE);
         }
-    } else {
-        env.log_fd = -1;
+
+        env.log_fd = fd_move(logfd, STATE_FD_LOG, true, true);
     }
+
 }
 
 static void var_init(void) {
@@ -184,8 +186,9 @@ void env_init(int argc, char *const *argv) {
 
     if (env.job_ctrl) {
         env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);
+        env.tty_fd = fd_move(env.tty_fd, STATE_FD_TTY, true, true);
 
-        input_init();
+        input_init(STATE_FD_TTY);
         input_set_suspend_mask(env.og_mask);
         input_sig_cb = process_signals;
 

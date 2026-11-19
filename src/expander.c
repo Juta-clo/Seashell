@@ -151,8 +151,6 @@ static int expand_seg(ps_segment *seg, bool *has_glob, linc_string *out,
                 linc_string_append_n(out, data.cstr, data.len);
                 linc_string_free(&data);
                 xclose(rfd);
-            } else {
-                linc_string_append_n(out, tok->str, tok->str_len);
             }
         } else if (tok->type == EXT_PROC_SUB) {
             if (type != EXPAND_COMP) {
@@ -165,8 +163,6 @@ static int expand_seg(ps_segment *seg, bool *has_glob, linc_string *out,
                 linc_string_append(out, path.cstr);
                 linc_string_free(&path);
                 *linc_array_push(&word->proc_sub_fds) = rfd;
-            } else {
-                linc_string_append_n(out, tok->str, tok->str_len);
             }
         } else {
             fatal("unexpected ex_tok type");
@@ -183,6 +179,15 @@ cleanup:
 void close_proc_subs(ps_cmd *cmd) {
     for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
         ps_word *word = &cmd->words.data[word_i];
+
+        for (size_t fd_i = 0; fd_i < word->proc_sub_fds.size; ++fd_i)
+            xclose(word->proc_sub_fds.data[fd_i]);
+
+        word->proc_sub_fds = (da_int){0};
+    }
+
+    for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
+        ps_word *word = &cmd->redirs.data[redir_i].target;
 
         for (size_t fd_i = 0; fd_i < word->proc_sub_fds.size; ++fd_i)
             xclose(word->proc_sub_fds.data[fd_i]);

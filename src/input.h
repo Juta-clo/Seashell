@@ -28,7 +28,7 @@ typedef struct {
 } input_buf;
 
 
-void input_init(void);
+void input_init(int input_fd);
 void input_deinit(void);
 
 input_buf input_get_cells(const char *line, int start_i);
