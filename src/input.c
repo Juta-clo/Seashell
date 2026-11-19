@@ -25,6 +25,7 @@
 #include "variable.h"
 #include "path_glob.h"
 #include "lexer.h"
+#include "arena.h"
 
 #define DELETE_CURSOR 1
 #define DELETE_WORD   2
@@ -42,29 +43,11 @@
 
 typedef char * linc_hds;
 
-static Printty *pt = nullptr;
-
-typedef enum {
-    ITOK_NAME,
-    ITOK_ARG,
-    ITOK_REDIR,
-    ITOK_EMPTY,
-} index_tok_kind;
-
-typedef struct {
-    index_tok_kind kind;
-    const char *text;
-    int i, n;
-    int off;
-
-    ps_word *word;
-    ps_ast ast;
-} index_tok;
-
 typedef struct {
     size_t i;
-    linc_hds glob;
-    linc_hds orig;
+    da_charp hits;
+    ps_info info;
+    bool saved;
 } input_comp;
 
 typedef struct {
@@ -76,7 +59,7 @@ typedef struct {
 typedef struct {
     size_t start_i;
     size_t n;
-} input_del_ctx;
+} del_ctx;
 
 typedef struct {
     char *line;
@@ -89,6 +72,9 @@ typedef struct {
     input_comp comp;
     input_hist hist;
 } input_editor;
+
+static Printty *pt = nullptr;
+static bool completion_shadow = true;
 
 static void default_sig_cb(void) {
     _exit(EXIT_FAILURE);
@@ -177,55 +163,6 @@ static void update_start_pos(void) {
     ASSERT_(G, input.rows, input.start_row);
 }
 
-static void free_index_tok(index_tok *itok) {
-    ps_free(&itok->ast);
-}
-
-static int get_index_tok(index_tok *itok, int ind) {
-    ASSERT(itok);
-
-    *itok = (index_tok){0};
-    da_tok toks = {0};
-    ps_info info = {0};
-    ps_scan scan = {
-        .print_err = false,
-        .alias = false,
-        .toks = &toks
-    };
-
-    lx_tokenize(lstart(), line_len(), &toks);
-    ps_parse(&scan, &itok->ast);
-    ps_get_info(ind, &itok->ast, &info);
-    lx_free(&toks);
-
-    if (info.kinds & PS_INFO_NAME || info.kinds & PS_INFO_ARG) {
-        if (expand_word(info.word, nullptr, EXPAND_COMP) == -1)
-            return -1;
-
-        itok->kind = (info.kinds & PS_INFO_NAME) ? ITOK_NAME : ITOK_ARG;
-        itok->text = info.word->arg;
-        itok->i = info.word->i;
-        itok->n = info.word->n;
-        itok->word = info.word;
-    } else if (info.kinds & PS_INFO_REDIR) {
-        if (expand_word(&info.redir->target, nullptr, EXPAND_COMP) == -1)
-            return -1;
-
-        itok->kind = ITOK_REDIR;
-        itok->text = info.redir->target.arg;
-        itok->i = info.redir->target.i;
-        itok->n = info.redir->target.n;
-        itok->word = &info.redir->target;
-    } else {
-        itok->kind = ITOK_EMPTY;
-        itok->text = "";
-        itok->i = input.off;
-        itok->n = 0;
-    }
-
-    return 0;
-}
-
 static void get_path_entries(da_charp *pents) {
     ASSERT(pents);
     *pents = (da_charp){0};
@@ -312,8 +249,7 @@ static void escape_spaces(linc_string *str) {
     *str = out;
 }
 
-static void complete_file(const char *glob, const char *cli,
-        da_charp *hits) {
+static void complete_file(const char *glob, const char *cli, da_charp *hits) {
     glob_pattern(glob, strlen(glob), hits);
 
     for (size_t i = 0; i < hits->size; ++i) {
@@ -331,7 +267,8 @@ static void complete_file(const char *glob, const char *cli,
                 linc_string_appendf(&result, "%s", orig);
             } else if (!STREQ(dir_prefix, ".")) {
                 linc_string_append(&result, dir_prefix);
-                linc_string_append(&result, "/");
+                if (!STREQ(result.cstr, "/"))
+                    linc_string_append(&result, "/");
             } else if (strncmp(orig, "./", 2) == 0) {
                 linc_string_append(&result, "./");
             }
@@ -697,7 +634,7 @@ static bool is_err_tok(lx_tok *tok, ps_scan *scan) {
     return false;
 }
 
-void input_highlight(input_buf *ibuf, const char *line, size_t n, int start_i) {
+void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
     bool hl_complete = false;
     size_t err_tok_i;
     da_tok toks = {0};
@@ -753,23 +690,186 @@ void input_highlight(input_buf *ibuf, const char *line, size_t n, int start_i) {
     lx_free(&toks);
 }
 
-void input_shadow(input_buf *ibuf) {
-    char *shadow = history_get_shadow();
-
+static void input_shadow(char *shadow, size_t n, input_buf *ibuf) {
     if (shadow) {
-        size_t shadow_len = strlen(shadow);
-
         *linc_array_push(&ibuf->cells) = (input_cell){
             .hl = true, .fg = PRINTTY_BLACK + 8, .bg = -1,
         };
 
-        for (size_t i = 0; i < shadow_len; ++i)
+        for (size_t i = 0; i < n; ++i)
             push_cell(&shadow[i], 1, 0, &ibuf->cells);
 
         *linc_array_push(&ibuf->cells) = (input_cell){
             .hl = true, .attr_off = true
         };
     }
+}
+
+static bool on_last_word(void) {
+    da_tok toks = {0};
+    lx_tokenize(lstart(), line_len(), &toks);
+
+    bool out;
+    int ind = input.off;
+    lx_tok *last = nullptr;
+    size_t last_i;
+
+    for (size_t i = 0; i < toks.size; ++i) {
+        lx_tok *tok = &toks.data[i];
+        if (tok->kind == LX_TOK_WORD) {
+            last = tok;
+            last_i = i;
+        }
+    }
+
+    if (!last || last_i < toks.size - 1) {
+        out =  false;
+        lx_free(&toks);
+        return out;
+    }
+
+    out = (ind >= last->i && ind <= last->i + last->n);
+    lx_free(&toks);
+    return out;
+}
+
+static int get_completion_info(ps_info *info) {
+    int status = -1;
+    da_tok toks = {0};
+
+    lx_tokenize(lstart(), line_len(), &toks);
+
+    ps_scan scan = { .toks = &toks};
+    ps_ast ast = {0};
+
+    ps_parse(&scan, &ast);
+
+    for (size_t tok_i = 0; tok_i < toks.size; ++tok_i) {
+        lx_tok *tok = &toks.data[tok_i];
+
+        if (input.off < tok->i)
+            continue;
+
+        if (is_err_tok(tok, &scan)) {
+            da_tok next_toks = {0};
+
+            for (size_t i = tok_i + 1; i < toks.size; ++i)
+                lx_tok_copy(linc_array_push(&next_toks), &toks.data[i]);
+
+            lx_free(&toks);
+            ps_free(&ast);
+
+            toks = next_toks;
+            tok_i = SIZE_MAX;
+
+            scan = (ps_scan){ .toks = &toks };
+            ps_parse(&scan, &ast);
+
+            continue;
+        }
+
+        if (input.off > tok->i + tok->n)
+            continue;
+
+        if (tok->kind == LX_TOK_WORD) {
+            ps_get_info(tok->i, &ast, info);
+
+            if (info->word)
+                status = 0;
+        }
+
+        break;
+    }
+
+    lx_free(&toks);
+    return status;
+}
+
+static void input_update(void);
+
+static void input_reset_comp(void) {
+    if (!input.comp.saved)
+        return;
+
+    argv_free_free(&input.comp.hits);
+
+    if (input.comp.info.allo.ctx)
+        arena_destroy(input.comp.info.allo.ctx);
+
+    input.comp = (input_comp){0};
+}
+
+static void input_complete_hits(ps_info *info, da_charp *hits, bool log) {
+    *info = (ps_info){0};
+    *hits = (da_charp){0};
+
+    if (get_completion_info(info) == -1)
+        return;
+
+    if (expand_word(info->word, nullptr, EXPAND_COMP) == -1)
+        return;
+
+    char *orig = make_word_str(info->word);
+    const char *arg = info->word->arg;
+
+    linc_string glob = LINC_STRING_INIT;
+    linc_string_appendf(&glob, "%s*", arg);
+
+    if (log) {
+        LOG_INFO("Attempting Completion");
+        LOG_INFO("    glob = %s", glob.cstr);
+        LOG_INFO("    orig = %s", orig);
+    }
+
+    if (info->kinds & PS_INFO_NAME)
+        complete_command(glob.cstr, hits);
+
+    if (info->kinds & PS_INFO_ARG || info->kinds & PS_INFO_REDIR)
+        complete_file(glob.cstr, orig, hits);
+
+    if (hits->size == 0)
+        complete_file(glob.cstr, orig, hits);
+
+    free(orig);
+    linc_string_free(&glob);
+
+    if (log) {
+        if (hits->size == 0) {
+            LOG_INFO("    No Matches");
+        } else {
+            LOG_INFO("    %zu Matches", hits->size);
+        }
+    }
+}
+
+static bool input_completion_shadow(input_buf *ibuf) {
+    ASSERT(ibuf);
+
+    if (input.comp.saved)
+        return false;
+
+    if (input.off != line_len() || !on_last_word())
+        return false;
+
+    ps_info *info = &input.comp.info;
+    da_charp *hits = &input.comp.hits;
+
+    input_complete_hits(info, hits, false);
+    input.comp.saved = true;
+
+    if (hits->size == 0)
+        goto fail;
+
+    char *match = hits->data[0];
+    ps_word *word = info->word;
+    int shadow_len = strlen(match) - word->n;
+
+    input_shadow(&match[word->n], shadow_len, ibuf);
+    return true;
+
+fail:
+    input_reset_comp();
+    return false;
 }
 
 static void input_update(void) {
@@ -780,7 +880,20 @@ static void input_update(void) {
     int rows = input.rows;
     input_buf ibuf = input_get_cells(input.line, input.start_i);
     input_highlight(&ibuf, lstart(), line_len(), input.start_i);
-    input_shadow(&ibuf);
+
+    bool try_history_shadow;
+
+    if (completion_shadow) {
+        try_history_shadow = !input_completion_shadow(&ibuf);
+    } else {
+        try_history_shadow = true;
+    }
+
+    if (try_history_shadow) {
+        char *shadow = history_get_shadow();
+        if (shadow)
+            input_shadow(shadow, strlen(shadow), &ibuf);
+    }
 
     input.prompt_len = ibuf.prompt_len;
 
@@ -858,7 +971,7 @@ static void input_move(int offset) {
     }
 }
 
-static void input_delete(int type, input_del_ctx *ctx) {
+static void input_delete(int type, del_ctx *ctx) {
     ASSERT_(GEQ, input.off, 0);
     ASSERT_(GEQ, line_len(), input.off);
     ASSERT(input.insert_mode || input.off < line_len() || line_len() == 0);
@@ -969,21 +1082,6 @@ static void enter_mode_insert() {
     input.insert_mode = true;
 }
 
-static void input_reset_comp(void) {
-    if (input.comp.glob) {
-        linc_hds_free(input.comp.glob);
-        input.comp.glob = nullptr;
-    }
-
-    if (input.comp.orig) {
-        free(input.comp.orig);
-        input.comp.orig = nullptr;
-    }
-
-    input.comp.i = 0;
-    input_update();
-}
-
 static void history_push(void) {
     linc_hda_insert(input.hist.lines, 0, 1, { xstrdup(lstart()) });
     input.hist.i = 0;
@@ -1037,9 +1135,6 @@ static void history_next(void) {
 
 static void insert_mode_feed_key(PrinttyInputKey key) {
     if (key == PRINTTY_BACKSPACE) {
-        if (input.comp.glob)
-            input_reset_comp();
-
         input_delete(DELETE_CURSOR, nullptr);
     } else if (key == PRINTTY_LEFT) {
         input_move(input.off - 1);
@@ -1048,71 +1143,35 @@ static void insert_mode_feed_key(PrinttyInputKey key) {
     }
 }
 
+/* Caller must free the arena stored within the info out param */
+
 static void input_complete(void) {
-    da_charp hits = {0};
-    index_tok itok = {0};
+    ps_info *info = &input.comp.info;
+    da_charp *hits = &input.comp.hits;
 
-    if (get_index_tok(&itok, input.off) == -1) {
-        input_reset_comp();
-        free_index_tok(&itok);
-        return;
+    if (!input.comp.saved) {
+        input.comp.saved = true;
+        input_complete_hits(info, hits, true);
+        if (hits->size == 0)
+            goto reset;
     }
 
-    if (itok.kind == ITOK_EMPTY) {
-        free_index_tok(&itok);
-        return;
-    }
+    LOG_INFO("    Match = %s", hits->data[input.comp.i % hits->size]);
 
-    da_segment *segs = &itok.word->segments;
-    ps_segment *last = &segs->data[segs->size - 1];
+    input_move(info->word->i);
+    input_delete(DELETE_RANGE, &(del_ctx){ info->word->i, info->word->n });
+    input_insert(INSERT_STR, hits->data[input.comp.i % hits->size]);
 
-    if (input.off != last->i + last->n) {
-        free_index_tok(&itok);
-        return;
-    }
+    info->word->n = strlen(hits->data[input.comp.i % hits->size]);
+    ++input.comp.i;
 
-    if (!input.comp.glob) {
-        linc_hds_append_n(input.comp.glob, itok.text, strlen(itok.text));
-        linc_hds_append_n(input.comp.glob, "*", 1);
-    }
+    return;
 
-    if (!input.comp.orig)
-        input.comp.orig = make_word_str(itok.word);
-
-    LOG_INFO("Attempting Completion");
-    LOG_INFO("    glob = %s", input.comp.glob);
-    LOG_INFO("    orig = %s", input.comp.orig);
-
-    if (itok.kind == ITOK_NAME)
-        complete_command(input.comp.glob, &hits);
-
-    if (itok.kind == ITOK_ARG || itok.kind == ITOK_REDIR || hits.size == 0)
-        complete_file(input.comp.glob, input.comp.orig, &hits);
-
-    if (hits.size == 0) {
-        LOG_INFO("    Fail!");
-        free_index_tok(&itok);
-        return;
-    }
-
-    LOG_INFO("    Match = %s", hits.data[input.comp.i % hits.size]);
-
-    input_move(itok.i);
-    input_delete(DELETE_RANGE, &(input_del_ctx){ itok.i, itok.n });
-    input_insert(INSERT_STR, hits.data[input.comp.i++ % hits.size]);
-    argv_free_free(&hits);
-    free_index_tok(&itok);
+reset:
+    input_reset_comp();
 }
 
 static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
-    if (input.comp.glob && codepoint == '/') {
-        input_reset_comp();
-        return;
-    }
-
-    if (codepoint != '\t')
-        input_reset_comp();
-
     switch (codepoint) {
     case 5: /*C-e*/
         input_move(line_len());
@@ -1282,6 +1341,10 @@ void input_clear_history(void) {
     linc_hda_delete(input.hist.lines, 0, n);
 }
 
+void input_opt_completion_shadow(bool set) {
+    completion_shadow = !!set;
+}
+
 char *input_get_line(const char *prompt) {
     if (printty_start(pt) != PRINTTY_OK)
         return nullptr;
@@ -1302,12 +1365,22 @@ char *input_get_line(const char *prompt) {
             input_sig_cb();
 
         else if (pev.type == PRINTTY_UNICODE) {
+            if (input.comp.saved) {
+                if (pev.cp == '/' || pev.cp != '\t')
+                    input_reset_comp();
+                if (pev.cp == '/')
+                    continue;
+            }
+
+
             if (input.insert_mode) {
                 insert_mode_feed_unicode(pev.cp, pev.utf8);
             } else {
                 normal_mode_feed_unicode(pev.cp, pev.utf8);
             }
         } else if (pev.type == PRINTTY_KEY) {
+            input_reset_comp();
+
             if (pev.key == PRINTTY_ENTER) {
                 if (line_len() > 0)
                     history_push();

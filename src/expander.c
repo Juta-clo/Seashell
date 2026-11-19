@@ -38,8 +38,7 @@ static void push_key(da_ex_tok *toks, const char *start, size_t n) {
     tok->str_len = n;
 }
 
-static int ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob,
-        bool print_err) {
+int ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob, bool perr) {
     *toks = (da_ex_tok){0};
 
     ex_tok_type type = EXT_REGULAR;
@@ -84,16 +83,19 @@ static int ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob,
             if (c[1] == '(') {
                 try_push_tok(toks, start, c, type);
 
+                start = c + 2;
+
                 int rp = lx_get_rparen(&c[1], strlen(&c[1]));
                 if (rp == -1) {
-                    if (print_err)
+                    if (perr)
                         err_msg("expand error finding matching ')'");
-                    linc_array_free(toks);
+
+                    c = &s[strlen(s) - 1];
+                    try_push_tok(toks, start, c, EXT_ERROR);
                     return -1;
                 }
 
                 type = (*c == '<') ? EXT_PROC_SUB : EXT_CMD_SUB;
-                start = c + 2;
                 c += rp + 1;
 
                 try_push_tok(toks, start, c, type);
@@ -121,7 +123,7 @@ static int expand_seg(ps_segment *seg, bool *has_glob, linc_string *out,
     linc_string data;
 
     if (ex_tokenize(seg->raw, &toks, has_glob, print_err) == -1)
-        return -1;
+        goto cleanup;
 
     for (size_t i = 0; i < toks.size; ++i) {
         ex_tok *tok = &toks.data[i];

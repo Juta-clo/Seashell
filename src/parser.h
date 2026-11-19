@@ -113,6 +113,7 @@ struct ps_andor {
 
 struct ps_info {
     uint64_t kinds;
+    linc_allo allo;
 
     ps_ast *subsh;
     ps_andor *andor;

@@ -192,6 +192,9 @@ void env_init(int argc, char *const *argv) {
         input_set_suspend_mask(env.og_mask);
         input_sig_cb = process_signals;
 
+        /* TODO: make this a config file option */
+        if (opts[OPT_CLEAN].found || opts[OPT_CONFIG].found)
+            input_opt_completion_shadow(false);
     }
 
     if (!opts[OPT_CLEAN].found)

@@ -111,6 +111,9 @@ TEST(shadow, shadow_wrapping_and_unwrapping_on_resize) {
     );
 }
 
+/* comp shadow only when end of line */
+/* comp shadow only when on final tok thats a word */
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/

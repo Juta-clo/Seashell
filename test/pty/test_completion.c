@@ -288,6 +288,22 @@ TEST(completion, trailing_slash_on_unreadable_directory) {
     );
 }
 
+TEST(completion, directory_completion_from_root_directory) {
+    vt_send_str("cd /tm");
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term(0, PROMPT_LEN + 8,
+        PROMPT "cd /tmp/"
+    );
+}
+
+TEST(completion, completion_works_after_parse_error) {
+    vt_send_str("| cd /tm");
+    vt_send_key(VTERM_KEY_TAB, VTERM_MOD_NONE);
+    assert_term_attr(0, PROMPT_LEN + 10,
+        PROMPT HL_SYNTAX(|) " " HL_CMD(cd) " " HL_PATH(/tmp/)
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -313,4 +329,6 @@ TEST_GROUP_RUNNER(completion) {
     RUN_TEST_CASE(completion, prefix_with_spaces_that_are_already_escaped);
     RUN_TEST_CASE(completion, wildcard_directory_cycles_concrete_paths);
     RUN_TEST_CASE(completion, trailing_slash_on_unreadable_directory);
+    RUN_TEST_CASE(completion, directory_completion_from_root_directory);
+    RUN_TEST_CASE(completion, completion_works_after_parse_error);
 }

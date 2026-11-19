@@ -81,13 +81,12 @@ int main(int argc, char **_) {
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
                 "--track-fds=bad", "--modify-fds=high",
-            "./seashell", "--config=./.seashell.lua", "--log-file=/tmp/shlog",
+            "./seashell", "--log-file=/tmp/shlog",
             (char *)NULL
         );
     } else {
         execlp("./seashell",
             "./seashell",
-                "--config=./.seashell.lua",
                 "--log-file=/tmp/shlog",
             (char *)NULL
         );

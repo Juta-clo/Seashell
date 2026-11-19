@@ -422,7 +422,7 @@ static bool in_segment(int i, ps_word *word, ps_info *info) {
 void ps_get_info(int i, ps_ast *ast, ps_info *info) {
     ASSERT(ast && i >= 0 && info);
 
-    *info = (ps_info){0};
+    *info = (ps_info){ .allo = ast->allo };
 
     if (ast->andors.size == 0) {
         info->kinds |= PS_INFO_EMPTY;

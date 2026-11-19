@@ -14,6 +14,7 @@ typedef enum {
     EXT_VARIABLE,
     EXT_CMD_SUB,
     EXT_PROC_SUB,
+    EXT_ERROR,
 } ex_tok_type;
 
 struct ex_tok {
@@ -25,6 +26,7 @@ struct ex_tok {
 typedef struct ex_tok ex_tok;
 LINC_ARRAY_TYPE(da_ex_tok, ex_tok);
 
+int ex_tokenize(const char *s, da_ex_tok *toks, bool *has_glob, bool perr);
 int expand_word(ps_word *word, da_charp *argv, int type);
 int expand_cmd(ps_cmd *cmd, int type);
 void close_proc_subs(ps_cmd *cmd);
