@@ -8,7 +8,7 @@ TEST_GROUP(resize);
 /************ Fixture ************/
 
 TEST_SETUP(resize) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 }
 

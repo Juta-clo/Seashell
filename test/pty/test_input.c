@@ -8,7 +8,7 @@ TEST_GROUP(input);
 /************ Fixture ************/
 
 TEST_SETUP(input) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 }
 
@@ -68,7 +68,7 @@ TEST(input, line_is_preserved_on_async_job_messages) {
         PROMPT "ab%s",
         "[1] Terminated       sleep 100",
         PROMPT "abdefc",
-        "seashell: command not found: abdefc",
+        "sea: command not found: abdefc",
         PROMPT
     );
 }
@@ -334,7 +334,7 @@ TEST(input, sigchld_with_no_prompt_redraw) {
     vt_send_str("def\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "abdefc",
-        "seashell: command not found: abdefc",
+        "sea: command not found: abdefc",
         PROMPT
     );
 }

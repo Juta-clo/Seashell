@@ -52,7 +52,7 @@ int main(int argc, char **_) {
         if (setenv("XMAKE_COLORTERM", "color8", 1) == -1)
             err_exit("setenv");
 
-        execlp("xmake", "xmake", "b", "seashell", (char *)NULL);
+        execlp("xmake", "xmake", "b", "sea", (char *)NULL);
         err_exit("execlp");
     }
 
@@ -81,12 +81,12 @@ int main(int argc, char **_) {
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
                 "--track-fds=bad", "--modify-fds=high",
-            "./seashell", "--log-file=/tmp/shlog",
+            "./sea", "--log-file=/tmp/shlog",
             (char *)NULL
         );
     } else {
-        execlp("./seashell",
-            "./seashell",
+        execlp("./sea",
+            "./sea",
                 "--log-file=/tmp/shlog",
             (char *)NULL
         );

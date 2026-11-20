@@ -47,7 +47,7 @@ static void add_dir(const char *path) {
 }
 
 TEST_SETUP(glob) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 
     xsystem("mkdir -p " GLOB_DIR);
@@ -358,7 +358,7 @@ TEST(glob, redirect_target_glob_ambiguous) {
     vt_send_str("echo hi > f*\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "echo hi > f*",
-        "seashell: ambiguous redirect",
+        "sea: ambiguous redirect",
         PROMPT
     );
 }

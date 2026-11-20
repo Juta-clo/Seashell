@@ -36,7 +36,7 @@ Then build and run from the project root:
 
 ```zsh
 xmake
-./seashell
+./sea
 ```
 
 ## Configuration

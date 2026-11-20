@@ -7,7 +7,7 @@ TEST_GROUP(substitution);
 /************ Fixture ************/
 
 TEST_SETUP(substitution) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 }
 

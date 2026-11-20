@@ -22,7 +22,7 @@ void create_config(void) {
     if (fclose(config) == EOF)
         xtest_fatal("fclose: %m");
 
-    test_setup("./seashell", "--config-file=/tmp/config_test.lua");
+    test_setup("./sea", "--config-file=/tmp/config_test.lua");
 }
 
 void set_prompt(const char *prompt) {
@@ -308,7 +308,7 @@ TEST(config, alias_with_non_first_word) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "seashell: parse error near '&&'",
+        "sea: parse error near '&&'",
         PROMPT
     );
 }
@@ -322,7 +322,7 @@ TEST(config, alias_with_no_value) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "seashell: parse error near '\\n'",
+        "sea: parse error near '\\n'",
         PROMPT
     );
 }
@@ -336,7 +336,7 @@ TEST(config, alias_with_recursive_expansion) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "seashell: parse error on recursive alias expansion",
+        "sea: parse error on recursive alias expansion",
         PROMPT
     );
 }

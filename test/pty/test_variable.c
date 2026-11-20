@@ -10,7 +10,7 @@ TEST_GROUP(variable);
 char *home;
 
 TEST_SETUP(variable) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 
     home = getenv("HOME");

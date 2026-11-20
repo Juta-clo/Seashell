@@ -15,7 +15,7 @@ TEST_GROUP(shell);
 /************ Fixture ************/
 
 TEST_SETUP(shell) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 }
 
@@ -137,7 +137,7 @@ TEST(shell, unknown_cmd) {
     vt_send_str("zoobar\n"); /* hopefully no-one ever makes this... */
     assert_term(2, PROMPT_LEN,
         PROMPT "zoobar",
-        "seashell: command not found: zoobar",
+        "sea: command not found: zoobar",
         PROMPT
     );
 }
@@ -1233,9 +1233,9 @@ TEST(shell, main_shell_builtin_with_redirections) {
 }
 
 TEST(shell, main_shell_redirections_preserve_previous_fd_state) {
-    vt_send_str("./seashell -c 'cd /tmp >/tmp/foo && pwd' >/tmp/shtest\n");
+    vt_send_str("./sea -c 'cd /tmp >/tmp/foo && pwd' >/tmp/shtest\n");
     assert_term_clear(1, PROMPT_LEN,
-        PROMPT "./seashell -c 'cd /tmp >/tmp/foo && pwd' >/tmp/shtest",
+        PROMPT "./sea -c 'cd /tmp >/tmp/foo && pwd' >/tmp/shtest",
         PROMPT
     );
 

@@ -40,7 +40,7 @@ struct termios printty_cbreak_tio(struct termios orig) {
 }
 
 TEST_SETUP(termios) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 }
 

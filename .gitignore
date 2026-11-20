@@ -3,7 +3,7 @@
 .git/
 build/
 compile_commands.json
-seashell
+sea
 test_*
 !test_all.mk
 !test_*.c

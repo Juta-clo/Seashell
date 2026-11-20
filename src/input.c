@@ -881,18 +881,12 @@ static void input_update(void) {
     input_buf ibuf = input_get_cells(input.line, input.start_i);
     input_highlight(&ibuf, lstart(), line_len(), input.start_i);
 
-    bool try_history_shadow;
+    char *shadow = history_get_shadow();
 
-    if (completion_shadow) {
-        try_history_shadow = !input_completion_shadow(&ibuf);
-    } else {
-        try_history_shadow = true;
-    }
-
-    if (try_history_shadow) {
-        char *shadow = history_get_shadow();
-        if (shadow)
-            input_shadow(shadow, strlen(shadow), &ibuf);
+    if (shadow) {
+        input_shadow(shadow, strlen(shadow), &ibuf);
+    } else if (completion_shadow) {
+        input_completion_shadow(&ibuf);
     }
 
     input.prompt_len = ibuf.prompt_len;

@@ -27,9 +27,9 @@ static void output_err(const char *fmt, va_list *va, bool print_err) {
 
     if (print_err) {
         strncat(err_str, strerror(errno), BUF_SIZE);
-        fprintf(stderr, "seashell: %s: %s\n", user_msg, err_str);
+        fprintf(stderr, "sea: %s: %s\n", user_msg, err_str);
     } else {
-        fprintf(stderr, "seashell: %s\n", user_msg);
+        fprintf(stderr, "sea: %s\n", user_msg);
     }
 }
 

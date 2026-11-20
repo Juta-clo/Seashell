@@ -8,7 +8,7 @@ TEST_GROUP(shadow);
 /************ Fixture ************/
 
 TEST_SETUP(shadow) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 }
 

@@ -333,8 +333,7 @@ static void apply_redirs(da_redir *redirs, bool builtin) {
 }
 
 static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
-    if (!pline)
-        ASSERT(pline);
+    ASSERT(pline);
 
     int next_pipe[2];
     int prev_rfd;

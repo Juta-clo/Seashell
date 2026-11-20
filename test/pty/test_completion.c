@@ -11,7 +11,7 @@ TEST_GROUP(completion);
 /************ Fixture ************/
 
 TEST_SETUP(completion) {
-    test_setup("./seashell", "--clean");
+    test_setup("./sea", "--clean");
     assert_term(0, 2, PROMPT);
 
     if (mkdir("/tmp/sh-tmp", 0700) == -1 && errno != EEXIST)
