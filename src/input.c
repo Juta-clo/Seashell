@@ -48,6 +48,7 @@ typedef struct {
     da_charp hits;
     ps_info info;
     bool saved;
+    bool cycling;
 } input_comp;
 
 typedef struct {
@@ -788,9 +789,6 @@ static int get_completion_info(ps_info *info) {
 static void input_update(void);
 
 static void input_reset_comp(void) {
-    if (!input.comp.saved)
-        return;
-
     argv_free_free(&input.comp.hits);
 
     if (input.comp.info.allo.ctx)
@@ -807,6 +805,9 @@ static void input_complete_hits(ps_info *info, da_charp *hits, bool log) {
         return;
 
     if (expand_word(info->word, nullptr, EXPAND_COMP) == -1)
+        return;
+
+    if (strlen(info->word->arg) == 0)
         return;
 
     char *orig = make_word_str(info->word);
@@ -845,7 +846,7 @@ static void input_complete_hits(ps_info *info, da_charp *hits, bool log) {
 static bool input_completion_shadow(input_buf *ibuf) {
     ASSERT(ibuf);
 
-    if (input.comp.saved)
+    if (input.comp.cycling)
         return false;
 
     if (input.off != line_len() || !on_last_word())
@@ -854,20 +855,23 @@ static bool input_completion_shadow(input_buf *ibuf) {
     ps_info *info = &input.comp.info;
     da_charp *hits = &input.comp.hits;
 
-    input_complete_hits(info, hits, false);
-    input.comp.saved = true;
+    if (!input.comp.saved) {
+        input.comp.saved = true;
 
-    if (hits->size == 0)
-        goto fail;
+        input_complete_hits(info, hits, false);
+        if (hits->size == 0)
+            goto reset;
+    }
 
     char *match = hits->data[0];
     ps_word *word = info->word;
     int shadow_len = strlen(match) - word->n;
+    ASSERT_(GEQ, shadow_len, 0);
 
     input_shadow(&match[word->n], shadow_len, ibuf);
     return true;
 
-fail:
+reset:
     input_reset_comp();
     return false;
 }
@@ -1145,19 +1149,24 @@ static void input_complete(void) {
 
     if (!input.comp.saved) {
         input.comp.saved = true;
+
         input_complete_hits(info, hits, true);
         if (hits->size == 0)
             goto reset;
     }
 
-    LOG_INFO("    Match = %s", hits->data[input.comp.i % hits->size]);
+    if (input.comp.cycling)
+        info->word->n = strlen(hits->data[(input.comp.i - 1) % hits->size]);
 
     input_move(info->word->i);
     input_delete(DELETE_RANGE, &(del_ctx){ info->word->i, info->word->n });
     input_insert(INSERT_STR, hits->data[input.comp.i % hits->size]);
 
-    info->word->n = strlen(hits->data[input.comp.i % hits->size]);
+    LOG_INFO("    Match = %s", hits->data[input.comp.i % hits->size]);
+    input.comp.cycling = true;
     ++input.comp.i;
+
+    input_update();
 
     return;
 
@@ -1360,12 +1369,14 @@ char *input_get_line(const char *prompt) {
 
         else if (pev.type == PRINTTY_UNICODE) {
             if (input.comp.saved) {
-                if (pev.cp == '/' || pev.cp != '\t')
+                if (pev.cp == '/' && input.comp.cycling) {
                     input_reset_comp();
-                if (pev.cp == '/')
                     continue;
-            }
+                }
 
+                if (pev.cp != '\t')
+                    input_reset_comp();
+            }
 
             if (input.insert_mode) {
                 insert_mode_feed_unicode(pev.cp, pev.utf8);
