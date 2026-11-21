@@ -160,10 +160,7 @@ static int expand_seg(ps_segment *seg, bool *has_glob, linc_string *out,
                 if (rfd == -1)
                     goto cleanup;
 
-                linc_string path = LINC_STRING_INIT;
-                linc_string_appendf(&path, "/dev/fd/%d", rfd);
-                linc_string_append(out, path.cstr);
-                linc_string_free(&path);
+                linc_string_appendf(out, "/dev/fd/%d", rfd);
                 *linc_array_push(&word->proc_sub_fds) = rfd;
             }
         } else {

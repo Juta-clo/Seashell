@@ -20,6 +20,17 @@ TEST_TEAR_DOWN(resize) {
 
 // NOLINTBEGIN(bugprone-suspicious-missing-comma)
 
+/* The behaviour of this test is emulator dependent. On vterm.h
+ * the cursor after the first resize actually ends up on the
+ * second row, not the third. VTerm never lets the cursor extend
+ * to a row past the last content cell even if logically thats
+ * where it might be expected. foot emulator on the other hand
+ * does accomdate the cursor in this case.
+ *
+ * The calculation for rows_from_start is 2 (based on the line
+ * length and new column width) which is correct on foot, but
+ * an overshoot of 1 with VTerm. */
+
 TEST(resize, resize_that_causes_cursor_wrap) {
     test_resize_term(10, 1);
     vt_send_str("x");
@@ -28,6 +39,15 @@ TEST(resize, resize_that_causes_cursor_wrap) {
         " ",
         "x",
         " "
+    );
+
+    /* VTerm bug makes this incorrectly pass even with the
+     * manual wrap printing removed */
+
+    test_pump_ms(10);
+    test_resize_term(10, 10);
+    assert_term(0, PROMPT_LEN + 1,
+        "> x"
     );
 }
 

@@ -301,7 +301,7 @@ static bool andor_should_run(ps_andor *andor, int status) {
     return true;
 }
 
-static void apply_redirs(da_redir *redirs, bool builtin) {
+static int apply_redirs(da_redir *redirs, bool builtin) {
     for (size_t i = 0; i < redirs->size; ++i) {
         ps_redir *redir = &redirs->data[i];
 
@@ -311,7 +311,10 @@ static void apply_redirs(da_redir *redirs, bool builtin) {
         }
 
         if (redir->fd_dup) {
-            xdup2(redir->fd_target, redir->io_num);
+            if (dup2(redir->fd_target, redir->io_num) == -1) {
+                err_msg("dup2: %m");
+                return -1;
+            }
         } else {
             const char *arg = redir->target.arg;
 
@@ -324,12 +327,17 @@ static void apply_redirs(da_redir *redirs, bool builtin) {
                     fd = xopen(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
                 }
             } else {
-                fd = xopen(arg, O_RDONLY);
+                if ((fd = open(arg, O_RDONLY)) == -1) {
+                    err_msg("open: %m");
+                    return -1;
+                }
             }
 
             fd_move(fd, redir->io_num, false, true);
         }
     }
+
+    return 0;
 }
 
 static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
@@ -376,7 +384,9 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
                 if (expand_cmd(cur_cmd, EXPAND_CMD) == -1)
                     _exit(EXIT_FAILURE);
 
-            apply_redirs(&cur_cmd->redirs, false);
+            if (apply_redirs(&cur_cmd->redirs, false) == -1)
+                _exit(EXIT_FAILURE);
+
             export_vars(&env.vars);
 
             if (cur_cmd->kind == PS_CMD_SUBSH) {
@@ -455,8 +465,13 @@ static bool try_run_builtin(ps_pline *pline, int jid) {
         if ((saved_fds[i] = dup(i)) == -1 && errno != EBADF)
             err_exit("dup");
 
-    apply_redirs(&cmd->redirs, true);
-    int status = builtin->func(cmd->argv, &env);
+    int status;
+
+    if (apply_redirs(&cmd->redirs, true) == -1) {
+        status = EXIT_FAILURE;
+    } else {
+        status = builtin->func(cmd->argv, &env);
+    }
 
     for (size_t i = 0; i < 3; ++i)
         fd_move(saved_fds[i], i, false, true);

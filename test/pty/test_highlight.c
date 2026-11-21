@@ -291,6 +291,16 @@ IGNORE_TEST(highlight, subshell_errors_are_contained) {
     );
 }
 
+TEST(highlight, path_hl_on_last_col_does_not_extend_to_next_row) {
+    test_resize_term(5, 5);
+    vt_send_str("tes");
+    vt_send_key(VTERM_KEY_LEFT, VTERM_MOD_NONE);
+    assert_term_attr(0, PROMPT_LEN + 2,
+        PROMPT HL_PATH(tes),
+        " "
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -325,4 +335,5 @@ TEST_GROUP_RUNNER(highlight) {
     RUN_TEST_CASE(highlight, error_after_initial_error);
     RUN_TEST_CASE(highlight, job_control_message_with_quotes);
     RUN_TEST_CASE(highlight, subshell_errors_are_contained);
+    RUN_TEST_CASE(highlight, path_hl_on_last_col_does_not_extend_to_next_row);
 }

@@ -289,18 +289,27 @@ static void complete_file(const char *glob, const char *cli, da_charp *hits) {
     }
 }
 
+void input_draw_hl(input_cell *cell) {
+    if(!cell)
+        return;
+
+    ASSERT(cell->hl);
+
+    if (cell->attr_off) {
+        xprintty_write(pt, unibi_exit_attribute_mode);
+    } else {
+        xprintty_set_color(pt, cell->fg, cell->bg);
+
+        if (cell->bold)
+            xprintty_write(pt, unibi_enter_bold_mode);
+        if (cell->under)
+            xprintty_write(pt, unibi_enter_underline_mode);
+    }
+}
+
 void input_draw_cell(input_cell *cell, input_cell *hl) {
     if (cell->hl) {
-        if (cell->attr_off) {
-            xprintty_write(pt, unibi_exit_attribute_mode);
-        } else {
-            xprintty_set_color(pt, cell->fg, cell->bg);
-
-            if (cell->bold)
-                xprintty_write(pt, unibi_enter_bold_mode);
-            if (cell->under)
-                xprintty_write(pt, unibi_enter_underline_mode);
-        }
+        input_draw_hl(cell);
     } else if (cell->n > 1) {
         printf("%s", cell->data);
     } else if (*cell->data >= 32 && *cell->data < 127) {
@@ -313,14 +322,7 @@ void input_draw_cell(input_cell *cell, input_cell *hl) {
         printf("%c", '?');
         xprintty_write(pt, unibi_exit_attribute_mode);
 
-        if (hl && !hl->attr_off) {
-            xprintty_set_color(pt, hl->fg, hl->bg);
-
-            if (hl->bold)
-                xprintty_write(pt, unibi_enter_bold_mode);
-            if (hl->under)
-                xprintty_write(pt, unibi_enter_underline_mode);
-        }
+        input_draw_hl(hl);
     }
 }
 
@@ -405,12 +407,23 @@ static void draw(int rows, int start_row, da_cell cells) {
             ncol_cell(&crow, &ccol, input.start_row, scr_i++);
             input_draw_cell(&cell, last_hl);
 
+            /* We print a manual space to ensure the cursor participates
+             * in reflow correctly. If the last character in the line would
+             * be printed in the final column then it would trigger the wrap
+             * pending state. If we don't manually cause the wrap the final
+             * cursor move would put it into its own line. */
+
             if (ccol == input.cols - 1) {
                 if (crow != rows - 1) {
+                    xprintty_write(pt, unibi_exit_attribute_mode);
                     printf(" \x1b[1G");
+                    input_draw_hl(last_hl);
                 } else if (input.start_row > 0) {
                     --input.start_row;
+
+                    xprintty_write(pt, unibi_exit_attribute_mode);
                     printf(" \x1b[1G");
+                    input_draw_hl(last_hl);
                 }
             }
         }
@@ -786,7 +799,7 @@ static int get_completion_info(ps_info *info) {
     return status;
 }
 
-static void input_update(void);
+static void input_update(bool add_shadow);
 
 static void input_reset_comp(void) {
     argv_free_free(&input.comp.hits);
@@ -876,7 +889,7 @@ reset:
     return false;
 }
 
-static void input_update(void) {
+static void input_update(bool add_shadow) {
     ASSERT_(NEQ, input.rows, 0);
     ASSERT_(NEQ, input.cols, 0);
 
@@ -885,12 +898,14 @@ static void input_update(void) {
     input_buf ibuf = input_get_cells(input.line, input.start_i);
     input_highlight(&ibuf, lstart(), line_len(), input.start_i);
 
-    char *shadow = history_get_shadow();
+    if (add_shadow) {
+        char *shadow = history_get_shadow();
 
-    if (shadow) {
-        input_shadow(shadow, strlen(shadow), &ibuf);
-    } else if (completion_shadow) {
-        input_completion_shadow(&ibuf);
+        if (shadow) {
+            input_shadow(shadow, strlen(shadow), &ibuf);
+        } else if (completion_shadow) {
+            input_completion_shadow(&ibuf);
+        }
     }
 
     input.prompt_len = ibuf.prompt_len;
@@ -957,7 +972,6 @@ static void input_move(int offset) {
             return;
 
         input.off = offset;
-        input_update();
     } else {
         if (offset < 0)
             return;
@@ -965,7 +979,6 @@ static void input_move(int offset) {
             return;
 
         input.off = offset;
-        input_update();
     }
 }
 
@@ -1040,8 +1053,6 @@ static void input_delete(int type, del_ctx *ctx) {
                 --input.off;
         }
     }
-
-    input_update();
 }
 
 static void input_insert(int type, const char *s) {
@@ -1066,8 +1077,6 @@ static void input_insert(int type, const char *s) {
         if (input.off == line_len() && input.off != 0)
             input.off -= 1;
     }
-
-    input_update();
 }
 
 static void enter_mode_normal() {
@@ -1166,8 +1175,6 @@ static void input_complete(void) {
     input.comp.cycling = true;
     ++input.comp.i;
 
-    input_update();
-
     return;
 
 reset:
@@ -1196,7 +1203,6 @@ static void insert_mode_feed_unicode(uint32_t codepoint, char utf8[5]) {
     case 12: /*C-l*/
         xprintty_write(pt, unibi_clear_screen);
         new_start_pos();
-        input_update();
         break;
     case '\x1b':
         input_move(input.off - 1);
@@ -1284,10 +1290,8 @@ static void normal_mode_feed_unicode(uint32_t codepoint, char _[5]) {
         printty_clipboard_copy(pt, input.line + input.start_i);
     } else if (codepoint == 'k') {
         history_next();
-        input_update();
     } else if (codepoint == 'j') {
         history_prev();
-        input_update();
     }
 }
 
@@ -1319,7 +1323,6 @@ void input_on_new_line(void) {
         return;
 
     new_start_pos();
-    input_update();
     enter_mode_insert();
 }
 
@@ -1331,7 +1334,6 @@ void input_reset_line_state(void) {
     input.off = 0;
 
     new_start_pos();
-    input_update();
     enter_mode_insert();
 }
 
@@ -1358,16 +1360,18 @@ char *input_get_line(const char *prompt) {
     input_on_new_line();
 
     while (true) {
+        input_update(true);
+
         PrinttyEvent pev;
         int rv = printty_get_event(pt, &pev);
 
-        if (rv == PRINTTY_EOF || rv == PRINTTY_ERR)
+        if (rv == PRINTTY_EOF || rv == PRINTTY_ERR) {
             return nullptr;
 
-        else if (rv == PRINTTY_SIG)
+        } else if (rv == PRINTTY_SIG) {
             input_sig_cb();
 
-        else if (pev.type == PRINTTY_UNICODE) {
+        } else if (pev.type == PRINTTY_UNICODE) {
             if (input.comp.saved) {
                 if (pev.cp == '/' && input.comp.cycling) {
                     input_reset_comp();
@@ -1392,15 +1396,14 @@ char *input_get_line(const char *prompt) {
 
                 input_reset_comp();
                 input_move(line_len());
+                input_update(false);
                 printf("\n");
                 break;
             } else if (pev.key == PRINTTY_UP) {
                 history_next();
-                input_update();
                 continue;
             } else if (pev.key == PRINTTY_DOWN) {
                 history_prev();
-                input_update();
                 continue;
             }
 
@@ -1412,7 +1415,6 @@ char *input_get_line(const char *prompt) {
         } else if (pev.type == PRINTTY_RESIZE) {
             LOG_INFO("resize detected");
             update_start_pos();
-            input_update();
         } else if (pev.type == PRINTTY_PASTE_BEGIN) {
             char *paste_data;
             if (!(paste_data = printty_res_paste(pt))) {
