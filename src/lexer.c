@@ -87,6 +87,8 @@ static lx_kind get_kind(const char *cur_char, bool last) {
         return LX_TOK_LPAREN;
     if (strncmp(")", cur_char, 1) == 0)
         return LX_TOK_RPAREN;
+    if (strncmp(";", cur_char, 1) == 0)
+        return LX_TOK_SEMI;
 
     return LX_TOK_UNKNOWN;
 }
@@ -99,6 +101,7 @@ static size_t tok_len(lx_kind kind) {
     case LX_TOK_RDR_OUT:
     case LX_TOK_LPAREN:
     case LX_TOK_RPAREN:
+    case LX_TOK_SEMI:
         return 1;
     case LX_TOK_FD_OUT:
     case LX_TOK_FD_IN:
@@ -126,6 +129,7 @@ static bool kind_is_delim(lx_kind kind) {
     case LX_TOK_OR_IF:
     case LX_TOK_LPAREN:
     case LX_TOK_RPAREN:
+    case LX_TOK_SEMI:
         return true;
     default:
         return false;
@@ -422,12 +426,30 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
         scan.status = LX_ERREMPTYESC;
 
     try_end_part(&scan);
-    try_end_tok(&scan, LX_EOL);
+    try_end_tok(&scan, LX_EOF);
 
     if (false)
         log_toks(toks);
 
     return scan.status;
+}
+
+char *tok_word_str(lx_tok *tok) {
+    static char out[BUFSIZ];
+
+    for (size_t part_i = 0; part_i < tok->parts.size; ++part_i) {
+        lx_part *part = &tok->parts.data[part_i];
+
+        if (part->quote == LX_Q_NONE) {
+            snprintf(out, BUFSIZ - 1, "%s", part->raw);
+        } else if (part->quote == LX_Q_DOUBLE) {
+            snprintf(out, BUFSIZ - 1, "\"%s\"", part->raw);
+        } else if (part->quote == LX_Q_SINGLE) {
+            snprintf(out, BUFSIZ - 1, "'%s'", part->raw);
+        }
+    }
+
+    return out;
 }
 
 char *tok_str(lx_kind kind) {
@@ -443,9 +465,11 @@ char *tok_str(lx_kind kind) {
     case LX_TOK_OR_IF:   return "||";
     case LX_TOK_LPAREN:  return "(";
     case LX_TOK_RPAREN:  return ")";
-    case LX_TOK_UNKNOWN: return "Unknown";
+    case LX_TOK_SEMI:    return ";";
     case LX_TOK_WORD:    return "[word]";
+    case LX_TOK_UNKNOWN: return "Unknown";
     case LX_TOK_IO_NUM:  return "[io]";
+    case LX_EOF:         return "EOF";
     default: break;
     }
 

@@ -39,6 +39,8 @@ void run_all(void) {
     RUN_TEST_GROUP(lexer);
     test_group = "parser";
     RUN_TEST_GROUP(parser);
+    test_group = "parser_r";
+    RUN_TEST_GROUP(parser_r);
     test_group = "jobs";
     RUN_TEST_GROUP(jobs);
     test_group = "input";

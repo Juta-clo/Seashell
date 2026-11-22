@@ -903,6 +903,21 @@ TEST(lexer, process_substitution_and_command_substitution) {
     validate("<(abc)$(def)", &exp);
 }
 
+TEST(lexer, semi_colon_operator) {
+    da_tok exp = TOKS(
+        WORD_SIMPLE("a", I(0), N(1)),
+        OP(LX_TOK_SEMI, I(1), N(1)),
+        WORD_SIMPLE("b", I(3), N(1)),
+        OP(LX_TOK_SEMI, I(4), N(1)),
+        OP(LX_TOK_AMPER, I(5), N(1)),
+        OP(LX_TOK_SEMI, I(6), N(1)),
+        OP(LX_TOK_APPEND, I(7), N(2)),
+        OP(LX_TOK_SEMI, I(9), N(1)),
+    );
+
+    validate("a; b;&;>>;", &exp);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(lexer) {
@@ -980,4 +995,5 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, process_substitution_after_process_substitution);
     RUN_TEST_CASE(lexer, process_substitution_in_double_quotes);
     RUN_TEST_CASE(lexer, process_substitution_and_command_substitution);
+    RUN_TEST_CASE(lexer, semi_colon_operator);
 }

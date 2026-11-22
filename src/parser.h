@@ -43,6 +43,7 @@ typedef struct ps_cmd ps_cmd;
 typedef struct ps_pline ps_pline;
 typedef struct ps_andor ps_andor;
 typedef struct ps_ast ps_ast;
+typedef struct ps_chain ps_chain;
 typedef struct ps_info ps_info;
 
 LINC_ARRAY_TYPE(da_segment, ps_segment);
@@ -50,13 +51,24 @@ LINC_ARRAY_TYPE(da_word, ps_word);
 LINC_ARRAY_TYPE(da_redir, ps_redir);
 LINC_ARRAY_TYPE(da_cmd, ps_cmd);
 LINC_ARRAY_TYPE(da_andor, ps_andor);
+LINC_ARRAY_TYPE(da_ast, ps_ast);
+LINC_ARRAY_TYPE(da_chain, ps_chain);
 LINC_ARRAY_TYPE(da_int, int);
 
 struct ps_ast {
-    da_andor andors;
+    da_chain chains;
     linc_allo allo;
     bool nested;
+
+    /* remove */
+    da_andor andors;
     bool bg;
+};
+
+struct ps_chain {
+    da_andor andors;
+    int bg;
+    int i, n;
 };
 
 struct ps_segment {
@@ -103,6 +115,7 @@ struct ps_cmd {
 
 struct ps_pline {
     da_cmd cmds;
+    int i, n;
 };
 
 struct ps_andor {
@@ -127,6 +140,7 @@ typedef struct {
     bool print_err;
     bool alias;
     da_tok *toks; /* lx_tokenize(); */
+    linc_allo allo;
 
     /* Internal, zero initialize */
     size_t i;

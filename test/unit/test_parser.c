@@ -1219,7 +1219,7 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, redir_append);
     RUN_TEST_CASE(parser, multiple_redirects);
 
-    // /* subshell */
+    /* subshell */
     RUN_TEST_CASE(parser, subshell_fail_rejections);
     RUN_TEST_CASE(parser, subshell_simple_command);
     RUN_TEST_CASE(parser, subshell_with_pipeline);
