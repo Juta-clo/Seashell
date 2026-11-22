@@ -1262,6 +1262,25 @@ TEST(shell, main_shell_redirections_above_two_are_rejected) {
     );
 }
 
+TEST(shell, running_multi_chain_list) {
+    vt_send_str("echo -n 'hello '; echo world!\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "echo -n 'hello '; echo world!",
+        "hello world!",
+        PROMPT
+    );
+}
+
+TEST(shell, ending_ast_with_semicolon) {
+    vt_send_str("echo foo; (echo bar;);\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "echo foo; (echo bar;);",
+        "foo",
+        "bar",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1337,4 +1356,6 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, main_shell_builtin_with_redirections);
     RUN_TEST_CASE(shell, main_shell_redirections_preserve_previous_fd_state);
     RUN_TEST_CASE(shell, main_shell_redirections_above_two_are_rejected);
+    RUN_TEST_CASE(shell, running_multi_chain_list);
+    RUN_TEST_CASE(shell, ending_ast_with_semicolon);
 }

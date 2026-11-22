@@ -539,11 +539,13 @@ void input_highlight_tok(int start, int end, lx_kind kind, input_buf *ibuf,
         fg = PRINTTY_YELLOW;
     } else if (kind == LX_TOK_LPAREN || kind == LX_TOK_RPAREN) {
         fg = PRINTTY_MAGENTA;
-    } else if (lx_kind_is_redir(kind) || kind == LX_TOK_IO_NUM) {
+    } else if (lx_is_redir(kind) || kind == LX_TOK_IO_NUM) {
         fg = PRINTTY_CYAN;
     } else if (kind == LX_TOK_AMPER) {
         fg = PRINTTY_CYAN;
         bold = true;
+    } else if (kind == LX_TOK_SEMI) {
+        fg = PRINTTY_MAGENTA;
     }
 
     add_highlight(
@@ -641,16 +643,19 @@ static char *history_get_shadow(void) {
 }
 
 static bool is_err_tok(lx_tok *tok, ps_scan *scan) {
-    for (size_t i = 0; i < scan->err_toks.size; ++i)
+    for (size_t i = 0; i < scan->err_toks.size; ++i) {
+        if (scan->err_toks.data[i].kind == LX_EOF)
+            continue;
+
         if (tok->i == scan->err_toks.data[i].i)
             return true;
+    }
 
     return false;
 }
 
 void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
     bool hl_complete = false;
-    size_t err_tok_i;
     da_tok toks = {0};
 
     lx_tokenize(line, n, &toks);
@@ -658,6 +663,7 @@ void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
     while (!hl_complete) {
         ps_ast ast = {0};
         ps_scan scan = { .toks = &toks };
+        size_t err_tok_i = 0;
         ps_parse(&scan, &ast);
 
         for (size_t i = 0; i < toks.size; ++i) {
@@ -686,14 +692,20 @@ void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
             }
         }
 
-        if (scan.err_toks.size != 0) {
-            da_tok next_toks = {0};
+        if (scan.err_toks.size > 0) {
+            if (scan.err_toks.data[0].kind == LX_EOF) {
+                hl_complete = true;
+            } else {
+                da_tok next_toks = {0};
 
-            for (size_t i = err_tok_i; i < toks.size; ++i)
-                lx_tok_copy(linc_array_push(&next_toks), &toks.data[i]);
+                for (size_t i = err_tok_i; i < toks.size; ++i) {
+                    lx_tok *tok = linc_array_push(&next_toks);
+                    lx_tok_copy(tok, &toks.data[i], nullptr);
+                }
 
-            lx_free(&toks);
-            toks = next_toks;
+                lx_free(&toks);
+                toks = next_toks;
+            }
         } else {
             hl_complete = true;
         }
@@ -753,7 +765,15 @@ static int get_completion_info(ps_info *info) {
 
     lx_tokenize(lstart(), line_len(), &toks);
 
-    ps_scan scan = { .toks = &toks};
+    *info = (ps_info){
+        .allo = (linc_allo){
+            .ctx = arena_create(),
+            .alloc = arena_alloc,
+            .free = arena_free
+        }
+    };
+
+    ps_scan scan = { .toks = &toks, .allo = info->allo };
     ps_ast ast = {0};
 
     ps_parse(&scan, &ast);
@@ -768,7 +788,7 @@ static int get_completion_info(ps_info *info) {
             da_tok next_toks = {0};
 
             for (size_t i = tok_i + 1; i < toks.size; ++i)
-                lx_tok_copy(linc_array_push(&next_toks), &toks.data[i]);
+                lx_tok_copy(linc_array_push(&next_toks), &toks.data[i], nullptr);
 
             lx_free(&toks);
             ps_free(&ast);

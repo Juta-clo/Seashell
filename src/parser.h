@@ -24,16 +24,17 @@ typedef enum {
 } ps_cmd_kind;
 
 typedef enum {
-    PS_INFO_SUBSH = 1,
-    PS_INFO_AND_IF = 2,
-    PS_INFO_OR_IF  = 4,
-    PS_INFO_NO_IF  = 8,
-    PS_INFO_CMD   = 16,
-    PS_INFO_REDIR = 32,
-    PS_INFO_NAME  = 64,
-    PS_INFO_ARG   = 128,
-    PS_INFO_SEG   = 256,
-    PS_INFO_EMPTY = 512,
+    PS_INFO_SUBSH  = 1,
+    PS_INFO_CHAIN  = 2,
+    PS_INFO_AND_IF = 4,
+    PS_INFO_OR_IF  = 8,
+    PS_INFO_NO_IF  = 16,
+    PS_INFO_CMD    = 32,
+    PS_INFO_REDIR  = 64,
+    PS_INFO_NAME   = 128,
+    PS_INFO_ARG    = 256,
+    PS_INFO_SEG    = 512,
+    PS_INFO_EMPTY  = 1024,
 } ps_kind;
 
 typedef struct ps_segment ps_segment;
@@ -58,11 +59,6 @@ LINC_ARRAY_TYPE(da_int, int);
 struct ps_ast {
     da_chain chains;
     linc_allo allo;
-    bool nested;
-
-    /* remove */
-    da_andor andors;
-    bool bg;
 };
 
 struct ps_chain {
@@ -129,6 +125,7 @@ struct ps_info {
     linc_allo allo;
 
     ps_ast *subsh;
+    ps_chain *chain;
     ps_andor *andor;
     ps_cmd *cmd;
     ps_redir *redir;
@@ -139,25 +136,14 @@ struct ps_info {
 typedef struct {
     bool print_err;
     bool alias;
-    da_tok *toks; /* lx_tokenize(); */
     linc_allo allo;
-
-    /* Internal, zero initialize */
-    size_t i;
-    lx_tok *cur_tok;
-    ps_cmd *cur_cmd;
-    ps_redir *queued_redir;
-    ps_andor *cur_andor;
-    ps_andor_op andor_op;
-    int alias_shift;
-    ps_ast *ast;
     da_tok err_toks;
-    bool skip_advance;
+    const da_tok *toks;
 } ps_scan;
 
 void ps_get_info(int i, ps_ast *ast, ps_info *info);
-int ps_parse(ps_scan *scan, ps_ast *ast);
 
+int ps_parse(ps_scan *scan, ps_ast *ast);
 void ps_free(ps_ast *ast);
 
 #endif

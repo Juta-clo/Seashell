@@ -1,201 +1,69 @@
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
-
-#include <linc.h>
-#include <linc/array.h>
+#include "linc/array.h"
+#include "map.h"
 #include "parser.h"
 #include "arena.h"
-#include "lexer.h"
+#include "state.h"
 #include "utils.h"
 
 #define ERR_MSG(...) \
     do { \
-        if (scan->print_err) { \
+        if (p_scan->print_err) \
             err_msg("parse error " __VA_ARGS__); \
-            LOG_INFO("parse error " __VA_ARGS__); \
-        } \
     } while (false)
 
 #define ERR_TOK(_tok) \
     do { \
-        if (scan->print_err) { \
+        if (p_scan->print_err) { \
             if ((_tok)->kind == LX_TOK_WORD) { \
-                err_msg("parse error near '%s'", (_tok)->parts.data[0].raw); \
-                LOG_INFO("parse error near '%s'", (_tok)->parts.data[0].raw); \
+                err_msg("parse error near %s", tok_word_str(_tok)); \
             } else { \
                 err_msg("parse error near '%s'", tok_str((_tok)->kind)); \
-                LOG_INFO("parse error near '%s'", tok_str((_tok)->kind)); \
             } \
         } \
-        *linc_array_push(&scan->err_toks) = *_tok; \
+        lx_tok_copy(linc_array_push(&p_scan->err_toks), _tok, &p_scan->allo); \
     } while (false)
 
-#define ERR_EOL() \
-    do { \
-        if (scan->print_err) { \
-            if (scan->ast->nested) {  \
-                err_msg("parse error near ')'"); \
-            } else { \
-                err_msg("parse error near '\\n'"); \
-            } \
-        } \
-    } while (false)
+static ps_scan *p_scan;
+static da_tok *p_toks;
+static lx_tok *p_tok;
+static size_t p_i;
 
-static lx_tok *scan_advance(size_t n, ps_scan *scan) {
-    ASSERT_(LEQ, n, scan->toks->size - scan->i);
+static int parse_ast(ps_ast *ast, lx_kind term);
 
-    if (!scan->skip_advance) {
-        scan->cur_tok += n;
-        scan->i += n;
-    } else {
-        scan->skip_advance = false;
-    }
-
-    return scan->cur_tok;
-}
-
-static lx_tok *scan_final(ps_scan *scan) {
-    return (scan->i == scan->toks->size - 1) ? scan->cur_tok : nullptr;
-}
-
-static void log_tokens(const da_tok *toks) {
-    for (size_t i = 0; i < toks->size; ++i) {
-        lx_tok *tok = &toks->data[i];
-
-        if (tok->kind == LX_TOK_WORD) {
-            LOG_INFO("    [\"%s\"]", tok->parts.data[0].raw);
-        } else {
-            LOG_INFO("    [%s]", tok_str(tok->kind));
-        }
-    }
-}
-
-static void copy_word(ps_word *dst, lx_tok *src, ps_scan *scan) {
-    ASSERT(dst);
-    ASSERT(dst->segments.size == 0);
-
-    dst->i = src->i;
-    dst->n = src->n;
-    dst->proc_sub_fds.allo = scan->ast->allo;
-
-    for (size_t i = 0; i < src->parts.size; ++i) {
-        lx_part *src_part = &src->parts.data[i];
-        size_t n = strlen(src_part->raw) + 1;
-
-        ps_segment *dst_segment = linc_array_push(&dst->segments);
-
-        *dst_segment = (ps_segment){
-            .i = src_part->i,
-            .n = src_part->n,
-            .raw = scan->ast->allo.alloc(n, scan->ast->allo.ctx),
-        };
-
-        memcpy(dst_segment->raw, src_part->raw, n);
-
-        switch (src_part->quote) {
-            case LX_Q_SINGLE: dst_segment->quote = PS_Q_SINGLE; break;
-            case LX_Q_DOUBLE: dst_segment->quote = PS_Q_DOUBLE; break;
-            case LX_Q_NONE:   dst_segment->quote = PS_Q_NONE;   break;
-        }
-    }
-}
-
-static void queue_redir(int io_num, bool fd_dup, ps_scan *scan) {
-    ASSERT(scan);
-
-    ps_redir *redir = linc_array_push(&scan->cur_cmd->redirs);
-
-    if (io_num == -1) {
-        switch (scan->cur_tok->kind) {
-        case LX_TOK_RDR_IN:  io_num = 0; break;
-        case LX_TOK_RDR_OUT: io_num = 1; break;
-        case LX_TOK_APPEND:  io_num = 1; break;
-        case LX_TOK_FD_OUT:  io_num = 1; break;
-        case LX_TOK_FD_IN:   io_num = 0; break;
-        default: fatal("unexpected paraser state");
-        }
-    }
-
-    *redir = (ps_redir){
-        .io_num = io_num,
-        .append = (scan->cur_tok->kind == LX_TOK_APPEND),
-        .rdr_in = (scan->cur_tok->kind == LX_TOK_RDR_IN ||
-                   scan->cur_tok->kind == LX_TOK_FD_IN),
-        .fd_dup = fd_dup,
-        .target.segments.allo = scan->ast->allo
-    };
-
-    scan->queued_redir = redir;
-}
-
-static void add_cmd(da_cmd *cmds, ps_cmd_kind kind, ps_scan *scan) {
-    ASSERT(scan);
-
-    ps_cmd *cmd = linc_array_push(cmds);
-
-    *cmd = (ps_cmd){
-        .i = scan->cur_tok->i,
-        .words.allo = scan->ast->allo,
-        .redirs.allo = scan->ast->allo,
-        .kind = kind
-    };
-
-    scan->cur_cmd = cmd;
-}
-
-static void add_andor(da_andor *andors, ps_andor_op op, ps_scan *scan) {
-    ASSERT(andors);
-
-    ps_andor *andor = linc_array_push(andors);
-
-    *andor = (ps_andor){
-        .i = scan->cur_tok->i,
-        .op = op,
-        .pline.cmds.allo = scan->ast->allo
-    };
-
-    scan->cur_andor = andor;
-}
-
-static void end_cmd(ps_scan *scan) {
-    if (!scan->cur_cmd || scan->i == 0)
+static void tok_advance(void) {
+    if (p_tok->kind == LX_EOF)
         return;
 
-    ps_cmd *cmd = scan->cur_cmd;
-    lx_tok *tok = &scan->cur_tok[-1];
-
-    cmd->n = (tok->i + tok->n) - cmd->i;
-    scan->cur_cmd = nullptr;
+    ++p_i;
+    p_tok = &p_toks->data[p_i];
 }
 
-static void end_andor(ps_scan *scan) {
-    if (!scan->cur_andor || scan->i == 0)
-        return;
+static int get_cur_i(void) {
+    if (p_i == 0)
+        return 0;
 
-    ps_andor *andor = scan->cur_andor;
-    lx_tok *tok = &scan->cur_tok[-1];
-
-    andor->n = (tok->i + tok->n) - andor->i;
-    scan->cur_andor = nullptr;
+    return p_tok[-1].i +p_tok[-1].n;
 }
 
-static bool try_get_alias(lx_tok *tok, char **alias, char **value) {
-    if (tok->parts.size != 1 || tok->parts.data[0].quote != LX_Q_NONE)
+static bool try_get_alias(char **alias, char **value) {
+    if (p_tok->kind != LX_TOK_WORD)
+        return false;
+
+    if (p_tok->parts.size != 1 || p_tok->parts.data[0].quote != LX_Q_NONE)
         return false;
 
     void *out;
 
-    *alias = tok->parts.data[0].raw;
+    *alias = p_tok->parts.data[0].raw;
     int rv = mp_str_lookup(&env.aliases, *alias, &out);
     *value = out;
 
     return (rv != -1);
 }
 
-static int expand_alias(ps_scan *scan, const char *alias, const char *value) {
-    /* Is the alias value lexically valid? */
-    da_tok alias_toks;
+static int expand_alias(const char *alias, const char *value) {
+    da_tok alias_toks = { .allo = p_scan->allo };
+
     int rv = lx_tokenize((char *)value, strlen(value), &alias_toks);
     if (rv != LX_OK) {
         ERR_MSG("%s", lx_errstr(rv));
@@ -208,125 +76,364 @@ static int expand_alias(ps_scan *scan, const char *alias, const char *value) {
         return -1;
     }
 
-    if (strncmp(alias, value, strlen(value)) == 0)
+    if (strncmp(alias, value, strlen(value)) == 0) {
+        linc_array_delete(p_toks, p_i, 1);
+        lx_free(&alias_toks);
+        p_tok = &p_toks->data[p_i];
         return 0;
+    }
 
     if (alias_toks.size == 0)
         return 0;
 
-    scan->skip_advance = true;
-
-    lx_shift_toks(scan->cur_tok->i, alias_toks.size, alias_toks.data);
+    lx_shift_toks(p_tok->i, alias_toks.size, alias_toks.data);
     int len = strlen(value) - strlen(alias);
 
-    scan->alias_shift += len;
+    if (p_tok->kind != LX_EOF)
+        lx_shift_toks(len, p_toks->size - (p_i + 1), &p_tok[1]);
 
-    if (!scan_final(scan))
-        lx_shift_toks(len, scan->toks->size - (scan->i + 1),
-                &scan->toks->data[scan->i + 1]);
+    linc_array_delete(p_toks, p_i, 1);
 
-    lx_free_tok(scan->cur_tok);
-    linc_array_delete(scan->toks, scan->i, 1);
+    lx_tok *start = linc_array_insert(p_toks, p_i, alias_toks.size);
+    for (size_t i = 0; i < alias_toks.size; ++i)
+        lx_tok_copy(&start[i], &alias_toks.data[i], &p_scan->allo);
 
-    memcpy(
-        linc_array_insert(scan->toks, scan->i, alias_toks.size),
-        alias_toks.data,
-        alias_toks.size * sizeof(lx_tok)
-    );
-
-    LOG_INFO("expanded alias {");
-    log_tokens(&alias_toks);
-    LOG_INFO("}");
-
-    linc_array_free(&alias_toks);
-    scan->cur_tok = &scan->toks->data[scan->i];
+    lx_free(&alias_toks);
+    p_tok = &p_toks->data[p_i];
 
     return 0;
 }
 
-static int parse_subshell(ps_ast *subsh, ps_scan *scan) {
-    int status = 0;
+static void copy_word(ps_word *dst, lx_tok *src) {
+    *dst = (ps_word){
+        .i = src->i, .n = src->n,
+        .segments.allo = p_scan->allo, .proc_sub_fds.allo = p_scan->allo
+    };
 
-    if (scan->toks->data[scan->i].kind != LX_TOK_LPAREN) {
-        ERR_TOK(scan->cur_tok);
+    for (size_t i = 0; i < src->parts.size; ++i) {
+        lx_part *src_part = &src->parts.data[i];
+        size_t n = strlen(src_part->raw) + 1;
+
+        ps_segment *dst_segment = linc_array_push(&dst->segments);
+
+        *dst_segment = (ps_segment){
+            .i = src_part->i,
+            .n = src_part->n,
+            .raw = p_scan->allo.alloc(n, p_scan->allo.ctx),
+        };
+
+        memcpy(dst_segment->raw, src_part->raw, n);
+
+        switch (src_part->quote) {
+            case LX_Q_SINGLE: dst_segment->quote = PS_Q_SINGLE; break;
+            case LX_Q_DOUBLE: dst_segment->quote = PS_Q_DOUBLE; break;
+            case LX_Q_NONE:   dst_segment->quote = PS_Q_NONE;   break;
+        }
+    }
+}
+
+static int parse_word(ps_word *word) {
+    *word = (ps_word){ .segments.allo = p_scan->allo };
+
+    if (p_tok->kind != LX_TOK_WORD) {
+        ERR_TOK(p_tok);
         return -1;
     }
 
-    size_t i = scan->i + 1;
-    size_t n = 0;
-    int paren_count = 1;
+    copy_word(word, p_tok);
+    tok_advance();
 
-    for (; i < scan->toks->size; ++i, ++n) {
-        lx_kind kind = scan->toks->data[i].kind;
+    return 0;
+}
 
-        if (kind == LX_TOK_LPAREN)
-            ++paren_count;
-
-        if (kind == LX_TOK_RPAREN)
-            --paren_count;
-
-        if (paren_count == 0)
-            break;
+static int parse_redir(ps_redir *redir) {
+    if (p_tok->kind == LX_TOK_IO_NUM) {
+        redir->io_num = p_tok->io_num;
+        tok_advance();
+    } else {
+        switch (p_tok->kind) {
+        case LX_TOK_RDR_IN:  redir->io_num = 0; break;
+        case LX_TOK_RDR_OUT: redir->io_num = 1; break;
+        case LX_TOK_APPEND:  redir->io_num = 1; break;
+        case LX_TOK_FD_OUT:  redir->io_num = 1; break;
+        case LX_TOK_FD_IN:   redir->io_num = 0; break;
+        default:
+            ERR_TOK(p_tok);
+            return -1;
+        }
     }
 
-    if (paren_count != 0 || n == 0) {
-        if (i == scan->toks->size) {
-            ERR_EOL();
-        } else {
-            ERR_TOK(&scan->toks->data[i]);
+    if (p_tok->kind == LX_TOK_APPEND) {
+        redir->append = true;
+    } if (p_tok->kind == LX_TOK_FD_IN || p_tok->kind == LX_TOK_RDR_IN) {
+        redir->rdr_in = true;
+    } if (p_tok->kind == LX_TOK_FD_IN || p_tok->kind == LX_TOK_FD_OUT) {
+        redir->fd_dup = true;
+    } else if (!lx_is_redir(p_tok->kind)) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    if (!redir->fd_dup) {
+        if (parse_word(&redir->target) == -1)
+            return -1;
+    } else {
+        if (p_tok->kind != LX_TOK_IO_NUM) {
+            ERR_TOK(p_tok);
+            return -1;
         }
 
-        status = -1;
+        redir->fd_target = p_tok->io_num;
+        tok_advance();
     }
 
-    lx_tok tok;
-    da_tok subsh_toks = {0};
-    int rparen_i = scan->i + n + 1;
+    return 0;
+}
 
-    for (size_t i = 0; i < n; ++i) {
-        lx_tok_copy(&tok, &scan->toks->data[scan->i + 1 + i]);
-        *linc_array_push(&subsh_toks) = tok;
+static int parse_subsh(ps_ast *ast) {
+    if (p_tok->kind != LX_TOK_LPAREN) {
+        ERR_TOK(p_tok);
+        return -1;
     }
 
-    *subsh = (ps_ast){
-        .allo = scan->ast->allo,
-        .nested = true
+    tok_advance();
+
+    if (parse_ast(ast, LX_TOK_RPAREN) == -1)
+        return -1;
+
+    if (p_tok->kind != LX_TOK_RPAREN) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    return 0;
+}
+
+static int parse_cmd_element(ps_cmd *cmd) {
+    if (p_tok->kind == LX_TOK_WORD) {
+        ps_word *word = linc_array_push(&cmd->words);
+        if (parse_word(word) == -1)
+            return -1;
+    } else if (lx_is_redir(p_tok->kind) || p_tok->kind == LX_TOK_IO_NUM) {
+        ps_redir *redir = linc_array_push(&cmd->redirs);
+        *redir = (ps_redir){0};
+
+        if (parse_redir(redir) == -1)
+            return -1;
+    } else if (p_tok->kind == LX_TOK_LPAREN) {
+        cmd->kind = PS_CMD_SUBSH;
+
+        if (parse_subsh(&cmd->subsh) == -1)
+            return -1;
+    } else {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int parse_cmd(ps_cmd *cmd) {
+    int status = -1;
+
+    *cmd = (ps_cmd){ .i = p_tok->i };
+
+    char *alias, *value;
+    if (p_scan->alias && try_get_alias(&alias, &value)) {
+        if (expand_alias(alias, value) == -1)
+            goto done;
+    }
+
+    *cmd = (ps_cmd){
+        .words.allo = p_scan->allo,
+        .redirs.allo = p_scan->allo,
+        .i = p_tok->i
     };
 
-    ps_scan subsh_scan = {
-        .toks = &subsh_toks,
-        .print_err = scan->print_err,
-        .alias = scan->alias,
-    };
+    if (parse_cmd_element(cmd) == -1)
+        goto done;
 
-    if (ps_parse(&subsh_scan, subsh) == -1)
-        status = -1;
+    while (TOK_IN(p_tok->kind, LX_TOK_WORD, LX_TOK_IO_NUM) ||
+           lx_is_redir(p_tok->kind)) {
 
-    int shift = subsh_scan.alias_shift;
-    int shift_n = scan->toks->size - (rparen_i);
+        if (cmd->kind == PS_CMD_SUBSH && p_tok->kind == LX_TOK_WORD) {
+            ERR_TOK(p_tok);
+            goto done;
+        }
 
-    scan->alias_shift += subsh_scan.alias_shift;
-
-    for (size_t i = 0; i < subsh_scan.err_toks.size; ++i) {
-        lx_tok *src = &subsh_scan.err_toks.data[i];
-        lx_tok_copy(linc_array_push(&scan->err_toks), src);
+        if (parse_cmd_element(cmd) == -1)
+            goto done;
     }
 
-    if (!scan_final(scan))
-        lx_shift_toks(shift, shift_n, &scan->toks->data[rparen_i]);
+    status = 0;
 
-    scan_advance(n + 1, scan);
-
-    lx_free(&subsh_toks);
-
+done:
+    cmd->n = get_cur_i() - cmd->i;
     return status;
 }
 
-static bool in_andor(int i, ps_ast *ast, ps_info *info) {
-    for (size_t andor_i = 0; andor_i < ast->andors.size; ++andor_i) {
-        ps_andor *andor = &ast->andors.data[andor_i];
+static int parse_pline(ps_andor *andor) {
+    int status = -1;
 
-        if (i < andor->i || i > andor->i + andor->n)
+    andor->pline = (ps_pline){ .cmds.allo = p_scan->allo };
+
+    ps_cmd *cmd = linc_array_push(&andor->pline.cmds);
+    if (parse_cmd(cmd) == -1)
+        goto done;
+
+    andor->i = cmd->i;
+    andor->pline.i = cmd->i;
+
+    while (p_tok->kind == LX_TOK_PIPE) {
+        tok_advance();
+
+        cmd = linc_array_push(&andor->pline.cmds);
+        if (parse_cmd(cmd) == -1)
+            goto done;
+    }
+
+    status = 0;
+
+done:
+    andor->n = get_cur_i() - andor->i;
+    andor->pline.n = get_cur_i() - andor->pline.i;
+    return status;
+}
+
+static int parse_chain(ps_chain *chain) {
+    int status = -1;
+
+    *chain = (ps_chain){ .andors.allo = p_scan->allo };
+
+    ps_andor *andor = linc_array_push(&chain->andors);
+    *andor = (ps_andor){ .op = PS_NO_IF };
+    if (parse_pline(andor) == -1)
+        goto done;
+
+    chain->i = andor->i;
+
+    while (true) {
+        if (p_tok->kind == LX_TOK_AND_IF) {
+            tok_advance();
+            andor = linc_array_push(&chain->andors);
+            *andor = (ps_andor){ .op = PS_AND_IF, };
+        } else if (p_tok->kind == LX_TOK_OR_IF) {
+            tok_advance();
+            andor = linc_array_push(&chain->andors);
+            *andor = (ps_andor){ .op = PS_OR_IF };
+        } else {
+            break;
+        }
+
+        if (parse_pline(andor) == -1)
+            goto done;
+    }
+
+    if (p_tok->kind == LX_TOK_AMPER) {
+        chain->bg = true;
+        tok_advance();
+    }
+
+    status = 0;
+
+done:
+    chain->n = get_cur_i() - chain->i;
+    return status;
+}
+
+static int parse_ast(ps_ast *ast, lx_kind term) {
+    while (true) {
+        ps_chain *chain = linc_array_push(&ast->chains);
+
+        if (parse_chain(chain) == -1)
+            return -1;
+
+        if (p_tok->kind == LX_TOK_SEMI) {
+            tok_advance();
+
+            if (p_tok->kind == term)
+                break;
+        } else {
+            break;
+        }
+    }
+
+    return 0;
+}
+
+void ps_free(ps_ast *ast) {
+    ASSERT(ast && ast->allo.ctx);
+    arena_destroy(ast->allo.ctx);
+    *ast = (ps_ast){0};
+}
+
+int ps_parse(ps_scan *scan, ps_ast *ast) {
+    p_scan = scan;
+
+    if (!p_scan->allo.alloc) {
+        p_scan->allo = (linc_allo){
+            .alloc = arena_alloc,
+            .free = arena_free,
+            .ctx = arena_create()
+        };
+    }
+
+    p_scan->err_toks.allo = p_scan->allo;
+
+    *ast = (ps_ast){
+        .allo = p_scan->allo,
+        .chains.allo = p_scan->allo
+    };
+
+    da_tok toks = { .allo = p_scan->allo };
+
+    for (size_t i = 0; i < p_scan->toks->size; ++i) {
+        lx_tok *dest = linc_array_push(&toks);
+        lx_tok_copy(dest, &p_scan->toks->data[i], &p_scan->allo);
+    }
+
+    *linc_array_push(&toks) = (lx_tok){ .kind = LX_EOF };
+
+    p_toks = &toks;
+    p_tok = p_toks->data;
+    p_i = 0;
+
+    if (parse_ast(ast, LX_EOF) == -1)
+        return -1;
+
+    if (p_tok->kind != LX_EOF) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    return 0;
+}
+
+static bool in_chain(int ind, ps_ast *ast, ps_info *info) {
+    for (size_t i = 0; i < ast->chains.size; ++i) {
+        ps_chain *chain = &ast->chains.data[i];
+
+        if (ind < chain->i || ind > chain->i + chain->n)
+            continue;
+
+        info->kinds |= PS_INFO_CHAIN;
+        info->chain = chain;
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool in_andor(int ind, ps_chain *chain, ps_info *info) {
+    for (size_t i = 0; i < chain->andors.size; ++i) {
+        ps_andor *andor = &chain->andors.data[i];
+
+        if (ind < andor->i || ind > andor->i + andor->n)
             continue;
 
         if (andor->op == PS_AND_IF) {
@@ -345,11 +452,11 @@ static bool in_andor(int i, ps_ast *ast, ps_info *info) {
     return false;
 }
 
-static bool in_cmd(int i, ps_andor *andor, ps_info *info) {
-    for (size_t cmd_i = 0; cmd_i < andor->pline.cmds.size; ++cmd_i) {
-        ps_cmd *cmd = &andor->pline.cmds.data[cmd_i];
+static bool in_cmd(int ind, ps_andor *andor, ps_info *info) {
+    for (size_t i = 0; i < andor->pline.cmds.size; ++i) {
+        ps_cmd *cmd = &andor->pline.cmds.data[i];
 
-        if (i < cmd->i || i > cmd->i + cmd->n)
+        if (ind < cmd->i || ind > cmd->i + cmd->n)
             continue;
 
         info->kinds |= PS_INFO_CMD;
@@ -361,14 +468,14 @@ static bool in_cmd(int i, ps_andor *andor, ps_info *info) {
     return false;
 }
 
-static bool in_word(int i, ps_cmd *cmd, ps_info *info) {
-    for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
-        ps_word *word = &cmd->words.data[word_i];
+static bool in_word(int ind, ps_cmd *cmd, ps_info *info) {
+    for (size_t i = 0; i < cmd->words.size; ++i) {
+        ps_word *word = &cmd->words.data[i];
 
-        if (i < word->i || i > word->i + word->n)
+        if (ind < word->i || ind > word->i + word->n)
             continue;
 
-        if (word_i == 0) {
+        if (i == 0) {
             info->kinds |= PS_INFO_NAME;
         } else {
             info->kinds |= PS_INFO_ARG;
@@ -382,15 +489,15 @@ static bool in_word(int i, ps_cmd *cmd, ps_info *info) {
     return false;
 }
 
-static bool in_redir(int i, ps_cmd *cmd, ps_info *info) {
-    for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
-        ps_redir *redir = &cmd->redirs.data[redir_i];
-        ps_word *target = &cmd->redirs.data[redir_i].target;
+static bool in_redir(int ind, ps_cmd *cmd, ps_info *info) {
+    for (size_t i = 0; i < cmd->redirs.size; ++i) {
+        ps_redir *redir = &cmd->redirs.data[i];
+        ps_word *target = &cmd->redirs.data[i].target;
 
         if (target->segments.size == 0)
             continue;
 
-        if (i < target->i || i > target->i + target->n)
+        if (ind < target->i || ind > target->i + target->n)
             continue;
 
         info->kinds |= PS_INFO_REDIR;
@@ -403,11 +510,11 @@ static bool in_redir(int i, ps_cmd *cmd, ps_info *info) {
     return false;
 }
 
-static bool in_segment(int i, ps_word *word, ps_info *info) {
-    for (size_t seg_i = 0; seg_i < word->segments.size; ++seg_i) {
-        ps_segment *seg = &word->segments.data[seg_i];
+static bool in_segment(int ind, ps_word *word, ps_info *info) {
+    for (size_t i = 0; i < word->segments.size; ++i) {
+        ps_segment *seg = &word->segments.data[i];
 
-        if (i < seg->i || i > seg->i + seg->n)
+        if (ind < seg->i || ind > seg->i + seg->n)
             continue;
 
         info->kinds |= PS_INFO_SEG;
@@ -422,207 +529,22 @@ static bool in_segment(int i, ps_word *word, ps_info *info) {
 void ps_get_info(int i, ps_ast *ast, ps_info *info) {
     ASSERT(ast && i >= 0 && info);
 
-    *info = (ps_info){ .allo = ast->allo };
-
-    if (ast->andors.size == 0) {
+    if (ast->chains.size == 0) {
         info->kinds |= PS_INFO_EMPTY;
         return;
     }
 
-    if (in_andor(i, ast, info)) {
-        if (in_cmd(i, info->andor, info)) {
-            if (in_redir(i, info->cmd, info)) {
-                in_segment(i, &info->redir->target, info);
-            } else if (info->cmd->kind == PS_CMD_SUBSH) {
-                ps_get_info(i, &info->cmd->subsh, info);
-            } else if (in_word(i, info->cmd, info)) {
-                in_segment(i, info->word, info);
-            }
-        }
-    }
-}
-
-int ps_parse(ps_scan *scan, ps_ast *ast) {
-    ASSERT(scan && ast);
-
-    if (!ast->allo.alloc) {
-        ast->allo = (linc_allo){
-            .alloc = arena_alloc,
-            .free = arena_free,
-            .ctx = arena_create()
-        };
-    }
-
-    scan->err_toks.allo = ast->allo;
-    ast->andors.allo = ast->allo;
-    scan->ast = ast;
-    scan->cur_tok = &scan->toks->data[0];
-
-    if (!scan->toks || !ast || scan->toks->size == 0) {
-        ps_free(ast);
-        goto fail;
-    }
-
-    for (; scan->i != scan->toks->size; scan_advance(1, scan)) {
-        lx_kind kind = scan->cur_tok->kind;
-
-        /* Just parsed a delimeter so need a command */
-        if (!scan->cur_andor || !scan->cur_cmd) {
-            if (kind != LX_TOK_WORD && kind != LX_TOK_LPAREN)
-                goto fail_tok;
-        }
-
-        /* Just parsed a command (subshell) */
-        if (scan->cur_cmd && scan->cur_cmd->kind == PS_CMD_SUBSH) {
-            if ((kind == LX_TOK_WORD && !scan->queued_redir))
-                goto fail_tok;
-
-            if (kind == LX_TOK_LPAREN)
-                goto fail_tok;
-        }
-
-        /* Just parsed a redirect so need a target */
-        if (scan->queued_redir) {
-            if (scan->queued_redir->fd_dup) {
-                if (kind != LX_TOK_IO_NUM)
-                    goto fail_tok;
-            } else if (kind != LX_TOK_WORD) {
-                goto fail_tok;
-            }
-        }
-
-        switch (kind) {
-        case LX_TOK_WORD:
-            if (scan->queued_redir) {
-                copy_word(&scan->queued_redir->target, scan->cur_tok, scan);
-                scan->queued_redir = nullptr;
-                break;
-            }
-
-            if (!scan->cur_cmd && scan->alias) {
-                char *alias, *value;
-                if (try_get_alias(scan->cur_tok, &alias, &value)) {
-                    if (expand_alias(scan, alias, value) == -1)
-                        goto fail;
-                    continue;
+    if (in_chain(i, ast, info)) {
+        if (in_andor(i, info->chain, info)) {
+            if (in_cmd(i, info->andor, info)) {
+                if (in_redir(i, info->cmd, info)) {
+                    in_segment(i, &info->redir->target, info);
+                } else if (info->cmd->kind == PS_CMD_SUBSH) {
+                    ps_get_info(i, &info->cmd->subsh, info);
+                } else if (in_word(i, info->cmd, info)) {
+                    in_segment(i, info->word, info);
                 }
             }
-
-            if (!scan->cur_andor)
-                add_andor(&ast->andors, scan->andor_op, scan);
-
-            if (!scan->cur_cmd)
-                add_cmd(&scan->cur_andor->pline.cmds, PS_CMD_SIMPLE, scan);
-
-            ps_word *word = linc_array_push(&scan->cur_cmd->words);
-            *word = (ps_word){ .segments.allo = scan->ast->allo };
-
-            copy_word(word, scan->cur_tok, scan);
-            break;
-        case LX_TOK_IO_NUM:
-            if (scan->queued_redir) {
-                scan->queued_redir->fd_target = scan->cur_tok->io_num;
-                scan->queued_redir = nullptr;
-                break;
-            }
-
-            /* If there is no queued redirect theat means the lexer
-             * lexed a redirect token after the io-number. */
-            ASSERT(!scan_final(scan));
-
-            int io_num = scan->cur_tok->io_num;
-            scan_advance(1, scan);
-
-            if (scan->cur_tok->kind == LX_TOK_FD_OUT ||
-                scan->cur_tok->kind == LX_TOK_FD_IN) {
-                queue_redir(io_num, true, scan);
-            } else if (scan->cur_tok->kind == LX_TOK_RDR_OUT ||
-                       scan->cur_tok->kind == LX_TOK_RDR_IN ||
-                       scan->cur_tok->kind == LX_TOK_APPEND) {
-                queue_redir(io_num, false, scan);
-            } else {
-                ASSERT(false && "unexpected token stream");
-            }
-
-            break;
-        case LX_TOK_FD_OUT:
-        case LX_TOK_FD_IN:
-            queue_redir(-1, true, scan);
-            break;
-        case LX_TOK_RDR_IN:
-        case LX_TOK_RDR_OUT:
-        case LX_TOK_APPEND:
-            queue_redir(-1, false, scan);
-            break;
-        case LX_TOK_LPAREN:
-            if (!scan->cur_andor)
-                add_andor(&ast->andors, scan->andor_op, scan);
-
-            if (scan->cur_cmd)
-                goto fail_tok;
-
-            add_cmd(&scan->cur_andor->pline.cmds, PS_CMD_SUBSH, scan);
-
-            if (parse_subshell(&scan->cur_cmd->subsh, scan) == -1)
-                goto fail;
-
-            break;
-        case LX_TOK_RPAREN:
-            goto fail_tok;
-        case LX_TOK_PIPE:
-            end_cmd(scan);
-            break;
-        case LX_TOK_AND_IF:
-            end_cmd(scan);
-            end_andor(scan);
-            scan->andor_op = PS_AND_IF;
-            break;
-        case LX_TOK_OR_IF:
-            end_cmd(scan);
-            end_andor(scan);
-            scan->andor_op = PS_OR_IF;
-            break;
-        case LX_TOK_AMPER:
-            if (!scan_final(scan) || !scan->cur_andor ||
-                    !scan->cur_cmd || scan->queued_redir)
-                goto fail_tok;
-
-            end_cmd(scan);
-            end_andor(scan);
-
-            ast->bg = true;
-
-            return 0;
-        default:
-            break;
         }
     }
-
-    if (scan->queued_redir || !scan->cur_andor || !scan->cur_cmd) {
-        ERR_EOL();
-        goto fail;
-    }
-
-    end_cmd(scan);
-    end_andor(scan);
-
-    return 0;
-
-fail_tok:
-    ERR_TOK(scan->cur_tok);
-
-fail:
-    end_cmd(scan);
-    end_andor(scan);
-
-    return -1;
-}
-
-void ps_free(ps_ast *ast) {
-    if (!ast || !ast->allo.ctx || ast->nested)
-        return;
-
-    arena_destroy(ast->allo.ctx);
-
-    *ast = (ps_ast){0};
 }

@@ -322,7 +322,7 @@ TEST(config, alias_with_no_value) {
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "sea: parse error near '\\n'",
+        "sea: parse error near 'EOF'",
         PROMPT
     );
 }

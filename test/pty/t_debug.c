@@ -424,7 +424,8 @@ static void render_debug_win(curs_win *win, da_dstr *lines, int offset) {
             attrs = COLOR_PAIR(RED_CLEAR) | A_BOLD;
         else if (strstr(line->cstr, "WARN"))
             attrs = COLOR_PAIR(BRIGHT_WHITE_YELLOW);
-        else if (strstr(line->cstr, "ERROR"))
+        else if (strstr(line->cstr, "ERROR") &&
+                !strstr(line->cstr, "ERROR SUMMARY"))
             attrs = COLOR_PAIR(BRIGHT_WHITE_RED);
         else if (strstr(line->cstr, "===TEST("))
             attrs = COLOR_PAIR(CYAN_CLEAR);

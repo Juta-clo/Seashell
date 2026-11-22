@@ -28,6 +28,7 @@ char *make_word_str(ps_word *word);
 char *make_redir_str(ps_redir *redir);
 char *make_cmd_str(ps_cmd *cmd);
 char *make_pline_str(ps_pline *pline);
+char *make_chain_str(ps_chain *chain);
 char *make_ast_str(ps_ast *ast);
 
 void process_signals(void);
@@ -37,7 +38,7 @@ void seashell_shutdown(void);
 int line_to_ast(const char *line, size_t n, ps_ast *ast);
 linc_string shell_get_prompt(void);
 
-int shell_run_andor(ps_ast *ast);
+int shell_run_chain(ps_chain *chain);
 int shell_run_capture(const char *line, size_t n, int *pid);
 int shell_run(const char *line);
 

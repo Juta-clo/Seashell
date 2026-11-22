@@ -620,7 +620,7 @@ TEST(lexer, copied_number_tokens_maintain_data) {
     lx_tok src = WORD_NUMBER(123, I(5), N(3));
     lx_tok dest;
 
-    lx_tok_copy(&dest, &src);
+    lx_tok_copy(&dest, &src, nullptr);
     validate_tok(&src, &dest);
     lx_free_tok(&dest);
 }

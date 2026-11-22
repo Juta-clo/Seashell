@@ -168,7 +168,7 @@ static bool tok_is_number(lx_tok *tok) {
 }
 
 static int lex_io_num(lx_kind delim, const lx_scan *scan) {
-    if (!(lx_kind_is_redir(delim) || scan->fd_dup_pending))
+    if (!(lx_is_redir(delim) || scan->fd_dup_pending))
         return LX_FAIL;
 
     const lx_tok *tok = scan->cur_tok;
@@ -477,7 +477,7 @@ char *tok_str(lx_kind kind) {
     fatal(nullptr);
 }
 
-bool lx_kind_is_redir(lx_kind kind) {
+bool lx_is_redir(lx_kind kind) {
     bool is_redir = (
         kind == LX_TOK_RDR_OUT ||
         kind == LX_TOK_RDR_IN ||
@@ -502,21 +502,28 @@ void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks) {
     }
 }
 
-void lx_tok_copy(lx_tok *dest, lx_tok *src) {
+void lx_tok_copy(lx_tok *dest, lx_tok *src, linc_allo *allo) {
     *dest = *src;
 
-    if (src->kind != LX_TOK_WORD)
-        return;
+    if (src->kind == LX_TOK_WORD) {
+        dest->parts = (da_part){0};
 
-   dest->parts = (da_part){0};
+        if (allo)
+            dest->parts.allo = *allo;
 
-   for (size_t i = 0; i < src->parts.size; ++i) {
-       lx_part *src_part = &src->parts.data[i];
-       lx_part *dest_part = linc_array_push(&dest->parts);
+        for (size_t i = 0; i < src->parts.size; ++i) {
+            lx_part *src_part = &src->parts.data[i];
+            lx_part *dest_part = linc_array_push(&dest->parts);
 
-       *dest_part = *src_part;
-       dest_part->raw = xstrdup(src_part->raw);
-   }
+            *dest_part = *src_part;
+
+            if (allo) {
+                dest_part->raw = strdup_alloc(src_part->raw, allo);
+            } else {
+                dest_part->raw = xstrdup(src_part->raw);
+            }
+        }
+    }
 }
 
 void lx_free_tok(lx_tok *tok) {

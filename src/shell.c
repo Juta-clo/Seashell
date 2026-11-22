@@ -144,13 +144,13 @@ char *make_pline_str(ps_pline *pline) {
     return pline_str;
 }
 
-char *make_ast_str(ps_ast *ast) {
-    ASSERT(ast && ast->andors.size > 0);
+char *make_chain_str(ps_chain *chain) {
+    ASSERT(chain && chain->andors.size > 0);
 
     linc_string out = LINC_STRING_INIT;
 
-    for (size_t andor_i = 0; andor_i < ast->andors.size; ++andor_i) {
-        ps_andor *andor = &ast->andors.data[andor_i];
+    for (size_t andor_i = 0; andor_i < chain->andors.size; ++andor_i) {
+        ps_andor *andor = &chain->andors.data[andor_i];
 
         if (andor->op == PS_AND_IF) {
             linc_string_append(&out, " && ");
@@ -161,8 +161,24 @@ char *make_ast_str(ps_ast *ast) {
         str_append_free(make_pline_str(&andor->pline), &out);
     }
 
-    if (ast->bg)
+    if (chain->bg)
         linc_string_append(&out, " &");
+
+    char *ast_str = xstrdup(out.cstr);
+    linc_string_free(&out);
+    return ast_str;
+}
+
+char *make_ast_str(ps_ast *ast) {
+    linc_string out = LINC_STRING_INIT;
+
+    for (size_t i = 0; i < ast->chains.size; ++i) {
+        ps_chain *chain = &ast->chains.data[i];
+        str_append_free(make_chain_str(chain), &out);
+
+        if (i != ast->chains.size - 1)
+            linc_string_append(&out, "; ");
+    }
 
     char *ast_str = xstrdup(out.cstr);
     linc_string_free(&out);
@@ -340,6 +356,8 @@ static int apply_redirs(da_redir *redirs, bool builtin) {
     return 0;
 }
 
+int shell_run_ast(ps_ast *ast);
+
 static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
     ASSERT(pline);
 
@@ -391,7 +409,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
 
             if (cur_cmd->kind == PS_CMD_SUBSH) {
                 subshell_setup(SUBSH_ASYNC);
-                _exit(shell_run_andor(&cur_cmd->subsh));
+                _exit(shell_run_ast(&cur_cmd->subsh));
             }
 
             if (cur_cmd->argc == 0)
@@ -490,7 +508,7 @@ static bool try_run_builtin(ps_pline *pline, int jid) {
     return true;
 }
 
-static int shell_start_pline(ps_pline *pline, bool bg, int jid) {
+static int start_pline(ps_pline *pline, bool bg, int jid) {
     int status = -1;
 
     bool try_builtin = (
@@ -567,12 +585,12 @@ cleanup:
     return rv;
 }
 
-int shell_run_andor(ps_ast *ast) {
+int shell_run_chain(ps_chain *chain) {
     int status = EXIT_SUCCESS;
     bool caller = true;
 
-    if (ast->bg && ast->andors.size > 1) {
-        ast->bg = false;
+    if (chain->bg && chain->andors.size > 1) {
+        chain->bg = false;
 
         int subsh_pgid = xfork();
 
@@ -583,16 +601,16 @@ int shell_run_andor(ps_ast *ast) {
             int jid = job_new_id();
             sh_pgrp pld = { .pgid = subsh_pgid };
 
-            char *ast_str = make_ast_str(ast);
+            char *chain_str = make_chain_str(chain);
             linc_string subsh_str = LINC_STRING_INIT;
-            linc_string_appendf(&subsh_str, "(%s)", ast_str);
+            linc_string_appendf(&subsh_str, "(%s)", chain_str);
 
             *linc_array_push(&pld.procs) = (sh_proc){
                 .pid = subsh_pgid,
                 .cmd = subsh_str.cstr,
             };
 
-            free(ast_str);
+            free(chain_str);
             job_add(jid, &pld);
 
             if (!env.subsh && env.job_ctrl)
@@ -605,17 +623,17 @@ int shell_run_andor(ps_ast *ast) {
         }
     }
 
-    for (size_t i = 0; i < ast->andors.size; ++i) {
-        ps_andor *andor = &ast->andors.data[i];
+    for (size_t i = 0; i < chain->andors.size; ++i) {
+        ps_andor *andor = &chain->andors.data[i];
         int rv = 0;
 
         if (andor_should_run(andor, status)) {
             env.fg_jid = job_new_id();
 
-            if (!ast->bg && !env.subsh && env.job_ctrl)
+            if (!chain->bg && !env.subsh && env.job_ctrl)
                 xtcgetattr(env.tty_fd, &env.tio);
 
-            if (shell_start_pline(&andor->pline, ast->bg, env.fg_jid) == -1) {
+            if (start_pline(&andor->pline, chain->bg, env.fg_jid) == -1) {
                 if (last_exit_event.type == PSIGNALED &&
                     last_exit_event.term_sig == SIGINT) {
                     rv = PLINE_INTR;
@@ -624,7 +642,7 @@ int shell_run_andor(ps_ast *ast) {
                     status = EXIT_FAILURE;
                 }
             } else {
-                if (ast->bg) {
+                if (chain->bg) {
                     if (!env.subsh && env.job_ctrl) {
                         pid_t pgrp = job_lookup_pgrp(env.fg_jid);
                         printf("[%d] %d\n", env.fg_jid, pgrp);
@@ -756,7 +774,7 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
         fd_move(pipe_fd[1], STDOUT_FILENO, false, true);
         xclose(pipe_fd[0]);
 
-        _exit(shell_run_andor(&ast));
+        _exit(shell_run_ast(&ast));
     }
 
     if (pid)
@@ -768,13 +786,24 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
     return pipe_fd[0];
 }
 
+int shell_run_ast(ps_ast *ast) {
+    ASSERT(ast);
+
+    int status = 0;
+
+    for (size_t i = 0; i < ast->chains.size; ++i)
+        status = shell_run_chain(&ast->chains.data[i]);
+
+    return status;
+}
+
 int shell_run(const char *cmd) {
     ps_ast ast = {0};
 
     if (line_to_ast(cmd, strlen(cmd), &ast) == -1)
         return -1;
 
-    int status = shell_run_andor(&ast);
+    int status = shell_run_ast(&ast);
 
     ps_free(&ast);
     return status;

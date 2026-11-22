@@ -92,10 +92,10 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *tokens);
 
 void lx_free_tok(lx_tok *tok);
 void lx_free(da_tok *tokens);
-void lx_tok_copy(lx_tok *dest, lx_tok *src);
+void lx_tok_copy(lx_tok *dest, lx_tok *src, linc_allo *allo);
 char *tok_word_str(lx_tok *tok);
 char *tok_str(lx_kind kind);
-bool lx_kind_is_redir(lx_kind kind);
+bool lx_is_redir(lx_kind kind);
 void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks);
 char *lx_errstr(lx_status stat);
 void log_toks(da_tok *toks);
