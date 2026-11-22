@@ -104,7 +104,19 @@ char *make_cmd_str(ps_cmd *cmd) {
         char *ast_str = make_ast_str(&cmd->subsh);
         linc_string_appendf(&out, "(%s)", ast_str);
         free(ast_str);
-    } else {
+    } else if (cmd->kind == PS_CMD_IF) {
+        char *cond_str = make_ast_str(&cmd->if_st.cond);
+        char *body_str = make_ast_str(&cmd->if_st.body);
+        linc_string_appendf(&out, "if (%s) { %s }", cond_str, body_str);
+        free(cond_str);
+        free(body_str);
+    } else if (cmd->kind == PS_CMD_WHILE) {
+        char *cond_str = make_ast_str(&cmd->if_st.cond);
+        char *body_str = make_ast_str(&cmd->if_st.body);
+        linc_string_appendf(&out, "while (%s) { %s }", cond_str, body_str);
+        free(cond_str);
+        free(body_str);
+    } else if (cmd->kind == PS_CMD_SIMPLE) {
         for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
             ps_word *word = &cmd->words.data[word_i];
 
@@ -113,6 +125,8 @@ char *make_cmd_str(ps_cmd *cmd) {
             if (word_i != cmd->words.size - 1)
                 linc_string_append(&out, " ");
         }
+    } else {
+        fatal("unexpected command type");
     }
 
     for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
@@ -356,15 +370,56 @@ static int apply_redirs(da_redir *redirs, bool builtin) {
     return 0;
 }
 
-int shell_run_ast(ps_ast *ast);
+static int run_ast(ps_ast *ast);
 
-static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
-    ASSERT(pline);
+static int run_pline(ps_pline *pline, bool bg, int jid) {
+    int status = -1;
+    sh_builtin *builtin;
+    ps_cmd *first_cmd = &pline->cmds.data[0];
 
-    int next_pipe[2];
-    int prev_rfd;
+    if (expand_cmd(first_cmd, EXPAND_CMD) == -1)
+        goto cleanup;
+
+    bool run_in_main = (
+        (pline->cmds.size == 1) &&
+        (first_cmd->kind == PS_CMD_SIMPLE) &&
+        (first_cmd->argc > 0) &&
+        (builtin = get_builtin(first_cmd->argv[0])) &&
+        (!bg || env.subsh & SUBSH_ASYNC)
+    );
+
+    if (run_in_main) {
+        int saved_fds[3];
+
+        for (size_t i = 0; i < 3; ++i)
+            if ((saved_fds[i] = dup(i)) == -1 && errno != EBADF)
+                err_exit("dup");
+
+        if (apply_redirs(&first_cmd->redirs, true) == -1) {
+            status = EXIT_FAILURE;
+        } else {
+            status = builtin->func(first_cmd->argv, &env);
+        }
+
+        for (size_t i = 0; i < 3; ++i)
+            fd_move(saved_fds[i], i, false, true);
+
+        /* fg "replaces" itself with the existing job. Because we
+        * don't queue fg's exit event we only reclaim the terminal
+        * when the job that was fg'd exits (or stops) */
+        if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
+            char *cmd_str = make_cmd_str(first_cmd);
+            job_queue_exit(jid, cmd_str, status);
+            free(cmd_str);
+        }
+
+        LOG_INFO("%s [main shell]", builtin->name);
+        goto cleanup;
+    }
 
     sh_pgrp pld = {0};
+    int next_pipe[2];
+    int prev_rfd;
 
     for (size_t i = 0; i < pline->cmds.size; ++i) {
         ps_cmd *cur_cmd = &pline->cmds.data[i];
@@ -398,7 +453,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
 
             sig_restore(&env.og_mask);
 
-            if (!cur_cmd->expanded)
+            if (!first)
                 if (expand_cmd(cur_cmd, EXPAND_CMD) == -1)
                     _exit(EXIT_FAILURE);
 
@@ -409,8 +464,34 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
 
             if (cur_cmd->kind == PS_CMD_SUBSH) {
                 subshell_setup(SUBSH_ASYNC);
-                _exit(shell_run_ast(&cur_cmd->subsh));
+                _exit(run_ast(&cur_cmd->subsh));
+            } else if (cur_cmd->kind == PS_CMD_IF) {
+                subshell_setup(SUBSH_ASYNC);
+
+                int status = run_ast(&cur_cmd->if_st.cond);
+                if (status == EXIT_SUCCESS)
+                    status = run_ast(&cur_cmd->if_st.body);
+
+                _exit(status);
+            } else if (cur_cmd->kind == PS_CMD_WHILE) {
+                subshell_setup(SUBSH_ASYNC);
+
+                int status;
+
+                while (true) {
+                    status = run_ast(&cur_cmd->while_st.cond);
+
+                    if (status == EXIT_SUCCESS) {
+                        run_ast(&cur_cmd->while_st.body);
+                    } else {
+                        break;
+                    }
+                }
+
+                _exit(status);
             }
+
+            ASSERT(cur_cmd->kind == PS_CMD_SIMPLE);
 
             if (cur_cmd->argc == 0)
                 _exit(EXIT_SUCCESS);
@@ -445,7 +526,7 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
             xclose(next_pipe[1]);
         }
 
-        if (cur_cmd->kind != PS_CMD_SUBSH)
+        if (cur_cmd->kind == PS_CMD_SIMPLE)
             close_proc_subs(cur_cmd);
 
         sh_proc *proc = linc_array_push(&pld.procs);
@@ -453,82 +534,11 @@ static sh_pgrp exec_pline(const ps_pline *pline, bool bg) {
         proc->cmd = make_cmd_str(cur_cmd);
     }
 
-    return pld;
-}
-
-static bool can_run_in_shell(ps_pline *pline) {
-    ASSERT(pline && pline->cmds.size > 0);
-
-    if (pline->cmds.size > 1)
-        return false;
-
-    if (pline->cmds.data[0].kind != PS_CMD_SIMPLE)
-        return false;
-
-    return true;
-}
-
-static bool try_run_builtin(ps_pline *pline, int jid) {
-    ps_cmd *cmd = &pline->cmds.data[0];
-
-    if (cmd->argc == 0)
-        return false;
-
-    sh_builtin *builtin = get_builtin(cmd->argv[0]);
-    if (!builtin)
-        return false;
-
-    int saved_fds[3];
-    for (size_t i = 0; i < 3; ++i)
-        if ((saved_fds[i] = dup(i)) == -1 && errno != EBADF)
-            err_exit("dup");
-
-    int status;
-
-    if (apply_redirs(&cmd->redirs, true) == -1) {
-        status = EXIT_FAILURE;
-    } else {
-        status = builtin->func(cmd->argv, &env);
-    }
-
-    for (size_t i = 0; i < 3; ++i)
-        fd_move(saved_fds[i], i, false, true);
-
-    /* fg "replaces" itself with the existing job. Because we
-    * don't queue fg's exit event we only reclaim the terminal
-    * when the job that was fg'd exits (or stops) */
-    if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
-        LOG_INFO("queued \"%s\" exit event", builtin->name);
-        char *cmd_str = make_cmd_str(cmd);
-        job_queue_builtin_exit(jid, cmd_str, status);
-        free(cmd_str);
-    }
-
-    close_proc_subs(cmd);
-    return true;
-}
-
-static int start_pline(ps_pline *pline, bool bg, int jid) {
-    int status = -1;
-
-    bool try_builtin = (
-        can_run_in_shell(pline) &&
-        (!bg || env.subsh & SUBSH_ASYNC)
-    );
-
-    if (try_builtin) {
-        if (expand_cmd(&pline->cmds.data[0], EXPAND_CMD) == -1)
-            goto cleanup;
-
-        if (try_run_builtin(pline, jid)) {
-            status = 0;
-            goto cleanup;
-        }
-    }
-
-    sh_pgrp pld = exec_pline(pline, bg);
     job_add(jid, &pld);
 
+    char *pline_str = make_pline_str(pline);
+    LOG_INFO("started '%s' %d", pline_str, pld.pgid);
+    free(pline_str);
     status = 0;
 
 cleanup:
@@ -538,7 +548,7 @@ cleanup:
     return status;
 }
 
-static int shell_wait_pline(int jid, int *status) {
+static int wait_pline(int jid, int *status) {
     job_event *jev;
     int rv;
 
@@ -633,7 +643,7 @@ int shell_run_chain(ps_chain *chain) {
             if (!chain->bg && !env.subsh && env.job_ctrl)
                 xtcgetattr(env.tty_fd, &env.tio);
 
-            if (start_pline(&andor->pline, chain->bg, env.fg_jid) == -1) {
+            if (run_pline(&andor->pline, chain->bg, env.fg_jid) == -1) {
                 if (last_exit_event.type == PSIGNALED &&
                     last_exit_event.term_sig == SIGINT) {
                     rv = PLINE_INTR;
@@ -652,7 +662,7 @@ int shell_run_chain(ps_chain *chain) {
                     break;
                 }
 
-                rv = shell_wait_pline(env.fg_jid, &status);
+                rv = wait_pline(env.fg_jid, &status);
             }
 
             update_status_variable(status);
@@ -774,7 +784,7 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
         fd_move(pipe_fd[1], STDOUT_FILENO, false, true);
         xclose(pipe_fd[0]);
 
-        _exit(shell_run_ast(&ast));
+        _exit(run_ast(&ast));
     }
 
     if (pid)
@@ -786,7 +796,7 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
     return pipe_fd[0];
 }
 
-int shell_run_ast(ps_ast *ast) {
+static int run_ast(ps_ast *ast) {
     ASSERT(ast);
 
     int status = 0;
@@ -803,7 +813,7 @@ int shell_run(const char *cmd) {
     if (line_to_ast(cmd, strlen(cmd), &ast) == -1)
         return -1;
 
-    int status = shell_run_ast(&ast);
+    int status = run_ast(&ast);
 
     ps_free(&ast);
     return status;

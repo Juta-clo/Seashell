@@ -46,10 +46,21 @@ TEST_GROUP(lexer);
         .io_num = _io_num \
     })
 
+#define WORD_SP(_i, _n, _spec, _raw) \
+    ((lx_tok){ \
+        .kind = LX_TOK_WORD, \
+        .is_num = false, \
+        .spec = _spec, \
+        .i = _i, \
+        .n = _n, \
+        .parts = PARTS(PART(_raw, LX_Q_NONE, _i, _n)), \
+    })
+
 #define WORD(_i, _n, _is_num, ...) \
     ((lx_tok){ \
         .kind = LX_TOK_WORD, \
         .is_num = _is_num, \
+        .spec = LX_SP_NONE, \
         .i = _i, \
         .n = _n, \
         .parts = PARTS(__VA_ARGS__), \
@@ -66,6 +77,12 @@ TEST_GROUP(lexer);
 
 #define WORD_SINGLE(_raw, _i, _n) \
     WORD(_i, _n, false, PART(_raw, LX_Q_SINGLE, _i + 1, _n - 1))
+
+#define SPEC_IF(_i, _n) \
+    WORD_SP(_i, _n, LX_SP_IF, "if")
+
+#define SPEC_WHILE(_i, _n) \
+    WORD_SP(_i, _n, LX_SP_WHILE, "while")
 
 #define TOKS(...) \
     EXP_DA(da_tok, lx_tok, __VA_ARGS__)
@@ -84,6 +101,7 @@ void validate_part(const lx_part *exp, const lx_part *act) {
 void validate_tok(const lx_tok *exp, const lx_tok *act) {
     TEST_ASSERT_EQUAL(exp->kind, act->kind);
     TEST_ASSERT_EQUAL(exp->is_num, act->is_num);
+    TEST_ASSERT_EQUAL(exp->spec, act->spec);
     TEST_ASSERT_EQUAL(exp->i, act->i);
     TEST_ASSERT_EQUAL(exp->n, act->n);
 
@@ -620,7 +638,7 @@ TEST(lexer, copied_number_tokens_maintain_data) {
     lx_tok src = WORD_NUMBER(123, I(5), N(3));
     lx_tok dest;
 
-    lx_tok_copy(&dest, &src, nullptr);
+    lx_tkcpy(&dest, &src, nullptr);
     validate_tok(&src, &dest);
     lx_free_tok(&dest);
 }
@@ -918,6 +936,42 @@ TEST(lexer, semi_colon_operator) {
     validate("a; b;&;>>;", &exp);
 }
 
+TEST(lexer, left_and_right_brace_operators) {
+    da_tok exp = TOKS(
+        OP(LX_TOK_LBRACE, I(0), N(1)),
+        WORD_SIMPLE("a", I(1), N(1)),
+        OP(LX_TOK_RBRACE, I(2), N(1)),
+        OP(LX_TOK_LBRACE, I(3), N(1)),
+        OP(LX_TOK_RDR_OUT, I(4), N(1)),
+        OP(LX_TOK_LBRACE, I(5), N(1)),
+        OP(LX_TOK_RBRACE, I(6), N(1)),
+        OP(LX_TOK_APPEND, I(7), N(2)),
+        OP(LX_TOK_RBRACE, I(9), N(1)),
+    );
+
+    validate("{a}{>{}>>}", &exp);
+}
+
+TEST(lexer, if_statment_is_classified) {
+    da_tok exp = TOKS(
+        SPEC_IF(I(0), N(2)),
+        SPEC_WHILE(I(3), N(5))
+    );
+
+    validate("if while", &exp);
+}
+
+TEST(lexer, special_word_not_classified_if_multiple_parts) {
+    da_tok exp = TOKS(
+        WORD(I(0), N(4), false,
+            PART("i", LX_Q_NONE, I(0), N(1)),
+            PART("f", LX_Q_SINGLE, I(2), N(1))
+        ),
+    );
+
+    validate("i'f'", &exp);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(lexer) {
@@ -996,4 +1050,7 @@ TEST_GROUP_RUNNER(lexer) {
     RUN_TEST_CASE(lexer, process_substitution_in_double_quotes);
     RUN_TEST_CASE(lexer, process_substitution_and_command_substitution);
     RUN_TEST_CASE(lexer, semi_colon_operator);
+    RUN_TEST_CASE(lexer, left_and_right_brace_operators);
+    RUN_TEST_CASE(lexer, if_statment_is_classified);
+    RUN_TEST_CASE(lexer, special_word_not_classified_if_multiple_parts);
 }

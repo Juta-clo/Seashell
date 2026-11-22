@@ -298,6 +298,5 @@ int expand_cmd(ps_cmd *cmd, int type) {
             return -1;
     }
 
-    cmd->expanded = true;
     return 0;
 }

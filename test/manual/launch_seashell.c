@@ -80,7 +80,7 @@ int main(int argc, char **_) {
                 "--leak-check=full",
                 "--errors-for-leak-kinds=definite,indirect",
                 "--show-leak-kinds=definite,indirect",
-                "--track-fds=bad", "--modify-fds=high",
+                "--track-fds=bad", "--modify-fds=high", "--quiet",
             "./sea", "--log-file=/tmp/shlog",
             (char *)NULL
         );

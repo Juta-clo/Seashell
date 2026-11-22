@@ -319,7 +319,7 @@ void test_setup_imp(char **argv) {
     test = linc_array_push(&ptyh.tests);
     *test = (pty_test){0};
 
-    struct winsize ws = { .ws_row = 15, .ws_col = 60 };
+    struct winsize ws = { .ws_row = 30, .ws_col = 90 };
 
     test->argv = create_exec_argv(argv);
     test->cpid = forkpty(&test->mfd, NULL, NULL, &ws);

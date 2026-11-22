@@ -107,6 +107,6 @@ void job_add(int jid, struct sh_pgrp *pld);
 
 jc_job *job_lookup(int jid);
 pid_t job_lookup_pgrp(int jid);
-void job_queue_builtin_exit(int jid, char *cmd, int status);
+void job_queue_exit(int jid, char *cmd, int status);
 
 #endif

@@ -89,6 +89,10 @@ static lx_kind get_kind(const char *cur_char, bool last) {
         return LX_TOK_RPAREN;
     if (strncmp(";", cur_char, 1) == 0)
         return LX_TOK_SEMI;
+    if (strncmp("{", cur_char, 1) == 0)
+        return LX_TOK_LBRACE;
+    if (strncmp("}", cur_char, 1) == 0)
+        return LX_TOK_RBRACE;
 
     return LX_TOK_UNKNOWN;
 }
@@ -102,6 +106,8 @@ static size_t tok_len(lx_kind kind) {
     case LX_TOK_LPAREN:
     case LX_TOK_RPAREN:
     case LX_TOK_SEMI:
+    case LX_TOK_LBRACE:
+    case LX_TOK_RBRACE:
         return 1;
     case LX_TOK_FD_OUT:
     case LX_TOK_FD_IN:
@@ -130,6 +136,8 @@ static bool kind_is_delim(lx_kind kind) {
     case LX_TOK_LPAREN:
     case LX_TOK_RPAREN:
     case LX_TOK_SEMI:
+    case LX_TOK_LBRACE:
+    case LX_TOK_RBRACE:
         return true;
     default:
         return false;
@@ -186,11 +194,29 @@ static int lex_io_num(lx_kind delim, const lx_scan *scan) {
     return io_num;
 }
 
+static void classify_word(lx_tok *word) {
+    ASSERT(word && word->kind == LX_TOK_WORD);
+
+    lx_part *part = &word->parts.data[0];
+
+    if (word->parts.size > 1 || part->quote != LX_Q_NONE)
+        return;
+
+    if (STREQ("if", part->raw)) {
+        word->spec = LX_SP_IF;
+    } else if (STREQ("while", part->raw)) {
+        word->spec = LX_SP_WHILE;
+    } else {
+        word->spec = LX_SP_NONE;
+    }
+}
+
 static void try_end_tok(lx_scan *scan, lx_kind delim) {
     if (!scan->cur_tok)
         return;
 
     if (scan->cur_tok->kind == LX_TOK_WORD) {
+        classify_word(scan->cur_tok);
         scan->cur_tok->n = (scan->cur_ch - scan->cmd) - scan->cur_tok->i;
     } else {
         scan->cur_tok->i = scan->cur_ch - scan->cmd;
@@ -466,6 +492,8 @@ char *tok_str(lx_kind kind) {
     case LX_TOK_LPAREN:  return "(";
     case LX_TOK_RPAREN:  return ")";
     case LX_TOK_SEMI:    return ";";
+    case LX_TOK_LBRACE:  return "{";
+    case LX_TOK_RBRACE:  return "}";
     case LX_TOK_WORD:    return "[word]";
     case LX_TOK_UNKNOWN: return "Unknown";
     case LX_TOK_IO_NUM:  return "[io]";
@@ -502,7 +530,7 @@ void lx_shift_toks(int shift, size_t shift_n, lx_tok *toks) {
     }
 }
 
-void lx_tok_copy(lx_tok *dest, lx_tok *src, linc_allo *allo) {
+void lx_tkcpy(lx_tok *dest, lx_tok *src, linc_allo *allo) {
     *dest = *src;
 
     if (src->kind == LX_TOK_WORD) {

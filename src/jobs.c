@@ -312,7 +312,7 @@ bool job_set_running(int jid, job_event *jev) {
     return change;
 }
 
-void job_queue_builtin_exit(int jid, char *cmd, int status) {
+void job_queue_exit(int jid, char *cmd, int status) {
     job_event jev = {
         .jid = jid,
         .type = JEXITED

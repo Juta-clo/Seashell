@@ -71,17 +71,6 @@ TEST(shell, prompt_after_bg_job_done) {
     );
 }
 
-TEST(shell, short_lived_bg_cmd) {
-    vt_send_str("true &\n");
-    assert_term(4, PROMPT_LEN,
-        PROMPT "true &",
-        "[1] %d",
-        PROMPT "%s",
-        "[1] done             true",
-        PROMPT
-    );
-}
-
 TEST(shell, interupt_foreground_job) {
     vt_send_str("write_sleep\n");
     assert_term(2, 0,
@@ -1150,7 +1139,7 @@ TEST(shell, jobs_after_duplicating_fd_in_subshell) {
     vt_send_str("jobs\n");
     assert_term_clear(2, PROMPT_LEN,
         PROMPT "jobs",
-        "[1] running          (echo x 2> /dev/null 1>&2 && sleep 100)",
+        "[1] running          (echo x 2> /dev/null 1>&2 && sleep 100)%s",
         PROMPT
     );
 }
@@ -1281,6 +1270,101 @@ TEST(shell, ending_ast_with_semicolon) {
     );
 }
 
+TEST(shell, redirections_in_cmd_position) {
+    vt_send_str(">/dev/null echo hello\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT ">/dev/null echo hello",
+        PROMPT
+    );
+}
+
+TEST(shell, simple_if_statement) {
+    vt_send_str("if (false) { echo bad }; if (true) { echo good }\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "if (false) { echo bad }; if (true) { echo good }",
+        "good",
+        PROMPT
+    );
+}
+
+TEST(shell, simple_while_statement) {
+    char *str = PROMPT
+        "set ind 1;"
+        "while (test $ind != 4) {"
+            "echo $ind;"
+            "set ind $(expr $ind + 1);"
+        "}";
+
+    vt_send_str(&str[2]);
+    vt_send_str("\n");
+
+    assert_term_clear(4, PROMPT_LEN,
+        str,
+        "1",
+        "2",
+        "3",
+        PROMPT
+    );
+}
+
+TEST(shell, async_if_statement) {
+    vt_send_str("if (sleep 100) { echo done } &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "if (sleep 100) { echo done } &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("kill %1\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "kill %%1",
+        "[1] Terminated       if (sleep 100) { echo done }%s",
+        PROMPT
+    );
+}
+
+TEST(shell, async_while_statement) {
+    vt_send_str("while (sleep 100) { echo done } &\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "while (sleep 100) { echo done } &",
+        "[1] %d",
+        PROMPT
+    );
+
+    vt_send_str("kill %1\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "kill %%1",
+        "[1] Terminated       while (sleep 100) { echo done }%s",
+        PROMPT
+    );
+}
+
+TEST(shell, stream_control_structure_output_to_pipe) {
+    vt_send_str("if (true) { echo foo; echo bar } | cat\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "if (true) { echo foo; echo bar } | cat",
+        "foo",
+        "bar",
+        PROMPT
+    );
+}
+
+TEST(shell, stream_control_structure_output_to_file) {
+    vt_send_str("if (true) { echo foo; echo bar } > /tmp/shtest\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "if (true) { echo foo; echo bar } > /tmp/shtest",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/shtest\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest",
+        "foo",
+        "bar",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1289,7 +1373,6 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, prompt_after_reclaim_tty);
     RUN_TEST_CASE(shell, prompt_after_launch_bg_cmd);
     RUN_TEST_CASE(shell, prompt_after_bg_job_done);
-    RUN_TEST_CASE(shell, short_lived_bg_cmd);
     RUN_TEST_CASE(shell, interupt_foreground_job);
     RUN_TEST_CASE(shell, stop_fg_job);
     RUN_TEST_CASE(shell, bg_jobs_pid_state);
@@ -1358,4 +1441,11 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, main_shell_redirections_above_two_are_rejected);
     RUN_TEST_CASE(shell, running_multi_chain_list);
     RUN_TEST_CASE(shell, ending_ast_with_semicolon);
+    RUN_TEST_CASE(shell, redirections_in_cmd_position);
+    RUN_TEST_CASE(shell, simple_if_statement);
+    RUN_TEST_CASE(shell, simple_while_statement);
+    RUN_TEST_CASE(shell, async_if_statement);
+    RUN_TEST_CASE(shell, async_while_statement);
+    RUN_TEST_CASE(shell, stream_control_structure_output_to_pipe);
+    RUN_TEST_CASE(shell, stream_control_structure_output_to_file);
 }

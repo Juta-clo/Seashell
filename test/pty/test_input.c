@@ -299,12 +299,10 @@ TEST(input, large_bracketed_paste) {
     );
     vterm_keyboard_end_paste(test->vt.vp);
 
-    assert_term(2, 2,
-        PROMPT "?XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-               "XXXXXXXXXXXXXXXXXXXXXXXXXXX",
-               "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-               "XXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-               "XX"
+    assert_term(1, 32,
+        PROMPT "?XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+               "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+               "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
     );
 }
 

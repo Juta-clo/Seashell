@@ -79,6 +79,24 @@ TEST_GROUP(parser);
 #define CMD(_i, _n, ...) \
     CMD_R(_i, _n, WORDS(__VA_ARGS__), NO_REDIRS)
 
+#define CMD_IF(_i, _n, _cond, _body, ...) \
+    ((ps_cmd){ \
+        .i = _i, \
+        .n = _n, \
+        .kind = PS_CMD_IF, \
+        .if_st = (ps_if){ .cond = _cond, .body = _body }, \
+        .redirs = (REDIRS(__VA_ARGS__)), \
+    })
+
+#define CMD_WHILE(_i, _n, _cond, _body, ...) \
+    ((ps_cmd){ \
+        .i = _i, \
+        .n = _n, \
+        .kind = PS_CMD_WHILE, \
+        .while_st = (ps_while){ .cond = _cond, .body = _body }, \
+        .redirs = (REDIRS(__VA_ARGS__)), \
+    })
+
 #define CMD_SIMPLE(_i, _n, _word) \
     CMD_R(_i, _n, WORDS(WORD_SIMPLE(_i, _n, _word)), NO_REDIRS)
 
@@ -126,9 +144,6 @@ TEST_GROUP(parser);
 
 #define AST(...) \
     ((ps_ast){ .chains = CHAINS(__VA_ARGS__) })
-
-#define AST_SIMPLE(...) \
-    AST(NOIF(CMD(__VA_ARGS__)))
 
 #define add_alias(_alias, _value) \
     do { \
@@ -211,10 +226,22 @@ static void validate_cmd(const ps_cmd *exp, const ps_cmd *act) {
         TEST_ASSERT_EQUAL(PS_CMD_SIMPLE, act->kind);
         validate_words(&exp->words, &act->words);
         validate_redirs(&exp->redirs, &act->redirs);
-    } else {
+    } else if (exp->kind == PS_CMD_IF) {
+        TEST_ASSERT_EQUAL(PS_CMD_IF, act->kind);
+        validate_ast(&exp->if_st.cond, &act->if_st.cond);
+        validate_ast(&exp->if_st.body, &act->if_st.body);
+        validate_redirs(&exp->redirs, &act->redirs);
+    } else if (exp->kind == PS_CMD_WHILE) {
+        TEST_ASSERT_EQUAL(PS_CMD_WHILE, act->kind);
+        validate_ast(&exp->while_st.cond, &act->while_st.cond);
+        validate_ast(&exp->while_st.body, &act->while_st.body);
+        validate_redirs(&exp->redirs, &act->redirs);
+    } else if (exp->kind == PS_CMD_SUBSH) {
         TEST_ASSERT_EQUAL(PS_CMD_SUBSH, act->kind);
         validate_ast(&exp->subsh, &act->subsh);
         validate_redirs(&exp->redirs, &act->redirs);
+    } else {
+        TEST_FAIL_MESSAGE("unexpected command type");
     }
 }
 
@@ -1407,7 +1434,42 @@ TEST(parser, should_produce_no_err_toks_on_success) {
     );
 
     validate("a", &exp);
+}
 
+TEST(parser, parsing_if_statement) {
+    ps_ast condition = AST(CHAIN(I(4), N(1), SYNC,
+        NOIF(I(4), N(1), CMD_SIMPLE(I(4), N(1), "a"))
+    ));
+
+    ps_ast body = AST(CHAIN(I(9), N(1), SYNC,
+        NOIF(I(9), N(1), CMD_SIMPLE(I(9), N(1), "b"))
+    ));
+
+    ps_ast exp = AST(
+        CHAIN(I(0), N(12), SYNC,
+            NOIF(I(0), N(12), CMD_IF(I(0), N(12), condition, body))
+        ),
+    );
+
+    validate("if (a) { b }", &exp);
+}
+
+TEST(parser, parsing_while_statement) {
+    ps_ast condition = AST(CHAIN(I(7), N(1), SYNC,
+        NOIF(I(7), N(1), CMD_SIMPLE(I(7), N(1), "a"))
+    ));
+
+    ps_ast body = AST(CHAIN(I(12), N(1), SYNC,
+        NOIF(I(12), N(1), CMD_SIMPLE(I(12), N(1), "b"))
+    ));
+
+    ps_ast exp = AST(
+        CHAIN(I(0), N(15), SYNC,
+            NOIF(I(0), N(15), CMD_WHILE(I(0), N(15), condition, body))
+        ),
+    );
+
+    validate("while (a) { b }", &exp);
 }
 
 /************ Test runner ************/
@@ -1487,5 +1549,10 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, async_and_sync_chains);
     RUN_TEST_CASE(parser, list_with_andor_chains);
 
+    /* if statement */
     RUN_TEST_CASE(parser, should_produce_no_err_toks_on_success);
+    RUN_TEST_CASE(parser, parsing_if_statement);
+
+    /* while statement */
+    RUN_TEST_CASE(parser, parsing_while_statement);
 }

@@ -537,7 +537,8 @@ void input_highlight_tok(int start, int end, lx_kind kind, input_buf *ibuf,
     if (kind == LX_TOK_PIPE || kind == LX_TOK_AND_IF ||
         kind == LX_TOK_OR_IF) {
         fg = PRINTTY_YELLOW;
-    } else if (kind == LX_TOK_LPAREN || kind == LX_TOK_RPAREN) {
+    } else if (kind == LX_TOK_LPAREN || kind == LX_TOK_RPAREN ||
+               kind == LX_TOK_LBRACE || kind == LX_TOK_RBRACE) {
         fg = PRINTTY_MAGENTA;
     } else if (lx_is_redir(kind) || kind == LX_TOK_IO_NUM) {
         fg = PRINTTY_CYAN;
@@ -546,6 +547,9 @@ void input_highlight_tok(int start, int end, lx_kind kind, input_buf *ibuf,
         bold = true;
     } else if (kind == LX_TOK_SEMI) {
         fg = PRINTTY_MAGENTA;
+    } else if (kind == LX_TOK_WORD) {
+        /* Must be a special type of word */
+        fg = PRINTTY_GREEN;
     }
 
     add_highlight(
@@ -672,7 +676,7 @@ void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
             if (is_err_tok(tok, &scan)) {
                 highlight_err(tok->i, tok->i + (tok->n - 1), ibuf, start_i);
                 err_tok_i = i + 1;
-            } else if (tok->kind != LX_TOK_WORD) {
+            } else if (tok->kind != LX_TOK_WORD || tok->spec != LX_SP_NONE) {
                 input_highlight_tok(tok->i, tok->i + (tok->n - 1), tok->kind,
                         ibuf, start_i);
             } else {
@@ -700,7 +704,7 @@ void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
 
                 for (size_t i = err_tok_i; i < toks.size; ++i) {
                     lx_tok *tok = linc_array_push(&next_toks);
-                    lx_tok_copy(tok, &toks.data[i], nullptr);
+                    lx_tkcpy(tok, &toks.data[i], nullptr);
                 }
 
                 lx_free(&toks);
@@ -788,15 +792,14 @@ static int get_completion_info(ps_info *info) {
             da_tok next_toks = {0};
 
             for (size_t i = tok_i + 1; i < toks.size; ++i)
-                lx_tok_copy(linc_array_push(&next_toks), &toks.data[i], nullptr);
+                lx_tkcpy(linc_array_push(&next_toks), &toks.data[i], nullptr);
 
             lx_free(&toks);
-            ps_free(&ast);
 
             toks = next_toks;
             tok_i = SIZE_MAX;
 
-            scan = (ps_scan){ .toks = &toks };
+            scan = (ps_scan){ .toks = &toks, .allo = info->allo };
             ps_parse(&scan, &ast);
 
             continue;
@@ -1415,7 +1418,7 @@ char *input_get_line(const char *prompt) {
                     history_push();
 
                 input_reset_comp();
-                input_move(line_len());
+                input.off = line_len();
                 input_update(false);
                 printf("\n");
                 break;

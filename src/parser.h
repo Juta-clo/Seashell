@@ -21,6 +21,8 @@ typedef enum {
 typedef enum {
     PS_CMD_SIMPLE,
     PS_CMD_SUBSH,
+    PS_CMD_IF,
+    PS_CMD_WHILE,
 } ps_cmd_kind;
 
 typedef enum {
@@ -46,6 +48,8 @@ typedef struct ps_andor ps_andor;
 typedef struct ps_ast ps_ast;
 typedef struct ps_chain ps_chain;
 typedef struct ps_info ps_info;
+typedef struct ps_if ps_if;
+typedef struct ps_while ps_while;
 
 LINC_ARRAY_TYPE(da_segment, ps_segment);
 LINC_ARRAY_TYPE(da_word, ps_word);
@@ -92,11 +96,20 @@ struct ps_redir {
     };
 };
 
+struct ps_if {
+    ps_ast cond;
+    ps_ast body;
+};
+
+struct ps_while {
+    ps_ast cond;
+    ps_ast body;
+};
+
 struct ps_cmd {
     ps_cmd_kind kind;
     da_redir redirs;
     int i, n;
-    bool expanded;
 
     union {
         struct {
@@ -106,6 +119,8 @@ struct ps_cmd {
         };
 
         ps_ast subsh;
+        ps_if if_st;
+        ps_while while_st;
     };
 };
 
@@ -141,9 +156,9 @@ typedef struct {
     const da_tok *toks;
 } ps_scan;
 
-void ps_get_info(int i, ps_ast *ast, ps_info *info);
-
 int ps_parse(ps_scan *scan, ps_ast *ast);
 void ps_free(ps_ast *ast);
+
+void ps_get_info(int i, ps_ast *ast, ps_info *info);
 
 #endif

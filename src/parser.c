@@ -20,7 +20,7 @@
                 err_msg("parse error near '%s'", tok_str((_tok)->kind)); \
             } \
         } \
-        lx_tok_copy(linc_array_push(&p_scan->err_toks), _tok, &p_scan->allo); \
+        lx_tkcpy(linc_array_push(&p_scan->err_toks), _tok, &p_scan->allo); \
     } while (false)
 
 static ps_scan *p_scan;
@@ -29,6 +29,7 @@ static lx_tok *p_tok;
 static size_t p_i;
 
 static int parse_ast(ps_ast *ast, lx_kind term);
+static int parse_chain(ps_chain *chain);
 
 static void tok_advance(void) {
     if (p_tok->kind == LX_EOF)
@@ -96,7 +97,7 @@ static int expand_alias(const char *alias, const char *value) {
 
     lx_tok *start = linc_array_insert(p_toks, p_i, alias_toks.size);
     for (size_t i = 0; i < alias_toks.size; ++i)
-        lx_tok_copy(&start[i], &alias_toks.data[i], &p_scan->allo);
+        lx_tkcpy(&start[i], &alias_toks.data[i], &p_scan->allo);
 
     lx_free(&alias_toks);
     p_tok = &p_toks->data[p_i];
@@ -147,6 +148,8 @@ static int parse_word(ps_word *word) {
 }
 
 static int parse_redir(ps_redir *redir) {
+    *redir = (ps_redir){0};
+
     if (p_tok->kind == LX_TOK_IO_NUM) {
         redir->io_num = p_tok->io_num;
         tok_advance();
@@ -213,15 +216,141 @@ static int parse_subsh(ps_ast *ast) {
     return 0;
 }
 
-static int parse_cmd_element(ps_cmd *cmd) {
+static int parse_if(ps_cmd *cmd) {
+    if (p_tok->kind != LX_TOK_WORD || p_tok->spec != LX_SP_IF) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    cmd->kind = PS_CMD_IF;
+
+    cmd->if_st = (ps_if){
+        .cond = (ps_ast){
+            .allo = p_scan->allo,
+            .chains.allo = p_scan->allo
+        },
+        .body = (ps_ast){
+            .allo = p_scan->allo,
+            .chains.allo = p_scan->allo
+        }
+    };
+
+    tok_advance();
+
+    if (p_tok->kind != LX_TOK_LPAREN) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    if (parse_ast(&cmd->if_st.cond, LX_TOK_RPAREN) == -1)
+        return -1;
+
+    if (p_tok->kind != LX_TOK_RPAREN) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    if (p_tok->kind != LX_TOK_LBRACE) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    if (parse_ast(&cmd->if_st.body, LX_TOK_RBRACE) == -1)
+        return -1;
+
+    if (p_tok->kind != LX_TOK_RBRACE) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    return 0;
+}
+
+static int parse_while(ps_cmd *cmd) {
+    if (p_tok->kind != LX_TOK_WORD || p_tok->spec != LX_SP_WHILE) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    cmd->kind = PS_CMD_WHILE;
+
+    cmd->while_st = (ps_while){
+        .cond = (ps_ast){
+            .allo = p_scan->allo,
+            .chains.allo = p_scan->allo
+        },
+        .body = (ps_ast){
+            .allo = p_scan->allo,
+            .chains.allo = p_scan->allo
+        }
+    };
+
+    tok_advance();
+
+    if (p_tok->kind != LX_TOK_LPAREN) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    if (parse_ast(&cmd->if_st.cond, LX_TOK_RPAREN) == -1)
+        return -1;
+
+    if (p_tok->kind != LX_TOK_RPAREN) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    if (p_tok->kind != LX_TOK_LBRACE) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    if (parse_ast(&cmd->if_st.body, LX_TOK_RBRACE) == -1)
+        return -1;
+
+    if (p_tok->kind != LX_TOK_RBRACE) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    tok_advance();
+
+    return 0;
+}
+
+static int parse_cmd_element(ps_cmd *cmd, bool first) {
     if (p_tok->kind == LX_TOK_WORD) {
-        ps_word *word = linc_array_push(&cmd->words);
-        if (parse_word(word) == -1)
-            return -1;
+        if (!first || p_tok->spec == LX_SP_NONE) {
+            ps_word *word = linc_array_push(&cmd->words);
+            if (parse_word(word) == -1)
+                return -1;
+        } else {
+            if (p_tok->spec == LX_SP_IF) {
+                if (parse_if(cmd) == -1)
+                    return -1;
+            } else if (p_tok->spec == LX_SP_WHILE) {
+                if (parse_while(cmd) == -1)
+                    return -1;
+            } else {
+                fatal("unexpected command type");
+            }
+        }
     } else if (lx_is_redir(p_tok->kind) || p_tok->kind == LX_TOK_IO_NUM) {
         ps_redir *redir = linc_array_push(&cmd->redirs);
-        *redir = (ps_redir){0};
-
         if (parse_redir(redir) == -1)
             return -1;
     } else if (p_tok->kind == LX_TOK_LPAREN) {
@@ -254,18 +383,18 @@ static int parse_cmd(ps_cmd *cmd) {
         .i = p_tok->i
     };
 
-    if (parse_cmd_element(cmd) == -1)
+    if (parse_cmd_element(cmd, true) == -1)
         goto done;
 
     while (TOK_IN(p_tok->kind, LX_TOK_WORD, LX_TOK_IO_NUM) ||
            lx_is_redir(p_tok->kind)) {
 
-        if (cmd->kind == PS_CMD_SUBSH && p_tok->kind == LX_TOK_WORD) {
+        if (cmd->kind != PS_CMD_SIMPLE && p_tok->kind == LX_TOK_WORD) {
             ERR_TOK(p_tok);
             goto done;
         }
 
-        if (parse_cmd_element(cmd) == -1)
+        if (parse_cmd_element(cmd, false) == -1)
             goto done;
     }
 
@@ -393,7 +522,7 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
 
     for (size_t i = 0; i < p_scan->toks->size; ++i) {
         lx_tok *dest = linc_array_push(&toks);
-        lx_tok_copy(dest, &p_scan->toks->data[i], &p_scan->allo);
+        lx_tkcpy(dest, &p_scan->toks->data[i], &p_scan->allo);
     }
 
     *linc_array_push(&toks) = (lx_tok){ .kind = LX_EOF };
@@ -529,6 +658,8 @@ static bool in_segment(int ind, ps_word *word, ps_info *info) {
 void ps_get_info(int i, ps_ast *ast, ps_info *info) {
     ASSERT(ast && i >= 0 && info);
 
+    info->kinds = 0;
+
     if (ast->chains.size == 0) {
         info->kinds |= PS_INFO_EMPTY;
         return;
@@ -541,8 +672,21 @@ void ps_get_info(int i, ps_ast *ast, ps_info *info) {
                     in_segment(i, &info->redir->target, info);
                 } else if (info->cmd->kind == PS_CMD_SUBSH) {
                     ps_get_info(i, &info->cmd->subsh, info);
-                } else if (in_word(i, info->cmd, info)) {
-                    in_segment(i, info->word, info);
+                } else if (info->cmd->kind == PS_CMD_IF) {
+                    ps_get_info(i, &info->cmd->if_st.cond, info);
+
+                    if (info->kinds == 0)
+                        ps_get_info(i, &info->cmd->if_st.body, info);
+                } else if (info->cmd->kind == PS_CMD_WHILE) {
+                    ps_get_info(i, &info->cmd->while_st.cond, info);
+
+                    if (info->kinds == 0)
+                        ps_get_info(i, &info->cmd->while_st.body, info);
+                } else if (info->cmd->kind == PS_CMD_SIMPLE) {
+                    if (in_word(i, info->cmd, info))
+                        in_segment(i, info->word, info);
+                } else {
+                    fatal("unexpected command type");
                 }
             }
         }

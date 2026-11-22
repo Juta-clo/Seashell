@@ -6,6 +6,12 @@
 #include "linc/array.h"
 
 typedef enum {
+    LX_SP_NONE,
+    LX_SP_IF,
+    LX_SP_WHILE,
+} lx_special;
+
+typedef enum {
     LX_TOK_PIPE,
     LX_TOK_AMPER,
     LX_TOK_RDR_IN,
@@ -19,6 +25,8 @@ typedef enum {
     LX_TOK_RPAREN,
     LX_TOK_IO_NUM,
     LX_TOK_SEMI,
+    LX_TOK_LBRACE,
+    LX_TOK_RBRACE,
     LX_TOK_WORD,
     LX_TOK_UNKNOWN,
     LX_CMD_SUB_START,
@@ -58,6 +66,7 @@ LINC_ARRAY_TYPE(da_part, lx_part);
 
 struct lx_tok {
     lx_kind kind;
+    lx_special spec;
     bool is_num;
     int i, n;
 
@@ -92,7 +101,7 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *tokens);
 
 void lx_free_tok(lx_tok *tok);
 void lx_free(da_tok *tokens);
-void lx_tok_copy(lx_tok *dest, lx_tok *src, linc_allo *allo);
+void lx_tkcpy(lx_tok *dest, lx_tok *src, linc_allo *allo);
 char *tok_word_str(lx_tok *tok);
 char *tok_str(lx_kind kind);
 bool lx_is_redir(lx_kind kind);
