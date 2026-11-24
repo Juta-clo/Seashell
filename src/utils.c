@@ -86,6 +86,46 @@ void err_msg(const char *fmt, ...) {
 
 /* general */
 
+char *string_combine_n(const char *s1, const char *s2, size_t n,
+        linc_allo *allo) {
+    linc_string out = LINC_STRING_INIT;
+
+    if (allo)
+        out.allo = *allo;
+
+    linc_string_append(&out, s1);
+    linc_string_append_n(&out, s2, n);
+
+    if (out.cap == 0) {
+        if (allo) {
+            return strdup_alloc("", allo);
+        } else {
+            return xstrdup("");
+        }
+    }
+
+    return out.cstr;
+}
+
+char *string_combine(const char *s1, const char *s2, linc_allo *allo) {
+    linc_string out = LINC_STRING_INIT;
+
+    if (allo)
+        out.allo = *allo;
+
+    linc_string_appendf(&out, "%s%s", s1, s2);
+
+    if (out.cap == 0) {
+        if (allo) {
+            return strdup_alloc("", allo);
+        } else {
+            return xstrdup("");
+        }
+    }
+
+    return out.cstr;
+}
+
 void trim_newlines(linc_string *data) {
     if (data->len == 0)
         return;

@@ -684,14 +684,14 @@ void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
                 ps_get_info(tok->i, &ast, &pinfo);
 
                 if (pinfo.kinds & PS_INFO_NAME) {
-                    if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
-                        highlight_command(pinfo.word, ibuf, start_i);
+                    expand_word_input(pinfo.word);
+                    highlight_command(pinfo.word, ibuf, start_i);
                 } else if (pinfo.kinds & PS_INFO_REDIR) {
-                    if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
-                        highlight_arg(pinfo.word, true, ibuf, start_i, line);
+                    expand_word_input(pinfo.word);
+                    highlight_arg(pinfo.word, true, ibuf, start_i, line);
                 } else if (pinfo.kinds & PS_INFO_ARG) {
-                    if (expand_word(pinfo.word, NULL, EXPAND_COMP) != -1)
-                        highlight_arg(pinfo.word, false, ibuf, start_i, line);
+                    expand_word_input(pinfo.word);
+                    highlight_arg(pinfo.word, false, ibuf, start_i, line);
                 }
             }
         }
@@ -834,15 +834,6 @@ static void input_reset_comp(void) {
 }
 
 static void input_complete_hits(ps_info *info, da_charp *hits, bool log) {
-    *info = (ps_info){0};
-    *hits = (da_charp){0};
-
-    if (get_completion_info(info) == -1)
-        return;
-
-    if (expand_word(info->word, nullptr, EXPAND_COMP) == -1)
-        return;
-
     if (strlen(info->word->arg) == 0)
         return;
 
@@ -861,10 +852,8 @@ static void input_complete_hits(ps_info *info, da_charp *hits, bool log) {
     if (info->kinds & PS_INFO_NAME)
         complete_command(glob.cstr, hits);
 
-    if (info->kinds & PS_INFO_ARG || info->kinds & PS_INFO_REDIR)
-        complete_file(glob.cstr, orig, hits);
-
-    if (hits->size == 0)
+    if (info->kinds & PS_INFO_ARG || info->kinds & PS_INFO_REDIR ||
+            hits->size == 0)
         complete_file(glob.cstr, orig, hits);
 
     free(orig);
@@ -894,6 +883,16 @@ static bool input_completion_shadow(input_buf *ibuf) {
     if (!input.comp.saved) {
         input.comp.saved = true;
 
+        if (get_completion_info(info) == -1)
+            goto reset;
+
+        expand_word_input(info->word);
+
+        bool has_glob;
+        text_has_glob(info->word->arg, strlen(info->word->arg), &has_glob);
+        if (has_glob)
+            goto reset;
+
         input_complete_hits(info, hits, false);
         if (hits->size == 0)
             goto reset;
@@ -902,7 +901,9 @@ static bool input_completion_shadow(input_buf *ibuf) {
     char *match = hits->data[0];
     ps_word *word = info->word;
     int shadow_len = strlen(match) - word->n;
-    ASSERT_(GEQ, shadow_len, 0);
+    LOG_INFO("match=%s, word->n=%d", match, word->n);
+    if (shadow_len < 0)
+        goto reset;
 
     input_shadow(&match[word->n], shadow_len, ibuf);
     return true;
@@ -1181,6 +1182,11 @@ static void input_complete(void) {
 
     if (!input.comp.saved) {
         input.comp.saved = true;
+
+        if (get_completion_info(info) == -1)
+            goto reset;
+
+        expand_word_input(info->word);
 
         input_complete_hits(info, hits, true);
         if (hits->size == 0)

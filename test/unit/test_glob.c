@@ -24,30 +24,30 @@ TEST_TEAR_DOWN(glob) {
 /************ Tests ************/
 
 TEST(glob, relative_glob) {
-    TEST_ASSERT_EQUAL_INT(0, glob_pattern("READ*", 5, &matches));
+    glob_pattern("READ*", 5, &matches);
     TEST_ASSERT_EQUAL_size_t(1, matches.size);
     TEST_ASSERT_EQUAL_STRING("./README.md", matches.data[0]);
 }
 
 TEST(glob, absolute_glob) {
-    TEST_ASSERT_EQUAL_INT(0, glob_pattern("/usr/bin/ech*", 13, &matches));
+    glob_pattern("/usr/bin/ech*", 13, &matches);
     TEST_ASSERT_EQUAL_size_t(1, matches.size);
     TEST_ASSERT_EQUAL_STRING("/usr/bin/echo", matches.data[0]);
 }
 
 TEST(glob, no_matches_with_exact_match_pattern) {
-    TEST_ASSERT_EQUAL_INT(0, glob_pattern("READ", 4, &matches));
+    glob_pattern("READ", 4, &matches);
     TEST_ASSERT_EQUAL_size_t(0, matches.size);
 }
 
 TEST(glob, multiple_matches) {
-    TEST_ASSERT_EQUAL_INT(0, glob_pattern("d*", 2, &matches));
+    glob_pattern("d*", 2, &matches);
     TEST_ASSERT_EQUAL_size_t(1, matches.size);
     TEST_ASSERT_EQUAL_STRING("./deps", matches.data[0]);
 }
 
 TEST(glob, prefix_suffix_match) {
-    TEST_ASSERT_EQUAL_INT(0, glob_pattern("*EAD*", 5, &matches));
+    glob_pattern("*EAD*", 5, &matches);
     TEST_ASSERT_EQUAL_size_t(1, matches.size);
     TEST_ASSERT_EQUAL_STRING("./README.md", matches.data[0]);
 }

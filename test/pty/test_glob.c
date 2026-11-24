@@ -363,18 +363,26 @@ TEST(glob, redirect_target_glob_ambiguous) {
     );
 }
 
-TEST(glob, glob_detected_in_empty_variable) {
-    vt_send_str("set FOO \"\"\n");
-    assert_term(1, PROMPT_LEN,
-        PROMPT "set FOO \"\"",
+TEST(glob, glob_immediately_after_variable) {
+    vt_send_str("set FOO \"/tm\"\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "set FOO \"/tm\"",
         PROMPT
     );
 
     vt_send_str("echo $FOO*\n");
-    assert_term(3, PROMPT_LEN,
-        PROMPT "set FOO \"\"",
+    assert_term(2, PROMPT_LEN,
         PROMPT "echo $FOO*",
-        "*",
+        "/tmp",
+        PROMPT
+    );
+}
+
+TEST(glob, quoted_star_does_not_glob) {
+    vt_send_str("echo \"/tm*\"\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "echo \"/tm*\"",
+        "/tm*",
         PROMPT
     );
 }
@@ -403,5 +411,6 @@ TEST_GROUP_RUNNER(glob) {
     RUN_TEST_CASE(glob, relative_dirent_works);
     RUN_TEST_CASE(glob, redirect_target_glob_non_ambiguous);
     RUN_TEST_CASE(glob, redirect_target_glob_ambiguous);
-    RUN_TEST_CASE(glob, glob_detected_in_empty_variable);
+    RUN_TEST_CASE(glob, glob_immediately_after_variable);
+    RUN_TEST_CASE(glob, quoted_star_does_not_glob);
 }

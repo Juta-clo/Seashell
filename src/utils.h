@@ -108,6 +108,9 @@ size_t argv_len(char **argv);
 void argv_free(char **argv);
 void argv_free_free(da_charp *arr);
 
+char *string_combine(const char *s1, const char *s2, linc_allo *allo);
+char *string_combine_n(const char *s1, const char *s2, size_t n,
+        linc_allo *allo);
 void trim_newlines(linc_string *data);
 void read_to_eof(int fd, linc_string *data);
 int fd_dup(int fd, bool cloexec);

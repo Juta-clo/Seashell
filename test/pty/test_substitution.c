@@ -229,6 +229,72 @@ TEST(substitution, user_redirection_does_not_overwrite_proc_sub) {
     );
 }
 
+TEST(substitution, unquoted_substitution_splits_on_whitespace) {
+    vt_send_str("set foo $(echo a b)\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "set foo $(echo a b)",
+        "set: too many arguments",
+        PROMPT
+    );
+}
+
+TEST(substitution, quoted_substitution_does_not_split) {
+    vt_send_str("set foo \"$(echo a b)\"\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "set foo \"$(echo a b)\"",
+        PROMPT
+    );
+}
+
+TEST(substitution, word_split_parts_are_glob_candidates) {
+    vt_send_str("printf '<%s>\\n' $(echo /tm\\* /tm\\*)\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "printf '<%%s>\\n' $(echo /tm\\* /tm\\*)",
+        "</tmp>",
+        "</tmp>",
+        PROMPT
+    );
+}
+
+TEST(substitution, word_split_with_prefix_and_suffix) {
+    vt_send_str("printf '<%s>\\n' pre$(echo a b)suf\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "printf '<%%s>\\n' pre$(echo a b)suf",
+        "<prea>",
+        "<bsuf>",
+        PROMPT
+    );
+}
+
+TEST(substitution, word_split_seq_program) {
+    vt_send_str("printf '<%s>\\n' $(seq 1 3)\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "printf '<%%s>\\n' $(seq 1 3)",
+        "<1>",
+        "<2>",
+        "<3>",
+        PROMPT
+    );
+}
+
+TEST(substitution, cmd_sub_with_quoted_prefix_and_suffix) {
+    vt_send_str("printf '<%s>\\n' 'pre'$(echo a b)\"suf\"\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "printf '<%%s>\\n' 'pre'$(echo a b)\"suf\"",
+        "<prea>",
+        "<bsuf>",
+        PROMPT
+    );
+
+    vt_send_str("printf '<%s>\\n' \"pre\"$(echo a b)'suf'\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "printf '<%%s>\\n' \"pre\"$(echo a b)'suf'",
+        "<prea>",
+        "<bsuf>",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -251,4 +317,10 @@ TEST_GROUP_RUNNER(substitution) {
     RUN_TEST_CASE(substitution, substitution_pipe_does_not_deadlock);
     RUN_TEST_CASE(substitution, empty_substitution_does_not_create_empty_arg);
     RUN_TEST_CASE(substitution, user_redirection_does_not_overwrite_proc_sub);
+    RUN_TEST_CASE(substitution, unquoted_substitution_splits_on_whitespace);
+    RUN_TEST_CASE(substitution, quoted_substitution_does_not_split);
+    RUN_TEST_CASE(substitution, word_split_parts_are_glob_candidates);
+    RUN_TEST_CASE(substitution, word_split_with_prefix_and_suffix);
+    RUN_TEST_CASE(substitution, word_split_seq_program);
+    RUN_TEST_CASE(substitution, cmd_sub_with_quoted_prefix_and_suffix);
 }

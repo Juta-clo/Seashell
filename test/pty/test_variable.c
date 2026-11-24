@@ -240,6 +240,15 @@ TEST(variable, undefined_variable_does_not_create_empty_arg) {
     );
 }
 
+TEST(variable, expanding_variables_with_glob_text) {
+    vt_send_str("set foo '/tm*'; echo $foo\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "set foo '/tm*'; echo $foo",
+        "/tmp",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -264,4 +273,5 @@ TEST_GROUP_RUNNER(variable) {
     RUN_TEST_CASE(variable, unset_builtin_with_exit_status_variable);
     RUN_TEST_CASE(variable, set_builtin_with_exit_status_variable);
     RUN_TEST_CASE(variable, undefined_variable_does_not_create_empty_arg);
+    RUN_TEST_CASE(variable, expanding_variables_with_glob_text);
 }

@@ -212,15 +212,14 @@ static void filter_dents(const char *glob, da_charp *dents) {
     argv_free_free(&substrs);
 }
 
-int glob_pattern(const char *glob, size_t len, da_charp *matches) {
+void glob_pattern(const char *glob, size_t len, da_charp *matches) {
     ASSERT(glob && matches);
 
     *matches = (da_charp){0};
 
     if (len == 0)
-        return 0;
+        return;
 
-    int rv = -1;
     bool slash_last = (glob[len - 1] == '/');
     da_charp comps = {0};
     da_charp dents = {0};
@@ -250,10 +249,8 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
         get_dir_entries(inc_prev, !last_comp || slash_last, &dents);
         filter_dents(comp, &dents);
 
-        if (dents.size == 0) {
-            rv = 0;
+        if (dents.size == 0)
             goto cleanup;
-        }
 
         if (last_comp) {
             qsort(dents.data, dents.size, sizeof(char *), cmp_match);
@@ -263,12 +260,8 @@ int glob_pattern(const char *glob, size_t len, da_charp *matches) {
         }
     }
 
-    rv = 0;
-
 cleanup:
     free(glob_text);
     argv_free_free(&dents);
     linc_array_free(&comps);
-
-    return rv;
 }

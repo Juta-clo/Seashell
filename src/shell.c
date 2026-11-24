@@ -412,7 +412,7 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
     ps_cmd *first_cmd = &pline->cmds.data[0];
     char *first_cmd_str = make_cmd_str(first_cmd);
 
-    if (expand_cmd(first_cmd, EXPAND_CMD) == -1)
+    if (expand_cmd(first_cmd) == -1)
         goto cleanup;
 
     bool run_in_main = (
@@ -502,7 +502,7 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
             sig_restore(&env.og_mask);
 
             if (!first)
-                if (expand_cmd(cur_cmd, EXPAND_CMD) == -1)
+                if (expand_cmd(cur_cmd) == -1)
                     _exit(EXIT_FAILURE);
 
             if (apply_redirs(&cur_cmd->redirs, false) == -1)
@@ -722,7 +722,6 @@ int line_to_ast(const char *line, size_t n, ps_ast *ast) {
     if (rv != LX_OK) {
         err_msg("%s", lx_errstr(rv));
         lx_free(&toks);
-        ps_free(ast);
         return -1;
     }
 
