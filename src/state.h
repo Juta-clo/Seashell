@@ -13,6 +13,7 @@
 #include "linc/args.h"
 #include "linc/log.h"
 #include "map.h"
+#include "utils.h"
 
 #define NOFG -1
 
@@ -29,6 +30,7 @@ typedef struct {
     uint64_t subsh;
     bool lua;
     bool job_ctrl;
+    da_int saved_fds;
 
     int tty_fd;
     struct termios tio;
@@ -67,6 +69,9 @@ void sigint_handler(int);
 void ignore_job_ctrl_signals(void);
 void sig_restore(sigset_t *og_mask);
 void env_init(int argc, char *const *argv);
+
+void save_shell_fds(void);
+void drop_shell_fds(bool apply);
 
 void shell_fatal_handler(const linc_fatal_ctx *ctx, void *);
 void assert_log_sink(const linc_log_ctx *ctx, void *user_ctx);

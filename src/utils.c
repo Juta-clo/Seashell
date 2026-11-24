@@ -128,6 +128,16 @@ void read_to_eof(int fd, linc_string *data) {
     }
 }
 
+int fd_dup(int fd, bool cloexec) {
+    int type = (cloexec) ? F_DUPFD_CLOEXEC : F_DUPFD;
+
+    int newfd = fcntl(fd, type, STATE_FD_PRIVATE_BASE);
+    if (newfd == -1)
+        err_exit("fcntl");
+
+    return newfd;
+}
+
 int fd_move(int fd1, int fd2, bool cloexec, bool replace) {
     if (fd1 == fd2) {
         if (cloexec) {

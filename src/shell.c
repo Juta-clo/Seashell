@@ -17,7 +17,8 @@
 #define PROMPT_LUA "\x1b[36mlua\x1b[m \x1b[35m>\x1b[m "
 
 #define WAIT_EXIT 193 /* +1 highest signal exit status */
-#define PLINE_INTR -1
+
+static int run_ast(ps_ast *ast);
 
 static void subshell_setup(int type) {
     env.subsh |= type;
@@ -27,6 +28,7 @@ static void subshell_setup(int type) {
 
     sig_block(SIGCHLD);
     sig_set_handler(SIGCHLD, sigchld_handler);
+    drop_shell_fds(true);
 }
 
 static void cursor_left_anchor(void) {
@@ -331,18 +333,18 @@ static bool andor_should_run(ps_andor *andor, int status) {
     return true;
 }
 
-static int apply_redirs(da_redir *redirs, bool builtin) {
+static int apply_redirs(da_redir *redirs, bool main_shell) {
     for (size_t i = 0; i < redirs->size; ++i) {
         ps_redir *redir = &redirs->data[i];
 
-        if (builtin && redir->io_num > 2) {
+        if (main_shell && redir->io_num > 2) {
             LOG_INFO("builtin redirect rejected: %d", redir->io_num);
             continue;
         }
 
         if (redir->fd_dup) {
             if (dup2(redir->fd_target, redir->io_num) == -1) {
-                err_msg("dup2: %m");
+                err_msg("%m");
                 return -1;
             }
         } else {
@@ -370,50 +372,96 @@ static int apply_redirs(da_redir *redirs, bool builtin) {
     return 0;
 }
 
-static int run_ast(ps_ast *ast);
+static int run_if(ps_cmd *cmd) {
+    int status = run_ast(&cmd->if_st.cond);
+
+    if (status == -1)
+        return status;
+
+    if (status == EXIT_SUCCESS)
+        status = run_ast(&cmd->if_st.body);
+
+    return status;
+}
+
+static int run_while(ps_cmd *cmd) {
+    int status;
+
+    while (true) {
+        status = run_ast(&cmd->while_st.cond);
+
+        if (status == -1)
+            return status;
+
+        if (status == EXIT_SUCCESS) {
+            status = run_ast(&cmd->while_st.body);
+
+            if (status == -1)
+                break;
+        } else {
+            break;
+        }
+    }
+
+    return status;
+}
 
 static int run_pline(ps_pline *pline, bool bg, int jid) {
-    int status = -1;
+    int rv = -1;
     sh_builtin *builtin;
     ps_cmd *first_cmd = &pline->cmds.data[0];
+    char *first_cmd_str = make_cmd_str(first_cmd);
 
     if (expand_cmd(first_cmd, EXPAND_CMD) == -1)
         goto cleanup;
 
     bool run_in_main = (
+        (!bg || (env.subsh & SUBSH_ASYNC)) &&
         (pline->cmds.size == 1) &&
-        (first_cmd->kind == PS_CMD_SIMPLE) &&
-        (first_cmd->argc > 0) &&
-        (builtin = get_builtin(first_cmd->argv[0])) &&
-        (!bg || env.subsh & SUBSH_ASYNC)
+        (first_cmd->kind != PS_CMD_SUBSH) &&
+        (first_cmd->kind != PS_CMD_SIMPLE ||
+        ((first_cmd->argc > 0) && (builtin = get_builtin(first_cmd->argv[0]))))
     );
 
     if (run_in_main) {
-        int saved_fds[3];
+        int saved_jid = env.fg_jid;
+        int status;
 
-        for (size_t i = 0; i < 3; ++i)
-            if ((saved_fds[i] = dup(i)) == -1 && errno != EBADF)
-                err_exit("dup");
+        save_shell_fds();
 
-        if (apply_redirs(&first_cmd->redirs, true) == -1) {
-            status = EXIT_FAILURE;
+        if (apply_redirs(&first_cmd->redirs, true) != -1) {
+            if (first_cmd->kind == PS_CMD_SIMPLE) {
+                status = builtin->func(first_cmd->argv, &env);
+            } else {
+                switch (first_cmd->kind) {
+                case PS_CMD_IF:    status = run_if(first_cmd);    break;
+                case PS_CMD_WHILE: status = run_while(first_cmd); break;
+                default:           fatal("unexpected command type");
+                }
+            }
         } else {
-            status = builtin->func(first_cmd->argv, &env);
+            status = EXIT_FAILURE;
         }
 
-        for (size_t i = 0; i < 3; ++i)
-            fd_move(saved_fds[i], i, false, true);
+        if (first_cmd->kind == PS_CMD_SIMPLE) {
+            /* fg "replaces" itself with the existing job. Because we
+            * don't queue fg's exit event we only reclaim the terminal
+            * when the job that was fg'd exits (or stops) */
+            if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE)
+                job_queue_exit(jid, first_cmd_str, status);
+        } else {
+            env.fg_jid = saved_jid;
 
-        /* fg "replaces" itself with the existing job. Because we
-        * don't queue fg's exit event we only reclaim the terminal
-        * when the job that was fg'd exits (or stops) */
-        if (!STREQ("fg", builtin->name) || status == EXIT_FAILURE) {
-            char *cmd_str = make_cmd_str(first_cmd);
-            job_queue_exit(jid, cmd_str, status);
-            free(cmd_str);
+            if (status == -1) {
+                job_queue_interrupt(jid, first_cmd_str);
+            } else {
+                job_queue_exit(jid, first_cmd_str, status);
+            }
         }
 
-        LOG_INFO("%s [main shell]", builtin->name);
+        drop_shell_fds(false);
+
+        rv = 0;
         goto cleanup;
     }
 
@@ -462,52 +510,33 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
 
             export_vars(&env.vars);
 
-            if (cur_cmd->kind == PS_CMD_SUBSH) {
-                subshell_setup(SUBSH_ASYNC);
-                _exit(run_ast(&cur_cmd->subsh));
-            } else if (cur_cmd->kind == PS_CMD_IF) {
-                subshell_setup(SUBSH_ASYNC);
+            if (cur_cmd->kind == PS_CMD_SIMPLE) {
+                if (cur_cmd->argc == 0)
+                    _exit(EXIT_SUCCESS);
 
-                int status = run_ast(&cur_cmd->if_st.cond);
-                if (status == EXIT_SUCCESS)
-                    status = run_ast(&cur_cmd->if_st.body);
+                sh_builtin *builtin = get_builtin(cur_cmd->argv[0]);
+                if (builtin)
+                    _exit(builtin->func(cur_cmd->argv, &env));
 
-                _exit(status);
-            } else if (cur_cmd->kind == PS_CMD_WHILE) {
-                subshell_setup(SUBSH_ASYNC);
+                execvp(cur_cmd->argv[0], cur_cmd->argv);
 
-                int status;
-
-                while (true) {
-                    status = run_ast(&cur_cmd->while_st.cond);
-
-                    if (status == EXIT_SUCCESS) {
-                        run_ast(&cur_cmd->while_st.body);
-                    } else {
-                        break;
-                    }
+                if (errno == ENOENT) {
+                    err_msg("command not found: %s", cur_cmd->argv[0]);
+                    _exit(127);
+                } else {
+                    err_exit("execvp");
                 }
-
-                _exit(status);
             }
 
-            ASSERT(cur_cmd->kind == PS_CMD_SIMPLE);
+            subshell_setup(SUBSH_ASYNC);
 
-            if (cur_cmd->argc == 0)
-                _exit(EXIT_SUCCESS);
-
-            sh_builtin *builtin = get_builtin(cur_cmd->argv[0]);
-
-            if (builtin)
-                _exit(builtin->func(cur_cmd->argv, &env));
-
-            execvp(cur_cmd->argv[0], cur_cmd->argv);
-
-            if (errno == ENOENT) {
-                err_msg("command not found: %s", cur_cmd->argv[0]);
-                _exit(127);
-            } else {
-                err_exit("execvp");
+            switch (cur_cmd->kind) {
+            case PS_CMD_IF:    _exit(run_if(cur_cmd));
+            case PS_CMD_WHILE: _exit(run_while(cur_cmd));
+            case PS_CMD_SUBSH:
+                rv = run_ast(&cur_cmd->subsh);
+                _exit((rv == -1) ? SIGINT + 128 : rv);
+            default:           fatal("unexpected command type");
             }
         }
 
@@ -539,18 +568,21 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
     char *pline_str = make_pline_str(pline);
     LOG_INFO("started '%s' %d", pline_str, pld.pgid);
     free(pline_str);
-    status = 0;
+
+    rv = 0;
 
 cleanup:
     if (pline->cmds.data[0].kind == PS_CMD_SIMPLE)
         close_proc_subs(&pline->cmds.data[0]);
 
-    return status;
+    free(first_cmd_str);
+
+    return rv;
 }
 
-static int wait_pline(int jid, int *status) {
+static int wait_pline(int jid) {
     job_event *jev;
-    int rv;
+    int status;
 
     while (true) {
         sigsuspend(&env.og_mask);
@@ -563,23 +595,26 @@ static int wait_pline(int jid, int *status) {
             if (jev->jid == jid) {
                 if (jev->type == JEXITED) {
                     if (jev->last->stat == PROC_EXIT) {
-                        *status = jev->last->exit_stat;
+                        status = jev->last->exit_stat;
                     } else if (jev->last->stat == PROC_SIG) {
-                        *status = jev->last->term_sig + 128;
+                        status = jev->last->term_sig + 128;
+                    } else {
+                        fatal("unexpected pline status");
                     }
 
-                    rv = (jev->intr_sig) ? PLINE_INTR : 0;
+                    if (jev->intr_sig)
+                        status = -1;
+
                     goto cleanup;
                 }
 
                 if (!env.subsh && jev->type == JSTOPPED) {
                     if (jev->last->stat == PROC_STOP) {
-                        *status = jev->last->stop_sig + 128;
+                        status = jev->last->stop_sig + 128;
                     } else {
-                        *status = WAIT_EXIT;
+                        status = WAIT_EXIT;
                     }
 
-                    rv = 0;
                     goto cleanup;
                 }
             }
@@ -592,7 +627,7 @@ static int wait_pline(int jid, int *status) {
 cleanup:
     job_event_free(jev);
     flush_job_events();
-    return rv;
+    return status;
 }
 
 int shell_run_chain(ps_chain *chain) {
@@ -635,7 +670,6 @@ int shell_run_chain(ps_chain *chain) {
 
     for (size_t i = 0; i < chain->andors.size; ++i) {
         ps_andor *andor = &chain->andors.data[i];
-        int rv = 0;
 
         if (andor_should_run(andor, status)) {
             env.fg_jid = job_new_id();
@@ -644,12 +678,12 @@ int shell_run_chain(ps_chain *chain) {
                 xtcgetattr(env.tty_fd, &env.tio);
 
             if (run_pline(&andor->pline, chain->bg, env.fg_jid) == -1) {
-                if (last_exit_event.type == PSIGNALED &&
-                    last_exit_event.term_sig == SIGINT) {
-                    rv = PLINE_INTR;
-                    status = SIGINT + 128;
+                status = (last_interrupted()) ? -1 : EXIT_FAILURE;
+
+                if (last_interrupted()) {
+                    LOG_INFO("pline interrupted");
                 } else {
-                    status = EXIT_FAILURE;
+                    LOG_INFO("pline failed");
                 }
             } else {
                 if (chain->bg) {
@@ -662,13 +696,13 @@ int shell_run_chain(ps_chain *chain) {
                     break;
                 }
 
-                rv = wait_pline(env.fg_jid, &status);
+                status = wait_pline(env.fg_jid);
             }
 
-            update_status_variable(status);
+            update_status_variable((status == -1) ? SIGINT + 128 : status);
             env.fg_jid = NOFG;
 
-            if (rv == PLINE_INTR && env.job_ctrl) {
+            if (status == -1 && env.job_ctrl) {
                 cursor_left_anchor();
                 break;
             }
@@ -784,7 +818,8 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
         fd_move(pipe_fd[1], STDOUT_FILENO, false, true);
         xclose(pipe_fd[0]);
 
-        _exit(run_ast(&ast));
+        int status = run_ast(&ast);
+        _exit((status == -1) ? SIGINT + 128 : status);
     }
 
     if (pid)
@@ -799,10 +834,13 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
 static int run_ast(ps_ast *ast) {
     ASSERT(ast);
 
-    int status = 0;
+    int status = EXIT_SUCCESS;
 
-    for (size_t i = 0; i < ast->chains.size; ++i)
+    for (size_t i = 0; i < ast->chains.size; ++i) {
         status = shell_run_chain(&ast->chains.data[i]);
+        if (status == -1)
+            break;
+    }
 
     return status;
 }
@@ -814,6 +852,8 @@ int shell_run(const char *cmd) {
         return -1;
 
     int status = run_ast(&ast);
+    if (status == -1)
+        status = SIGINT + 128;
 
     ps_free(&ast);
     return status;

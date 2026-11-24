@@ -755,26 +755,20 @@ TEST(shell, async_andor_message_after_skipped_commands) {
 }
 
 TEST(shell, async_andor_with_builtin_in_subshell) {
-    vt_send_str("cd /tmp && pwd >/tmp/seashell/test &\n");
+    vt_send_str("set FOO baz; set FOO bar && echo $FOO > /tmp/shtest &\n");
     assert_term_clear(4, PROMPT_LEN,
-        PROMPT "cd /tmp && pwd >/tmp/seashell/test &",
+        PROMPT "set FOO baz; set FOO bar && echo $FOO > /tmp/shtest &",
         "[1] %d",
         PROMPT "%s",
-        "[1] done             (cd /tmp && pwd > /tmp/seashell/test)",
+        "[1] done             (set FOO bar && echo $FOO > /tmp/shtest)",
         PROMPT
     );
 
-    vt_send_str("realpath --relative-to=.. .\n");
-    assert_term_clear(2, PROMPT_LEN,
-        PROMPT "realpath --relative-to=.. .",
-        "Seashell",
-        PROMPT
-    );
-
-    vt_send_str("cat /tmp/seashell/test\n");
-    assert_term_clear(2, PROMPT_LEN,
-        PROMPT "cat /tmp/seashell/test",
-        "/tmp",
+    vt_send_str("cat /tmp/shtest; echo $FOO\n");
+    assert_term_clear(3, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest; echo $FOO",
+        "bar",
+        "baz",
         PROMPT
     );
 }
@@ -1365,6 +1359,78 @@ TEST(shell, stream_control_structure_output_to_file) {
     );
 }
 
+TEST(shell, if_statement_running_in_main_shell) {
+    vt_send_str("if (true) { set FOO bar }; echo $FOO\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "if (true) { set FOO bar }; echo $FOO",
+        "bar",
+        PROMPT
+    );
+}
+
+TEST(shell, while_statement_running_in_main_shell) {
+    char *str = PROMPT
+        "set FOO bar;"
+        "while (test $FOO != baz) {"
+            "set FOO baz"
+        "}; echo $FOO";
+
+    vt_send_str(&str[2]);
+    vt_send_str("\n");
+
+    assert_term_clear(2, PROMPT_LEN,
+        str,
+        "baz",
+        PROMPT
+    );
+}
+
+TEST(shell, interrupt_control_statements) {
+    vt_send_str("if (sleep 100) { echo foo } || echo bad\n");
+    assert_term(1, 0,
+        PROMPT "if (sleep 100) { echo foo } || echo bad"
+    );
+
+    assert_pstate("sleep", PSTATE_SLEEPING);
+
+    vt_send_ch('c', VTERM_MOD_CTRL);
+    assert_term(2, PROMPT_LEN,
+        PROMPT "if (sleep 100) { echo foo } || echo bad",
+        "^C%s",
+        PROMPT
+    );
+}
+
+TEST(shell, redirects_within_control_structure_body) {
+    char *str = PROMPT
+        "./sea --clean -c "
+            "'if (true) { "
+                "sleep 100 >/dev/null 2>&1 & "
+            "}' | cat";
+
+    vt_send_str(&str[2]);
+    vt_send_str("\n");
+    assert_term(1, PROMPT_LEN,
+        str,
+        PROMPT
+    );
+}
+
+TEST(shell, redirects_within_control_structure_body_in_subsh) {
+    char *str = PROMPT
+        "./sea --clean -c "
+            "'if (true) { "
+                "(sleep 100) >/dev/null 2>&1 & "
+            "}' | cat";
+
+    vt_send_str(&str[2]);
+    vt_send_str("\n");
+    assert_term(1, PROMPT_LEN,
+        str,
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1448,4 +1514,9 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, async_while_statement);
     RUN_TEST_CASE(shell, stream_control_structure_output_to_pipe);
     RUN_TEST_CASE(shell, stream_control_structure_output_to_file);
+    RUN_TEST_CASE(shell, if_statement_running_in_main_shell);
+    RUN_TEST_CASE(shell, while_statement_running_in_main_shell);
+    RUN_TEST_CASE(shell, interrupt_control_statements);
+    RUN_TEST_CASE(shell, redirects_within_control_structure_body);
+    RUN_TEST_CASE(shell, redirects_within_control_structure_body_in_subsh);
 }

@@ -4,10 +4,18 @@
 #include <errno.h>
 #include <sys/wait.h>
 
+#include "state.h" // IWYU pragma: keep
 #include "utils.h"
 #include "wait_stat.h"
 
 wait_event last_exit_event = {0};
+
+bool last_interrupted(void) {
+    return (
+        last_exit_event.type == PSIGNALED &&
+        last_exit_event.term_sig == SIGINT
+    );
+}
 
 char *get_wstat_str(pid_t pid, int wstat) {
     static char buf[4096];

@@ -5,6 +5,7 @@
 
 #include "jobs.h"
 #include "shell.h"
+#include "state.h"
 #include "wait_stat.h"
 #include "utils.h"
 
@@ -265,7 +266,7 @@ int job_update(wait_event wev) {
     update_proc(proc, wev);
 
     job_stat stat = calc_job_stat(job);
-    job_event jev;
+    job_event jev = {0};
 
     if (job->stat == JOB_RUN && stat == JOB_STOP) {
         jev.type = JSTOPPED;
@@ -310,6 +311,26 @@ bool job_set_running(int jid, job_event *jev) {
     }
 
     return change;
+}
+
+void job_queue_interrupt(int jid, char *cmd) {
+    job_event jev = {
+        .jid = jid,
+        .type = JEXITED,
+        .intr_sig = true
+    };
+
+    proc_view* pview = linc_array_push(&jev.pviews);
+    *pview = (proc_view){
+        .stat = PROC_SIG,
+        .term_sig = SIGINT
+    };
+
+    pview->cmd = xstrdup(cmd);
+    jev.last = &jev.pviews.data[0];
+    add_job_event(jev);
+
+    xkill(getpid(), SIGCHLD);
 }
 
 void job_queue_exit(int jid, char *cmd, int status) {

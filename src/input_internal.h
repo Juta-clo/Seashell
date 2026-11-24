@@ -1,6 +1,7 @@
 #ifndef INPUT_INTERNAL_H
 #define INPUT_INTERNAL_H
 
+#include "state.h" // IWYU pragma: keep
 #include "utils.h"
 
 typedef struct {

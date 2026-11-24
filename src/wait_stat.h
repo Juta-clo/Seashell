@@ -30,6 +30,7 @@ LINC_ARRAY_TYPE(da_wevent, wait_event);
 
 extern wait_event last_exit_event;
 
+bool last_interrupted(void);
 char *get_wstat_str(pid_t pid, int wstat);
 int get_wstat(wait_event *wev, pid_t pid, int wopt);
 

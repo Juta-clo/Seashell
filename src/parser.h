@@ -5,6 +5,7 @@
 
 #include <linc/array.h>
 #include "lexer.h"
+#include "utils.h"
 
 typedef enum {
     PS_NO_IF,
@@ -58,7 +59,6 @@ LINC_ARRAY_TYPE(da_cmd, ps_cmd);
 LINC_ARRAY_TYPE(da_andor, ps_andor);
 LINC_ARRAY_TYPE(da_ast, ps_ast);
 LINC_ARRAY_TYPE(da_chain, ps_chain);
-LINC_ARRAY_TYPE(da_int, int);
 
 struct ps_ast {
     da_chain chains;

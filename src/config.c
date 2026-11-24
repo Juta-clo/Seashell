@@ -5,6 +5,7 @@
 
 #include <linc/xsys.h>
 #include "config.h"
+#include "state.h"
 #include "utils.h"
 #include "input.h"
 #include "variable.h"

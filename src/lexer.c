@@ -6,6 +6,7 @@
 #include <linc/array.h>
 #include "lexer.h"
 #include "linc/xsys.h"
+#include "state.h" // IWYU pragma: keep
 #include "utils.h"
 
 typedef struct {

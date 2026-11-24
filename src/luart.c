@@ -2,6 +2,7 @@
 #include <lualib.h>
 #include <lauxlib.h>
 
+#include "state.h"
 #include "utils.h"
 #include "shell.h"
 

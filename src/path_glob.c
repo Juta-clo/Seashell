@@ -5,6 +5,7 @@
 #include <linc/array.h>
 #include "path_glob.h"
 #include "utils.h"
+#include "state.h" // IWYU pragma: keep
 
 /* qsort */
 static int cmp_match(const void *p1, const void *p2) {

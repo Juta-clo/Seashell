@@ -3,6 +3,7 @@
 
 #include <linc/array.h>
 #include "map.h"
+#include "state.h" // IWYU pragma: keep
 #include "utils.h"
 
 typedef void *(* key_func)(map_t *, const void *);

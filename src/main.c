@@ -1,6 +1,7 @@
 #include "linc/string.h"
 #include "linc/xsys.h"
 #include "input.h"
+#include "state.h"
 #include "utils.h"
 #include "shell.h"
 #include "luart.h"

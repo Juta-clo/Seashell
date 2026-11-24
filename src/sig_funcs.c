@@ -1,6 +1,7 @@
 #include <signal.h>
 
 #include "linc/xsys.h"
+#include "state.h" // IWYU pragma: keep
 #include "utils.h"
 #include "sig_funcs.h"
 

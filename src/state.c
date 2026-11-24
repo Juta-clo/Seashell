@@ -167,6 +167,32 @@ static void var_init(void) {
     add_var(&env.vars, "?", "0", false);
 }
 
+void save_shell_fds(void) {
+    int *fds = linc_array_insert(&env.saved_fds, env.saved_fds.size, 3);
+
+    fds[0] = fd_dup(STDIN_FILENO, true);
+    fds[1] = fd_dup(STDOUT_FILENO, true);
+    fds[2] = fd_dup(STDERR_FILENO, true);
+}
+
+void drop_shell_fds(bool all) {
+    if (env.saved_fds.size >= 3) {
+        if (!all) {
+            int *fds = &env.saved_fds.data[env.saved_fds.size - 3];
+            fds[0] = fd_move(fds[0], STDIN_FILENO, false, true);
+            fds[1] = fd_move(fds[1], STDOUT_FILENO, false, true);
+            fds[2] = fd_move(fds[2], STDERR_FILENO, false, true);
+            linc_array_delete(&env.saved_fds, env.saved_fds.size - 3, 3);
+        } else {
+            for (size_t i = 0; i < env.saved_fds.size; ++i)
+                xclose(env.saved_fds.data[i]);
+
+            linc_array_delete(&env.saved_fds, 0, env.saved_fds.size);
+        }
+
+    }
+}
+
 void env_init(int argc, char *const *argv) {
     xsetvbuf(stdin, nullptr, _IONBF, 0);
     xsetvbuf(stdout, nullptr, _IONBF, 0);

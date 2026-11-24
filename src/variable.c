@@ -2,6 +2,7 @@
 #include <assert.h>
 
 #include <linc/xsys.h>
+#include "state.h"
 #include "utils.h"
 #include "variable.h"
 #include "map.h"

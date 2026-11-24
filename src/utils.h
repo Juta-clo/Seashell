@@ -7,7 +7,6 @@
 #include "linc/array.h"
 #include "linc/string.h"
 #include "linc/log.h" // IWYU pragma: export
-#include "state.h" // IWYU pragma: export
 
 #define LOG_INFO(...) \
     linc_log_write(env.shell_log, LINC_LOG_INFO, LINC_SITE, __VA_ARGS__)
@@ -101,6 +100,8 @@ void err_msg(const char *fmt, ...);
 void assert_bool_imp(linc_site site, ...);
 
 LINC_ARRAY_TYPE(da_charp, char *);
+LINC_ARRAY_TYPE(da_int, int);
+
 __attribute__ ((__warn_unused_result__))
 char **argv_copy(char **argv);
 size_t argv_len(char **argv);
@@ -109,6 +110,7 @@ void argv_free_free(da_charp *arr);
 
 void trim_newlines(linc_string *data);
 void read_to_eof(int fd, linc_string *data);
+int fd_dup(int fd, bool cloexec);
 int fd_move(int fd1, int fd2, bool cloexec, bool replace);
 int get_int(const char *arg, int *num);
 bool is_bin(const char *path);
