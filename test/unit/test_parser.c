@@ -72,7 +72,7 @@ TEST_GROUP(parser);
         .i = _i, \
         .n = _n, \
         .kind = PS_CMD_SIMPLE, \
-        .words = _words, \
+        .simple.words = _words, \
         .redirs = _redirs \
      })
 
@@ -224,7 +224,7 @@ static void validate_cmd(const ps_cmd *exp, const ps_cmd *act) {
 
     if (exp->kind == PS_CMD_SIMPLE) {
         TEST_ASSERT_EQUAL(PS_CMD_SIMPLE, act->kind);
-        validate_words(&exp->words, &act->words);
+        validate_words(&exp->simple.words, &act->simple.words);
         validate_redirs(&exp->redirs, &act->redirs);
     } else if (exp->kind == PS_CMD_IF) {
         TEST_ASSERT_EQUAL(PS_CMD_IF, act->kind);
@@ -1472,6 +1472,10 @@ TEST(parser, parsing_while_statement) {
     validate("while (a) { b }", &exp);
 }
 
+IGNORE_TEST(parser, parsing_for_statement) {
+    // validate("for i; a { b }", &exp);
+}
+
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(parser) {
@@ -1544,15 +1548,11 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, multiple_fd_duplications_no_white_space);
     RUN_TEST_CASE(parser, white_space_between_fd_target_and_ampersand);
 
-    /* lists */
     RUN_TEST_CASE(parser, two_chain_list);
     RUN_TEST_CASE(parser, async_and_sync_chains);
     RUN_TEST_CASE(parser, list_with_andor_chains);
-
-    /* if statement */
     RUN_TEST_CASE(parser, should_produce_no_err_toks_on_success);
     RUN_TEST_CASE(parser, parsing_if_statement);
-
-    /* while statement */
     RUN_TEST_CASE(parser, parsing_while_statement);
+    RUN_TEST_CASE(parser, parsing_for_statement);
 }

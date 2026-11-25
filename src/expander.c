@@ -39,8 +39,8 @@ static void push_key(da_ex_tok *toks, const char *start, size_t n) {
 }
 
 void close_proc_subs(ps_cmd *cmd) {
-    for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
-        ps_word *word = &cmd->words.data[word_i];
+    for (size_t word_i = 0; word_i < cmd->simple.words.size; ++word_i) {
+        ps_word *word = &cmd->simple.words.data[word_i];
 
         for (size_t fd_i = 0; fd_i < word->proc_sub_fds.size; ++fd_i)
             xclose(word->proc_sub_fds.data[fd_i]);
@@ -446,15 +446,20 @@ int expand_target(ps_word *word) {
 
 int expand_cmd(ps_cmd *cmd) {
     if (cmd->kind == PS_CMD_SIMPLE) {
-        da_charp argv = { .allo = cmd->words.allo };
+        da_charp argv = { .allo = cmd->simple.words.allo };
 
-        for (size_t i = 0; i < cmd->words.size; ++i)
-            if (expand_word(&cmd->words.data[i], &argv) == -1)
+        for (size_t i = 0; i < cmd->simple.words.size; ++i)
+            if (expand_word(&cmd->simple.words.data[i], &argv) == -1)
                 return -1;
 
         *linc_array_push(&argv) = nullptr;
-        cmd->argv = argv.data;
-        cmd->argc = argv.size - 1;
+        cmd->simple.argv = argv.data;
+        cmd->simple.argc = argv.size - 1;
+    } else if (cmd->kind == PS_CMD_FOR) {
+        da_charp *parts = &cmd->for_st.parts;
+        for (size_t i = 0; i < cmd->for_st.vals.size; ++i)
+            if (expand_word(&cmd->for_st.vals.data[i], parts) == -1)
+                return -1;
     }
 
     for (size_t i = 0;  i < cmd->redirs.size; ++i) {

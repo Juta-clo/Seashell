@@ -118,13 +118,27 @@ char *make_cmd_str(ps_cmd *cmd) {
         linc_string_appendf(&out, "while (%s) { %s }", cond_str, body_str);
         free(cond_str);
         free(body_str);
+    } else if (cmd->kind == PS_CMD_FOR) {
+        char *ind_str = make_word_str(&cmd->for_st.ind);
+        linc_string_appendf(&out, "for %s; ", ind_str);
+        free(ind_str);
+
+        for (size_t i = 0; i < cmd->for_st.vals.size; ++i) {
+            char *val_str = make_word_str(&cmd->for_st.vals.data[i]);
+            linc_string_appendf(&out, "%s ", val_str);
+            free(val_str);
+        }
+
+        char *body_str = make_ast_str(&cmd->for_st.body);
+        linc_string_appendf(&out, "{ %s }", body_str);
+        free(body_str);
     } else if (cmd->kind == PS_CMD_SIMPLE) {
-        for (size_t word_i = 0; word_i < cmd->words.size; ++word_i) {
-            ps_word *word = &cmd->words.data[word_i];
+        for (size_t word_i = 0; word_i < cmd->simple.words.size; ++word_i) {
+            ps_word *word = &cmd->simple.words.data[word_i];
 
             str_append_free(make_word_str(word), &out);
 
-            if (word_i != cmd->words.size - 1)
+            if (word_i != cmd->simple.words.size - 1)
                 linc_string_append(&out, " ");
         }
     } else {
@@ -374,7 +388,6 @@ static int apply_redirs(da_redir *redirs, bool main_shell) {
 
 static int run_if(ps_cmd *cmd) {
     int status = run_ast(&cmd->if_st.cond);
-
     if (status == -1)
         return status;
 
@@ -389,18 +402,38 @@ static int run_while(ps_cmd *cmd) {
 
     while (true) {
         status = run_ast(&cmd->while_st.cond);
-
         if (status == -1)
             return status;
 
         if (status == EXIT_SUCCESS) {
             status = run_ast(&cmd->while_st.body);
-
             if (status == -1)
                 break;
         } else {
             break;
         }
+    }
+
+    return status;
+}
+
+static int run_for(ps_cmd *cmd) {
+    int status = EXIT_SUCCESS;
+    ps_for *for_st = &cmd->for_st;
+    char *ind = for_st->ind.segments.data[0].raw;
+
+    for (size_t i = 0; i < for_st->parts.size; ++i) {
+        char *part = for_st->parts.data[i];
+
+        status = add_var(&env.vars, ind, part, false);
+        if (status == -1) {
+            err_msg("bad index variable: %s", ind);
+            return EXIT_FAILURE;
+        }
+
+        status = run_ast(&for_st->body);
+        if (status == -1)
+            break;
     }
 
     return status;
@@ -420,7 +453,8 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
         (pline->cmds.size == 1) &&
         (first_cmd->kind != PS_CMD_SUBSH) &&
         (first_cmd->kind != PS_CMD_SIMPLE ||
-        ((first_cmd->argc > 0) && (builtin = get_builtin(first_cmd->argv[0]))))
+        ((first_cmd->simple.argc > 0) &&
+         (builtin = get_builtin(first_cmd->simple.argv[0]))))
     );
 
     if (run_in_main) {
@@ -431,11 +465,12 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
 
         if (apply_redirs(&first_cmd->redirs, true) != -1) {
             if (first_cmd->kind == PS_CMD_SIMPLE) {
-                status = builtin->func(first_cmd->argv, &env);
+                status = builtin->func(first_cmd->simple.argv, &env);
             } else {
                 switch (first_cmd->kind) {
                 case PS_CMD_IF:    status = run_if(first_cmd);    break;
                 case PS_CMD_WHILE: status = run_while(first_cmd); break;
+                case PS_CMD_FOR:   status = run_for(first_cmd);   break;
                 default:           fatal("unexpected command type");
                 }
             }
@@ -511,17 +546,17 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
             export_vars(&env.vars);
 
             if (cur_cmd->kind == PS_CMD_SIMPLE) {
-                if (cur_cmd->argc == 0)
+                if (cur_cmd->simple.argc == 0)
                     _exit(EXIT_SUCCESS);
 
-                sh_builtin *builtin = get_builtin(cur_cmd->argv[0]);
+                sh_builtin *builtin = get_builtin(cur_cmd->simple.argv[0]);
                 if (builtin)
-                    _exit(builtin->func(cur_cmd->argv, &env));
+                    _exit(builtin->func(cur_cmd->simple.argv, &env));
 
-                execvp(cur_cmd->argv[0], cur_cmd->argv);
+                execvp(cur_cmd->simple.argv[0], cur_cmd->simple.argv);
 
                 if (errno == ENOENT) {
-                    err_msg("command not found: %s", cur_cmd->argv[0]);
+                    err_msg("command not found: %s", cur_cmd->simple.argv[0]);
                     _exit(127);
                 } else {
                     err_exit("execvp");
@@ -533,6 +568,7 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
             switch (cur_cmd->kind) {
             case PS_CMD_IF:    _exit(run_if(cur_cmd));
             case PS_CMD_WHILE: _exit(run_while(cur_cmd));
+            case PS_CMD_FOR:   _exit(run_for(cur_cmd));
             case PS_CMD_SUBSH:
                 rv = run_ast(&cur_cmd->subsh);
                 _exit((rv == -1) ? SIGINT + 128 : rv);

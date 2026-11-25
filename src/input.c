@@ -901,7 +901,6 @@ static bool input_completion_shadow(input_buf *ibuf) {
     char *match = hits->data[0];
     ps_word *word = info->word;
     int shadow_len = strlen(match) - word->n;
-    LOG_INFO("match=%s, word->n=%d", match, word->n);
     if (shadow_len < 0)
         goto reset;
 

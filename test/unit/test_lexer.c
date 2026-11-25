@@ -84,6 +84,9 @@ TEST_GROUP(lexer);
 #define SPEC_WHILE(_i, _n) \
     WORD_SP(_i, _n, LX_SP_WHILE, "while")
 
+#define SPEC_FOR(_i, _n) \
+    WORD_SP(_i, _n, LX_SP_FOR, "for")
+
 #define TOKS(...) \
     EXP_DA(da_tok, lx_tok, __VA_ARGS__)
 
@@ -955,10 +958,11 @@ TEST(lexer, left_and_right_brace_operators) {
 TEST(lexer, if_statment_is_classified) {
     da_tok exp = TOKS(
         SPEC_IF(I(0), N(2)),
-        SPEC_WHILE(I(3), N(5))
+        SPEC_WHILE(I(3), N(5)),
+        SPEC_FOR(I(9), N(3))
     );
 
-    validate("if while", &exp);
+    validate("if while for", &exp);
 }
 
 TEST(lexer, special_word_not_classified_if_multiple_parts) {

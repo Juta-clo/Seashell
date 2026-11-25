@@ -9,6 +9,7 @@ typedef enum {
     LX_SP_NONE,
     LX_SP_IF,
     LX_SP_WHILE,
+    LX_SP_FOR,
 } lx_special;
 
 typedef enum {

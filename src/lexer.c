@@ -207,6 +207,8 @@ static void classify_word(lx_tok *word) {
         word->spec = LX_SP_IF;
     } else if (STREQ("while", part->raw)) {
         word->spec = LX_SP_WHILE;
+    } else if (STREQ("for", part->raw)) {
+        word->spec = LX_SP_FOR;
     } else {
         word->spec = LX_SP_NONE;
     }
