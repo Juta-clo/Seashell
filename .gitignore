@@ -22,6 +22,7 @@ unit_test
 self_kill
 launch_seashell
 .xmake/
+scripts/
 
 test/pty/test_bins/*.d
 test/pty/test_bins/*

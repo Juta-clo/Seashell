@@ -153,13 +153,13 @@ char *make_cmd_str(ps_cmd *cmd) {
     } else if (cmd->kind == PS_CMD_IF) {
         char *cond_str = make_ast_str(&cmd->if_st.cond);
         char *body_str = make_ast_str(&cmd->if_st.body);
-        linc_string_appendf(&out, "if (%s) { %s }", cond_str, body_str);
+        linc_string_appendf(&out, "if %s { %s }", cond_str, body_str);
         free(cond_str);
         free(body_str);
     } else if (cmd->kind == PS_CMD_WHILE) {
-        char *cond_str = make_ast_str(&cmd->if_st.cond);
-        char *body_str = make_ast_str(&cmd->if_st.body);
-        linc_string_appendf(&out, "while (%s) { %s }", cond_str, body_str);
+        char *cond_str = make_ast_str(&cmd->while_st.cond);
+        char *body_str = make_ast_str(&cmd->while_st.body);
+        linc_string_appendf(&out, "while %s { %s }", cond_str, body_str);
         free(cond_str);
         free(body_str);
     } else if (cmd->kind == PS_CMD_FOR) {
@@ -412,15 +412,17 @@ static int apply_redirs(da_ex_redir *redirs, bool main_shell) {
 
             if (!redir->rdr_in) {
                 if (redir->append) {
-                    fd = xopen(arg, O_WRONLY | O_CREAT | O_APPEND, 0600);
+                    fd = open(arg, O_WRONLY | O_CREAT | O_APPEND, 0600);
                 } else {
-                    fd = xopen(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+                    fd = open(arg, O_WRONLY | O_CREAT | O_TRUNC, 0600);
                 }
             } else {
-                if ((fd = open(arg, O_RDONLY)) == -1) {
-                    err_msg("open: %m");
-                    return -1;
-                }
+                fd = open(arg, O_RDONLY);
+            }
+
+            if (fd == -1) {
+                err_msg("open: %m");
+                return -1;
             }
 
             fd_move(fd, redir->io_num, false, true);
@@ -453,6 +455,14 @@ static int run_while(ps_while *while_st) {
             status = run_ast(&while_st->body);
             if (status == -1)
                 break;
+
+            if (env.breaking) {
+                env.breaking = false;
+                break;
+            }
+
+            if (env.continuing)
+                env.continuing = false;
         } else {
             break;
         }
@@ -474,6 +484,15 @@ static int run_for(ex_res *res, ps_for *for_st) {
         }
 
         status = run_ast(&for_st->body);
+
+        if (env.breaking) {
+            env.breaking = false;
+            break;
+        }
+
+        if (env.continuing)
+            env.continuing = false;
+
         if (status == -1)
             break;
     }
@@ -504,7 +523,7 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
     sh_builtin *builtin;
     ps_cmd *first_cmd = &pline->cmds.data[0];
     char *first_cmd_str = make_cmd_str(first_cmd);
-    ex_res res;
+    ex_res res = {0};
 
     if (expand_cmd(first_cmd, &res) == -1)
         goto cleanup;
@@ -920,7 +939,11 @@ static int run_ast(ps_ast *ast) {
     int status = EXIT_SUCCESS;
 
     for (size_t i = 0; i < ast->chains.size; ++i) {
+        if (env.breaking || env.continuing)
+            break;
+
         status = shell_run_chain(&ast->chains.data[i]);
+
         if (status == -1)
             break;
     }

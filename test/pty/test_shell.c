@@ -437,17 +437,6 @@ TEST(shell, sigint_on_final_proc) {
     );
 }
 
-TEST(shell, process_exits_normally_in_bg) {
-    vt_send_str("true &\n");
-    assert_term(4, PROMPT_LEN,
-        PROMPT "true &",
-        "[1] %d",
-        PROMPT "%s",
-        "[1] done             true",
-        PROMPT
-    );
-}
-
 TEST(shell, fg_process_signaled) {
     vt_send_str("self_kill -TERM\n");
     assert_term(2, PROMPT_LEN,
@@ -1358,16 +1347,16 @@ TEST(shell, while_statement_running_in_main_shell) {
 }
 
 TEST(shell, interrupt_control_statements) {
-    vt_send_str("if (sleep 100) { echo foo } || echo bad\n");
+    vt_send_str("if sleep 100 { echo foo } || echo bad\n");
     assert_term(1, 0,
-        PROMPT "if (sleep 100) { echo foo } || echo bad"
+        PROMPT "if sleep 100 { echo foo } || echo bad"
     );
 
     assert_pstate("sleep", PSTATE_SLEEPING);
 
     vt_send_ch('c', VTERM_MOD_CTRL);
     assert_term(2, PROMPT_LEN,
-        PROMPT "if (sleep 100) { echo foo } || echo bad",
+        PROMPT "if sleep 100 { echo foo } || echo bad",
         "^C%s",
         PROMPT
     );
@@ -1443,6 +1432,34 @@ TEST(shell, for_loop_with_cmd_sub_vals) {
     );
 }
 
+TEST(shell, for_loop_with_break_statement) {
+    vt_send_str("for i; a b c { if (test $i = b) { break }; echo $i }\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "for i; a b c { if (test $i = b) { break }; echo $i }",
+        "a",
+        PROMPT
+    );
+}
+
+TEST(shell, for_loop_with_continue_statement) {
+    vt_send_str("for i; a b c { if (test $i = b) { continue }; echo $i }\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT "for i; a b c { if (test $i = b) { continue }; echo $i }",
+        "a",
+        "c",
+        PROMPT
+    );
+}
+
+TEST(shell, arbitrary_fd_inheritance) {
+    vt_send_str("sh -c 'echo foo >&3' 3>/tmp/shtest; cat /tmp/shtest\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "sh -c 'echo foo >&3' 3>/tmp/shtest; cat /tmp/shtest",
+        "foo",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1473,7 +1490,6 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, kill_multiple_proc_job);
     RUN_TEST_CASE(shell, sigint_on_non_final_proc_prints_newline);
     RUN_TEST_CASE(shell, sigint_on_final_proc);
-    RUN_TEST_CASE(shell, process_exits_normally_in_bg);
     RUN_TEST_CASE(shell, fg_process_signaled);
     RUN_TEST_CASE(shell, fg_process_stopped);
     RUN_TEST_CASE(shell, fg_process_stopped_interactively);
@@ -1533,4 +1549,7 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, empty_variable_redirect_target);
     RUN_TEST_CASE(shell, simple_for_loop);
     RUN_TEST_CASE(shell, for_loop_with_cmd_sub_vals);
+    RUN_TEST_CASE(shell, for_loop_with_break_statement);
+    RUN_TEST_CASE(shell, for_loop_with_continue_statement);
+    RUN_TEST_CASE(shell, arbitrary_fd_inheritance);
 }

@@ -11,6 +11,20 @@
             err_msg("parse error " __VA_ARGS__); \
     } while (false)
 
+#define ERR_TOK_EXP(_tok, _exp) \
+    do { \
+        if (p_scan->print_err) { \
+            if ((_tok)->kind == LX_TOK_WORD) { \
+                err_msg("expected '%s', found '%s'", tok_str(_exp), \
+                        tok_word_str(_tok)); \
+            } else { \
+                err_msg("expected '%s', found '%s'", tok_str(_exp), \
+                        tok_str((_tok)->kind)); \
+            } \
+        } \
+        lx_tkcpy(linc_array_push(&p_scan->err_toks), _tok, &p_scan->allo); \
+    } while (false)
+
 #define ERR_TOK(_tok) \
     do { \
         if (p_scan->print_err) { \
@@ -41,7 +55,7 @@ static void tok_advance(void) {
 
 static int tok_expect(lx_kind kind) {
     if (p_tok->kind != kind) {
-        ERR_TOK(p_tok);
+        ERR_TOK_EXP(p_tok, kind);
         return -1;
     }
 
@@ -147,7 +161,7 @@ static int parse_word(ps_word *word) {
     *word = (ps_word){ .segments.allo = p_scan->allo };
 
     if (p_tok->kind != LX_TOK_WORD) {
-        ERR_TOK(p_tok);
+        ERR_TOK_EXP(p_tok, LX_TOK_WORD);
         return -1;
     }
 
@@ -194,7 +208,7 @@ static int parse_redir(ps_redir *redir) {
             return -1;
     } else {
         if (p_tok->kind != LX_TOK_IO_NUM) {
-            ERR_TOK(p_tok);
+            ERR_TOK_EXP(p_tok, LX_TOK_IO_NUM);
             return -1;
         }
 
@@ -239,13 +253,7 @@ static int parse_if(ps_cmd *cmd) {
 
     tok_advance();
 
-    if (tok_expect(LX_TOK_LPAREN) == -1)
-        return -1;
-
     if (parse_ast(&cmd->if_st.cond, LX_TOK_RPAREN) == -1)
-        return -1;
-
-    if (tok_expect(LX_TOK_RPAREN) == -1)
         return -1;
 
     if (tok_expect(LX_TOK_LBRACE) == -1)
@@ -281,13 +289,7 @@ static int parse_while(ps_cmd *cmd) {
 
     tok_advance();
 
-    if (tok_expect(LX_TOK_LPAREN) == -1)
-        return -1;
-
     if (parse_ast(&cmd->while_st.cond, LX_TOK_RPAREN) == -1)
-        return -1;
-
-    if (tok_expect(LX_TOK_RPAREN) == -1)
         return -1;
 
     if (tok_expect(LX_TOK_LBRACE) == -1)
@@ -553,7 +555,7 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
         return -1;
 
     if (p_tok->kind != LX_EOF) {
-        ERR_TOK(p_tok);
+        ERR_TOK_EXP(p_tok, LX_EOF);
         return -1;
     }
 

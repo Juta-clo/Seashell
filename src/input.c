@@ -548,8 +548,8 @@ void input_highlight_tok(int start, int end, lx_kind kind, input_buf *ibuf,
     } else if (kind == LX_TOK_SEMI) {
         fg = PRINTTY_MAGENTA;
     } else if (kind == LX_TOK_WORD) {
-        /* Must be a special type of word */
-        fg = PRINTTY_GREEN;
+        /* Reserved word */
+        fg = PRINTTY_YELLOW;
     }
 
     add_highlight(

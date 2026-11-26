@@ -1453,39 +1453,39 @@ TEST(parser, should_produce_no_err_toks_on_success) {
 }
 
 TEST(parser, parsing_if_statement) {
-    ps_ast condition = AST(CHAIN(I(4), N(1), SYNC,
-        NOIF(I(4), N(1), CMD_SIMPLE(I(4), N(1), "a"))
+    ps_ast condition = AST(CHAIN(I(3), N(1), SYNC,
+        NOIF(I(3), N(1), CMD_SIMPLE(I(3), N(1), "a"))
     ));
 
-    ps_ast body = AST(CHAIN(I(9), N(1), SYNC,
-        NOIF(I(9), N(1), CMD_SIMPLE(I(9), N(1), "b"))
+    ps_ast body = AST(CHAIN(I(7), N(1), SYNC,
+        NOIF(I(7), N(1), CMD_SIMPLE(I(7), N(1), "b"))
     ));
 
     ps_ast exp = AST(
-        CHAIN(I(0), N(12), SYNC,
-            NOIF(I(0), N(12), CMD_IF(I(0), N(12), condition, body))
+        CHAIN(I(0), N(10), SYNC,
+            NOIF(I(0), N(10), CMD_IF(I(0), N(10), condition, body))
         ),
     );
 
-    validate("if (a) { b }", &exp);
+    validate("if a { b }", &exp);
 }
 
 TEST(parser, parsing_while_statement) {
-    ps_ast condition = AST(CHAIN(I(7), N(1), SYNC,
-        NOIF(I(7), N(1), CMD_SIMPLE(I(7), N(1), "a"))
+    ps_ast condition = AST(CHAIN(I(6), N(1), SYNC,
+        NOIF(I(6), N(1), CMD_SIMPLE(I(6), N(1), "a"))
     ));
 
-    ps_ast body = AST(CHAIN(I(12), N(1), SYNC,
-        NOIF(I(12), N(1), CMD_SIMPLE(I(12), N(1), "b"))
+    ps_ast body = AST(CHAIN(I(10), N(1), SYNC,
+        NOIF(I(10), N(1), CMD_SIMPLE(I(10), N(1), "b"))
     ));
 
     ps_ast exp = AST(
-        CHAIN(I(0), N(15), SYNC,
-            NOIF(I(0), N(15), CMD_WHILE(I(0), N(15), condition, body))
+        CHAIN(I(0), N(13), SYNC,
+            NOIF(I(0), N(13), CMD_WHILE(I(0), N(13), condition, body))
         ),
     );
 
-    validate("while (a) { b }", &exp);
+    validate("while a { b }", &exp);
 }
 
 TEST(parser, parsing_for_statement) {

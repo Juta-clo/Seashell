@@ -31,6 +31,8 @@ typedef struct {
     bool lua;
     bool job_ctrl;
     da_int saved_fds;
+    bool breaking;
+    bool continuing;
 
     int tty_fd;
     struct termios tio;

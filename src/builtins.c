@@ -438,6 +438,24 @@ int run_lua_builtin(char **argv, shell_env *env) {
     return EXIT_SUCCESS;
 }
 
+int run_break_builtin(char **argv, shell_env *env) {
+    if (validate_argc(argv, 0, 0) == -1)
+        return EXIT_FAILURE;
+
+    env->breaking = true;
+
+    return EXIT_SUCCESS;
+}
+
+int run_continue_builtin(char **argv, shell_env *env) {
+    if (validate_argc(argv, 0, 0) == -1)
+        return EXIT_FAILURE;
+
+    env->continuing = true;
+
+    return EXIT_SUCCESS;
+}
+
 static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "exit", .func = run_exit_builtin },
     { .name = "cd", .func = run_cd_builtin },
@@ -452,7 +470,9 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "unset", .func = run_unset_builtin },
     { .name = "alias", .func = run_alias_builtin },
     { .name = "unalias", .func = run_unalias_builtin },
-    { .name = "lua", .func = run_lua_builtin }
+    { .name = "lua", .func = run_lua_builtin },
+    { .name = "break", .func = run_break_builtin },
+    { .name = "continue", .func = run_continue_builtin }
 };
 
 sh_builtin *get_builtin(const char *arg) {

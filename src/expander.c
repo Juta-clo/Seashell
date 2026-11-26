@@ -144,6 +144,7 @@ static void split_words(const char *data, size_t n, da_charp *result,
     if (word.len > 0)
         *linc_array_push(result) = word.cstr;
 
+    /* This is bad preformance */
     LOG_INFO("split '%s' into %zu parts", data, result->size);
 }
 

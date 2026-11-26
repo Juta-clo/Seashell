@@ -406,7 +406,7 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
                     break;
 
                 handle_single_quote(&scan);
-            } else if (*scan.cur_ch == ' ') {
+            } else if (*scan.cur_ch == ' ' || *scan.cur_ch == '\n') {
                 try_end_part(&scan);
                 try_end_tok(&scan, LX_WHITE_SPACE);
             } else if(*scan.cur_ch == '\\') {
