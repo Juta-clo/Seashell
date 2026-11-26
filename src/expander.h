@@ -17,19 +17,50 @@ typedef enum {
     EXT_ERROR,
 } ex_tok_type;
 
-struct ex_tok {
+typedef struct {
     ex_tok_type type;
     const char *str;
     size_t str_len;
-};
+} ex_tok;
 
-typedef struct ex_tok ex_tok;
+typedef struct {
+    int io_num;
+    int append;
+    bool rdr_in;
+    bool fd_dup;
+
+    union {
+        char *target;
+     /* char *fd_target; */
+        int fd_target;
+    };
+} ex_redir;
+
 LINC_ARRAY_TYPE(da_ex_tok, ex_tok);
+LINC_ARRAY_TYPE(da_ex_redir, ex_redir);
+
+typedef struct {
+    ps_cmd_kind kind;
+    da_ex_redir redirs;
+    da_int proc_sub_fds;
+
+    union {
+        struct {
+            da_charp argv;
+            int argc;
+        };
+
+        struct {
+            char *ind;
+            da_charp vals;
+        };
+    };
+} ex_res;
 
 void text_has_glob(char *text, size_t n, bool *has_glob);
 void expand_word_input(ps_word *word);
-int expand_word(ps_word *word, da_charp *argv);
-int expand_cmd(ps_cmd *cmd);
-void close_proc_subs(ps_cmd *cmd);
+int expand_word(ps_word *word, da_charp *argv, ex_res *res);
+int expand_cmd(ps_cmd *cmd, ex_res *res);
+void expand_free(ex_res *res);
 
 #endif

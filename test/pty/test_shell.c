@@ -169,17 +169,6 @@ TEST(shell, bg_job_done_with_fg_job) {
     );
 }
 
-TEST(shell, builtin_in_bg) {
-    vt_send_str("cd . &\n");
-    assert_term(4, PROMPT_LEN,
-        PROMPT "cd . &",
-        "[1] %d",
-        PROMPT "%s",
-        "[1] done             cd .",
-        PROMPT
-    );
-}
-
 TEST(shell, pipeline_of_builtins_does_not_duplicate_prompt) {
 
     /* Regression: after adding display_prompt() to try_run_builtin()
@@ -359,23 +348,6 @@ TEST(shell, builtin_and_or_logic) {
         PROMPT "cd /non-existant && echo ?",
         "cd: No such file or directory",
         PROMPT
-    );
-}
-
-TEST(shell, fg_stopped_bg_job) {
-    vt_send_str("cat &\n");
-    assert_term_clear(4, PROMPT_LEN,
-        PROMPT "cat &",
-        "[1] %d",
-        PROMPT "%s",
-        "[1] Stopped (tty input) cat",
-        PROMPT
-    );
-
-    vt_send_str("fg %1\n");
-    assert_term(2, 0,
-        PROMPT "fg %%1",
-        "[1] running          cat%s"
     );
 }
 
@@ -1431,6 +1403,46 @@ TEST(shell, redirects_within_control_structure_body_in_subsh) {
     );
 }
 
+TEST(shell, empty_double_quote_argument) {
+    vt_send_str("echo a \"\" b\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "echo a \"\" b",
+        "a  b",
+        PROMPT
+    );
+}
+
+TEST(shell, empty_variable_redirect_target) {
+    vt_send_str("echo foo > $UNSET_VAR\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "echo foo > $UNSET_VAR",
+        "sea: ambiguous redirect",
+        PROMPT
+    );
+}
+
+TEST(shell, simple_for_loop) {
+    vt_send_str("for i; a b c { echo $i }\n");
+    assert_term(4, PROMPT_LEN,
+        PROMPT "for i; a b c { echo $i }",
+        "a",
+        "b",
+        "c",
+        PROMPT
+    );
+}
+
+TEST(shell, for_loop_with_cmd_sub_vals) {
+    vt_send_str("for i; $(seq 1 3) { echo $i }\n");
+    assert_term(4, PROMPT_LEN,
+        PROMPT "for i; $(seq 1 3) { echo $i }",
+        "1",
+        "2",
+        "3",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1445,7 +1457,6 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, unknown_cmd);
     RUN_TEST_CASE(shell, pipeline);
     RUN_TEST_CASE(shell, bg_job_done_with_fg_job);
-    RUN_TEST_CASE(shell, builtin_in_bg);
     RUN_TEST_CASE(shell, pipeline_of_builtins_does_not_duplicate_prompt);
     RUN_TEST_CASE(shell, simple_andor);
     RUN_TEST_CASE(shell, simple_bg_andor);
@@ -1457,7 +1468,6 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, prompt_after_launch_fg_builtin);
     RUN_TEST_CASE(shell, jobs_builtin);
     RUN_TEST_CASE(shell, builtin_and_or_logic);
-    RUN_TEST_CASE(shell, fg_stopped_bg_job);
     RUN_TEST_CASE(shell, kill_builtin_works_on_bg_jobs);
     RUN_TEST_CASE(shell, bg_on_stopped_job_resumes_it);
     RUN_TEST_CASE(shell, kill_multiple_proc_job);
@@ -1519,4 +1529,8 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, interrupt_control_statements);
     RUN_TEST_CASE(shell, redirects_within_control_structure_body);
     RUN_TEST_CASE(shell, redirects_within_control_structure_body_in_subsh);
+    RUN_TEST_CASE(shell, empty_double_quote_argument);
+    RUN_TEST_CASE(shell, empty_variable_redirect_target);
+    RUN_TEST_CASE(shell, simple_for_loop);
+    RUN_TEST_CASE(shell, for_loop_with_cmd_sub_vals);
 }

@@ -79,6 +79,19 @@ TEST_GROUP(parser);
 #define CMD(_i, _n, ...) \
     CMD_R(_i, _n, WORDS(__VA_ARGS__), NO_REDIRS)
 
+#define CMD_FOR(_i, _n, _ind, _vals, _body, ...) \
+    ((ps_cmd){ \
+        .i = _i, \
+        .n = _n, \
+        .kind = PS_CMD_FOR, \
+        .for_st = (ps_for){ \
+            .ind = _ind, \
+            .vals = WORDS(_vals), \
+            .body = _body \
+        }, \
+        .redirs = (REDIRS(__VA_ARGS__)), \
+    })
+
 #define CMD_IF(_i, _n, _cond, _body, ...) \
     ((ps_cmd){ \
         .i = _i, \
@@ -222,24 +235,27 @@ static void validate_cmd(const ps_cmd *exp, const ps_cmd *act) {
     TEST_ASSERT_EQUAL_INT(exp->i, act->i);
     TEST_ASSERT_EQUAL_INT(exp->n, act->n);
 
+    validate_redirs(&exp->redirs, &act->redirs);
+
     if (exp->kind == PS_CMD_SIMPLE) {
         TEST_ASSERT_EQUAL(PS_CMD_SIMPLE, act->kind);
         validate_words(&exp->simple.words, &act->simple.words);
-        validate_redirs(&exp->redirs, &act->redirs);
     } else if (exp->kind == PS_CMD_IF) {
         TEST_ASSERT_EQUAL(PS_CMD_IF, act->kind);
         validate_ast(&exp->if_st.cond, &act->if_st.cond);
         validate_ast(&exp->if_st.body, &act->if_st.body);
-        validate_redirs(&exp->redirs, &act->redirs);
     } else if (exp->kind == PS_CMD_WHILE) {
         TEST_ASSERT_EQUAL(PS_CMD_WHILE, act->kind);
         validate_ast(&exp->while_st.cond, &act->while_st.cond);
         validate_ast(&exp->while_st.body, &act->while_st.body);
-        validate_redirs(&exp->redirs, &act->redirs);
     } else if (exp->kind == PS_CMD_SUBSH) {
         TEST_ASSERT_EQUAL(PS_CMD_SUBSH, act->kind);
         validate_ast(&exp->subsh, &act->subsh);
-        validate_redirs(&exp->redirs, &act->redirs);
+    } else if (exp->kind == PS_CMD_FOR) {
+        TEST_ASSERT_EQUAL(PS_CMD_FOR, act->kind);
+        validate_ast(&exp->for_st.body, &act->for_st.body);
+        validate_word(&exp->for_st.ind, &act->for_st.ind);
+        validate_words(&exp->for_st.vals, &act->for_st.vals);
     } else {
         TEST_FAIL_MESSAGE("unexpected command type");
     }
@@ -1472,8 +1488,24 @@ TEST(parser, parsing_while_statement) {
     validate("while (a) { b }", &exp);
 }
 
-IGNORE_TEST(parser, parsing_for_statement) {
-    // validate("for i; a { b }", &exp);
+TEST(parser, parsing_for_statement) {
+    ps_ast body = AST(CHAIN(I(11), N(1), SYNC,
+        NOIF(I(11), N(1), CMD_SIMPLE(I(11), N(1), "b"))
+    ));
+
+    ps_ast exp = AST(
+        CHAIN(I(0), N(14), SYNC,
+            NOIF(I(0), N(14),
+                CMD_FOR(I(0), N(14),
+                    WORD_SIMPLE(I(4), N(1), "i"),
+                    WORD_SIMPLE(I(7), N(1), "a"),
+                    body
+                ),
+            )
+        )
+    );
+
+    validate("for i; a { b }", &exp);
 }
 
 /************ Test runner ************/

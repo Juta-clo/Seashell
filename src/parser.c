@@ -118,7 +118,7 @@ static int expand_alias(const char *alias, const char *value) {
 static void copy_word(ps_word *dst, lx_tok *src) {
     *dst = (ps_word){
         .i = src->i, .n = src->n,
-        .segments.allo = p_scan->allo, .proc_sub_fds.allo = p_scan->allo
+        .segments.allo = p_scan->allo,
     };
 
     for (size_t i = 0; i < src->parts.size; ++i) {
@@ -313,7 +313,6 @@ static int parse_for(ps_cmd *cmd) {
         .ind = { .segments.allo = p_scan->allo, },
         .vals = { .allo = p_scan->allo, },
         .body = { .allo = p_scan->allo, .chains.allo = p_scan->allo, },
-        .parts = { .allo = p_scan->allo, },
     };
 
     tok_advance();

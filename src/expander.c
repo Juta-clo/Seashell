@@ -38,26 +38,6 @@ static void push_key(da_ex_tok *toks, const char *start, size_t n) {
     tok->str_len = n;
 }
 
-void close_proc_subs(ps_cmd *cmd) {
-    for (size_t word_i = 0; word_i < cmd->simple.words.size; ++word_i) {
-        ps_word *word = &cmd->simple.words.data[word_i];
-
-        for (size_t fd_i = 0; fd_i < word->proc_sub_fds.size; ++fd_i)
-            xclose(word->proc_sub_fds.data[fd_i]);
-
-        word->proc_sub_fds = (da_int){0};
-    }
-
-    for (size_t redir_i = 0; redir_i < cmd->redirs.size; ++redir_i) {
-        ps_word *word = &cmd->redirs.data[redir_i].target;
-
-        for (size_t fd_i = 0; fd_i < word->proc_sub_fds.size; ++fd_i)
-            xclose(word->proc_sub_fds.data[fd_i]);
-
-        word->proc_sub_fds = (da_int){0};
-    }
-}
-
 int ex_tokenize(const char *s, da_ex_tok *toks, bool perr, bool *has_glob) {
     *toks = (da_ex_tok){0};
 
@@ -133,7 +113,7 @@ int ex_tokenize(const char *s, da_ex_tok *toks, bool perr, bool *has_glob) {
     return 0;
 }
 
-static void split_words(char *data, size_t n, da_charp *result,
+static void split_words(const char *data, size_t n, da_charp *result,
         bool *has_glob) {
     linc_string word = LINC_STRING_INIT;
     bool escape_active = false;
@@ -240,19 +220,27 @@ void text_has_glob(char *text, size_t n, bool *has_glob) {
     }
 }
 
-static int expand_seg(ps_segment *seg, da_charp *parts, ps_word *word,
-        bool *has_glob) {
+static void add_part(da_charp *parts, const char *new, size_t n, bool append) {
+    if (!append || parts->size == 0) {
+        *linc_array_push(parts) = xstrndup(new, n);
+    } else {
+        char **part = &parts->data[parts->size - 1];
+        char *tmp = string_combine_n(*part, new, n, nullptr);
+        free(*part);
+        *part = tmp;
+    }
+}
+
+static int expand_seg(ps_segment *seg, da_charp *parts, bool *has_glob,
+        ex_res *res) {
     int status = -1;
-    linc_allo allo = word->segments.allo;
     da_ex_tok toks = {0};
     wait_event wev = {0};
     int pid = 0;
     linc_string data = LINC_STRING_INIT;
 
     if (parts->size == 0)
-        *linc_array_push(parts) = "";
-
-    char **cur = &parts->data[parts->size - 1];
+        add_part(parts, "", 0, false);
 
     if (ex_tokenize(seg->raw, &toks, true, has_glob) == -1)
         goto cleanup;
@@ -263,10 +251,10 @@ static int expand_seg(ps_segment *seg, da_charp *parts, ps_word *word,
             sh_var *var = lookup_var_n(&env.vars, tok->str, tok->str_len);
             if (var) {
                 text_has_glob(var->value, strlen(var->value), has_glob);
-                *cur = string_combine(*cur, var->value, &allo);
+                add_part(parts, var->value, strlen(var->value), true);
             }
         } else if (tok->type == EXT_REGULAR) {
-            *cur = string_combine_n(*cur, tok->str, tok->str_len, &allo);
+            add_part(parts, tok->str, tok->str_len, true);
         } else if (tok->type == EXT_CMD_SUB) {
             int rfd = shell_run_capture(&tok->str[2], tok->str_len - 2, &pid);
             if (rfd == -1)
@@ -281,17 +269,17 @@ static int expand_seg(ps_segment *seg, da_charp *parts, ps_word *word,
                 split_words(data.cstr, data.len, &split_res, has_glob);
 
                 for (size_t i = 0; i < split_res.size; ++i) {
-                    *cur = string_combine(*cur, split_res.data[i], &allo);
-
-                    if (i != split_res.size - 1) {
-                        cur = linc_array_push(parts);
-                        *cur = "";
-                    }
+                    add_part(
+                        parts,
+                        split_res.data[i],
+                        strlen(split_res.data[i]),
+                        (i == 0) ? true : false
+                    );
                 }
 
                 argv_free_free(&split_res);
             } else {
-                *cur = string_combine(*cur, data.cstr, &allo);
+                add_part(parts, data.cstr, data.len, true);
             }
 
             linc_string_free(&data);
@@ -309,10 +297,10 @@ static int expand_seg(ps_segment *seg, da_charp *parts, ps_word *word,
 
             linc_string path = LINC_STRING_INIT;
             linc_string_appendf(&path, "/dev/fd/%d", rfd);
-            *cur = string_combine(*cur, path.cstr, &allo);
+            add_part(parts, path.cstr, path.len, true);
             linc_string_free(&path);
 
-            *linc_array_push(&word->proc_sub_fds) = rfd;
+            *linc_array_push(&res->proc_sub_fds) = rfd;
         } else {
             fatal("unexpected ex_tok type");
         }
@@ -325,11 +313,10 @@ cleanup:
     return status;
 }
 
-int get_word_parts(ps_word *word, da_charp *parts, bool *has_glob) {
+int get_word_parts(ps_word *word, da_charp *parts, bool *has_glob, ex_res *res) {
     ASSERT(word);
 
-    linc_allo allo = word->segments.allo;
-    *parts = (da_charp){ .allo = allo };
+    *parts = (da_charp){0};
 
     /* initial variable expansion and concatenation */
 
@@ -337,139 +324,166 @@ int get_word_parts(ps_word *word, da_charp *parts, bool *has_glob) {
         ps_segment *seg = &word->segments.data[i];
 
         if (seg->quote == PS_Q_SINGLE) {
-            if (parts->size == 0)
-                *linc_array_push(parts) = "";
-
-            char **last_part = &parts->data[parts->size - 1];
-            linc_string part = LINC_STRING_INIT;
-
-            linc_string_appendf(&part, "%s%s", *last_part, seg->raw);
-            *last_part = strdup_alloc(part.cstr, &allo);
-            linc_string_free(&part);
+            add_part(parts, seg->raw, strlen(seg->raw), true);
         } else if (seg->quote == PS_Q_DOUBLE) {
-            if (expand_seg(seg, parts, word, nullptr) == -1)
-                return -1;
+            if (expand_seg(seg, parts, nullptr, res) == -1)
+                goto fail;
         } else if (seg->quote == PS_Q_NONE) {
-            if (expand_seg(seg, parts, word, has_glob) == -1)
-                return -1;
+            if (expand_seg(seg, parts, has_glob, res) == -1)
+                goto fail;
         }
     }
 
     return 0;
+
+fail:
+    argv_free_free(parts);
+    return -1;
 }
 
-int expand_word(ps_word *word, da_charp *argv) {
+int expand_word(ps_word *word, da_charp *args, ex_res *res) {
     ASSERT(word);
 
-    linc_allo allo = word->segments.allo;
     da_charp parts = {0};
     bool has_glob = false;
 
-    if (get_word_parts(word, &parts, &has_glob) == -1)
+    if (get_word_parts(word, &parts, &has_glob, res) == -1)
         return -1;
 
     if (word->segments.size == 1 &&
         word->segments.data[0].quote == PS_Q_NONE &&
-        parts.size == 1 && STREQ(parts.data[0], "")) {
+        parts.size == 1 && STREQ(parts.data[0], ""))
+    {
+        argv_free_free(&parts);
         return 0;
     }
 
-    /* globbing */
-
     for (size_t i = 0; i < parts.size; ++i) {
+        da_charp hits = {0};
         char *part = parts.data[i];
 
-        da_charp matches = {0};
+        if (has_glob)
+            glob_pattern(part, strlen(part), &hits);
 
-        if (has_glob) {
-            glob_pattern(part, strlen(part), &matches);
+        for (size_t y = 0; y < hits.size; ++y)
+            *linc_array_push(args) = xstrdup(hits.data[y]);
 
-            for (size_t i = 0; i < matches.size; ++i)
-                *linc_array_push(argv) = strdup_alloc(matches.data[i], &allo);
-        }
+        if (hits.size == 0)
+            *linc_array_push(args) = xstrdup(part);
 
-        if (matches.size == 0)
-            *linc_array_push(argv) = part;
-
-        argv_free_free(&matches);
+        argv_free_free(&hits);
     }
 
+    argv_free_free(&parts);
     return 0;
 }
 
-int expand_target(ps_word *word) {
+int expand_target(ps_word *word, ex_redir *redir, ex_res *res) {
     ASSERT(word);
 
-    linc_allo allo = word->segments.allo;
-    da_charp parts = {0};
+    int rv = -1;
     bool has_glob = false;
 
-    if (get_word_parts(word, &parts, &has_glob) == -1)
+    da_charp parts = {0};
+    da_charp hits = {0};
+
+    if (get_word_parts(word, &parts, &has_glob, res) == -1)
         return -1;
 
     if (word->segments.size == 1 &&
         word->segments.data[0].quote == PS_Q_NONE &&
-        parts.size == 1 && STREQ(parts.data[0], "")) {
+        parts.size == 1 && STREQ(parts.data[0], ""))
+    {
         err_msg("ambiguous redirect");
-        return -1;
+        goto cleanup;
     }
 
     if (parts.size > 1) {
         err_msg("ambiguous redirect");
-        return -1;
+        goto cleanup;
     }
 
     /* globbing */
 
-    da_charp matches = {0};
-
     if (has_glob) {
-        glob_pattern(parts.data[0], strlen(parts.data[0]), &matches);
+        glob_pattern(parts.data[0], strlen(parts.data[0]), &hits);
 
-        if (matches.size > 1) {
+        if (hits.size > 1) {
             err_msg("ambiguous redirect");
-            argv_free_free(&matches);
-            return -1;
+            goto cleanup;
         }
-
-        if (matches.size == 1)
-            word->arg = strdup_alloc(matches.data[0], &allo);
     }
 
-    if (!has_glob || matches.size == 0)
-        word->arg = strdup_alloc(parts.data[0], &allo);
+    redir->target = xstrdup((hits.size == 1) ? hits.data[0] : parts.data[0]);
 
-    argv_free_free(&matches);
+    rv = 0;
 
-    return 0;
+cleanup:
+    argv_free_free(&parts);
+    argv_free_free(&hits);
+    return rv;
 }
 
-int expand_cmd(ps_cmd *cmd) {
+int expand_cmd(ps_cmd *cmd, ex_res *res) {
+    *res = (ex_res){ .kind = cmd->kind };
+
     if (cmd->kind == PS_CMD_SIMPLE) {
-        da_charp argv = { .allo = cmd->simple.words.allo };
-
         for (size_t i = 0; i < cmd->simple.words.size; ++i)
-            if (expand_word(&cmd->simple.words.data[i], &argv) == -1)
-                return -1;
+            if (expand_word(&cmd->simple.words.data[i], &res->argv, res) == -1)
+                goto fail;
 
-        *linc_array_push(&argv) = nullptr;
-        cmd->simple.argv = argv.data;
-        cmd->simple.argc = argv.size - 1;
+        *linc_array_push(&res->argv) = nullptr;
+        res->argc = res->argv.size - 1;
     } else if (cmd->kind == PS_CMD_FOR) {
-        da_charp *parts = &cmd->for_st.parts;
+        res->ind = xstrdup(cmd->for_st.ind.segments.data[0].raw);
+
         for (size_t i = 0; i < cmd->for_st.vals.size; ++i)
-            if (expand_word(&cmd->for_st.vals.data[i], parts) == -1)
-                return -1;
+            if (expand_word(&cmd->for_st.vals.data[i], &res->vals, res) == -1)
+                goto fail;
     }
 
     for (size_t i = 0;  i < cmd->redirs.size; ++i) {
-        ps_redir *redir = &cmd->redirs.data[i];
-        if (redir->fd_dup)
-            continue;
+        ps_redir *spec = &cmd->redirs.data[i];
+        ex_redir *redir = linc_array_push(&res->redirs);
+        *redir = (ex_redir){
+            .io_num = spec->io_num,
+            .append = spec->append,
+            .rdr_in = spec->rdr_in,
+            .fd_dup = spec->fd_dup
+        };
 
-        if (expand_target(&redir->target) == -1)
-            return -1;
+        if (spec->fd_dup) {
+            redir->fd_target = spec->fd_target;
+        } else if (expand_target(&spec->target, redir, res) == -1) {
+            goto fail;
+        }
     }
 
     return 0;
+
+fail:
+    expand_free(res);
+    return -1;
+}
+
+void expand_free(ex_res *res) {
+    for (size_t i = 0; i < res->redirs.size; ++i)
+        if (!res->redirs.data[i].fd_dup)
+            free(res->redirs.data[i].target);
+
+    for (size_t i = 0; i < res->proc_sub_fds.size; ++i)
+        xclose(res->proc_sub_fds.data[i]);
+
+    linc_array_free(&res->proc_sub_fds);
+    linc_array_free(&res->redirs);
+
+    if (res->kind == PS_CMD_SIMPLE)
+        argv_free_free(&res->argv);
+
+    if (res->kind == PS_CMD_FOR) {
+        free(res->ind);
+        argv_free_free(&res->vals);
+    }
+
+    *res = (ex_res){0};
 }

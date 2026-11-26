@@ -65,13 +65,15 @@ LINC_ARRAY_TYPE(da_chain, ps_chain);
 
 struct ps_simple {
     da_word words;
-    char **argv;
-    int argc;
 };
 
 struct ps_ast {
     da_chain chains;
     linc_allo allo;
+
+    int refs;
+    ps_ast *next;
+    ps_ast *prev;
 };
 
 struct ps_chain {
@@ -90,7 +92,6 @@ struct ps_word {
     char *arg;
     int i, n;
     da_segment segments;
-    da_int proc_sub_fds;
 };
 
 struct ps_redir {
@@ -119,7 +120,6 @@ struct ps_for {
     ps_word ind;
     da_word vals;
     ps_ast body;
-    da_charp parts;
 };
 
 struct ps_cmd {
