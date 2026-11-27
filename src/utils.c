@@ -144,7 +144,7 @@ void trim_newlines(linc_string *data) {
 
 void read_to_eof(int fd, linc_string *data) {
     *data = LINC_STRING_INIT;
-    char read_buf[4096] = "";
+    char read_buf[8192] = "";
 
     struct pollfd pollfd = { .fd = fd, .events = POLLIN };
     int wakeup = POLLHUP | POLLIN | POLLERR | POLLNVAL;

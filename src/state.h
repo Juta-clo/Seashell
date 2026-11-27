@@ -58,6 +58,7 @@ enum {
 };
 
 extern shell_env env;
+extern char *script_file;
 extern linc_args opts[];
 
 extern volatile sig_atomic_t sigchld_caught;

@@ -515,7 +515,13 @@ static int parse_ast(ps_ast *ast, lx_kind term) {
 }
 
 void ps_free(ps_ast *ast) {
-    ASSERT(ast && ast->allo.ctx);
+    ASSERT(ast);
+
+    if (!ast->allo.ctx) {
+        *ast = (ps_ast){0};
+        return;
+    }
+
     arena_destroy(ast->allo.ctx);
     *ast = (ps_ast){0};
 }

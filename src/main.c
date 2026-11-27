@@ -10,10 +10,11 @@ int main(int argc, char *const *argv) {
     xatexit(seashell_shutdown);
     env_init(argc, argv);
 
-    if (opts[OPT_SCRIPT].found) {
-        int status = shell_run(opts[OPT_SCRIPT].val_str);
-        exit(status);
-    }
+    if (opts[OPT_SCRIPT].found)
+        exit(shell_run(opts[OPT_SCRIPT].val_str));
+
+    if (script_file)
+        exit(shell_run_file(script_file));
 
     while (true) {
         char *line;
@@ -26,7 +27,7 @@ int main(int argc, char *const *argv) {
             luart_run(line);
         } else {
             shell_run(line);
-            ASSERT(env.subsh == 0); /* shouldn't be possible */
+            ASSERT(!env.subsh); /* shouldn't be possible */
             process_signals();
         }
 

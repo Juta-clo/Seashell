@@ -23,17 +23,18 @@
 #define ALIAS_MAX 4096
 
 shell_env env = {0};
+char *script_file = nullptr;
 
 linc_args opts[] = {
     [OPT_LOG_FD] = {
         .long_name = "log-fd",
-        .short_name = 'l',
+        .short_name = 'r',
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_INT
     },
     [OPT_LOG_FILE] = {
         .long_name = "log-file",
-        .short_name = 'f',
+        .short_name = 'l',
         .has_arg = LINC_ARGS_ARG_REQ,
         .arg_type = LINC_ARGS_ARG_STR
     },
@@ -68,7 +69,7 @@ volatile sig_atomic_t sighup_caught = false;
 volatile sig_atomic_t sigint_caught = false;
 
 void linc_init(int argc, char *const *argv) {
-    if (linc_args_parse(argc, argv, opts, LINC_ARGS_NO_NON_OPTS) == -1)
+    if (linc_args_parse(argc, argv, opts, 0) == -1)
         exit(EXIT_FAILURE);
 
     env.shell_fatal = (linc_fatal_target){ .handler = shell_fatal_handler };
@@ -208,7 +209,10 @@ void env_init(int argc, char *const *argv) {
     sig_init();
     luart_init();
 
-    env.job_ctrl = !opts[OPT_SCRIPT].found;
+    script_file = argv[optind];
+
+    if (!opts[OPT_SCRIPT].found && argv[optind] == nullptr)
+        env.job_ctrl = true;
 
     if (env.job_ctrl) {
         env.tty_fd = xopen("/dev/tty", O_RDWR | O_CLOEXEC);

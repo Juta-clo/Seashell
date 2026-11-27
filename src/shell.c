@@ -34,6 +34,7 @@ static ps_ast *ast_acquire(const char *line, size_t n) {
     ASSERT(line);
 
     ps_ast *out = xmalloc(sizeof(ps_ast));
+    *out = (ps_ast){0};
 
     if (line_to_ast(line, n, out) == -1) {
         free(out);
@@ -821,6 +822,7 @@ int shell_run_chain(ps_chain *chain) {
 
 int line_to_ast(const char *line, size_t n, ps_ast *ast) {
     da_tok toks = {0};
+    *ast = (ps_ast){0};
 
     int rv = lx_tokenize(line, n, &toks);
     if (rv != LX_OK) {
@@ -830,7 +832,7 @@ int line_to_ast(const char *line, size_t n, ps_ast *ast) {
     }
 
     if (toks.size == 0)
-        return -1;
+        return 0;
 
     ps_scan scan = {
         .toks = &toks,
@@ -897,10 +899,32 @@ linc_string shell_get_prompt(void) {
     return prompt;
 }
 
+int shell_run_file(const char *path) {
+    ASSERT(path);
+
+    linc_string file_content = LINC_STRING_INIT;
+
+    int fd = open(path, O_RDONLY);
+    if (fd == -1) {
+        err_msg("%m: %s", path);
+        return EXIT_FAILURE;
+    }
+
+    read_to_eof(fd, &file_content);
+    xclose(fd);
+
+    return shell_run(file_content.cstr);
+}
+
 int shell_run_capture(const char *line, size_t n, int *pid) {
     ps_ast *ast = ast_acquire(line, n);
     if (!ast)
         return -1;
+
+    if (ast->chains.size == 0) {
+        ast_release(ast);
+        return -1;
+    }
 
     int pipe_fd[2];
     xpipe(pipe_fd);
@@ -955,6 +979,11 @@ int shell_run(const char *cmd) {
     ps_ast *ast = ast_acquire(cmd, strlen(cmd));
     if (!ast)
         return -1;
+
+    if (ast->chains.size == 0) {
+        ast_release(ast);
+        return EXIT_SUCCESS;
+    }
 
     int status = run_ast(ast);
     if (status == -1)

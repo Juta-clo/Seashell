@@ -38,6 +38,7 @@ void seashell_shutdown(void);
 int line_to_ast(const char *line, size_t n, ps_ast *ast);
 linc_string shell_get_prompt(void);
 
+int shell_run_file(const char *path);
 int shell_run_chain(ps_chain *chain);
 int shell_run_capture(const char *line, size_t n, int *pid);
 int shell_run(const char *line);

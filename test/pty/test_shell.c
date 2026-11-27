@@ -1460,6 +1460,35 @@ TEST(shell, arbitrary_fd_inheritance) {
     );
 }
 
+TEST(shell, running_empty_script_file) {
+    vt_send_str(">/tmp/shtest; ./sea /tmp/shtest; echo $?\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT ">/tmp/shtest; ./sea /tmp/shtest; echo $?",
+        "0",
+        PROMPT
+    );
+}
+
+TEST(shell, running_simple_script_file) {
+    vt_send_str("./sea <(echo echo Hello, World!); echo $?\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT "./sea <(echo echo Hello, World!); echo $?",
+        "Hello, World!",
+        "0",
+        PROMPT
+    );
+}
+
+TEST(shell, running_script_file_propagates_exit_status) {
+    vt_send_str("./sea <(echo echo foo\\; false); echo $?\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT "./sea <(echo echo foo\\; false); echo $?",
+        "foo",
+        "1",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1552,4 +1581,7 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, for_loop_with_break_statement);
     RUN_TEST_CASE(shell, for_loop_with_continue_statement);
     RUN_TEST_CASE(shell, arbitrary_fd_inheritance);
+    RUN_TEST_CASE(shell, running_empty_script_file);
+    RUN_TEST_CASE(shell, running_simple_script_file);
+    RUN_TEST_CASE(shell, running_script_file_propagates_exit_status);
 }
