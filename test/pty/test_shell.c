@@ -1641,6 +1641,101 @@ TEST(shell, function_exit_status_is_last_command) {
     );
 }
 
+TEST(shell, if_else_execution) {
+    vt_send_str("if (false) { echo first } else { echo second }\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "if (false) { echo first } else { echo second }",
+        "second",
+        PROMPT
+    );
+
+    vt_send_str("if (true) { echo first } else { echo second }\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "if (true) { echo first } else { echo second }",
+        "first",
+        PROMPT
+    );
+}
+
+TEST(shell, if_else_if_execution) {
+    vt_send_str("if (false) { echo foo } else if (true) { echo bar }\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "if (false) { echo foo } else if (true) { echo bar }",
+        "bar",
+        PROMPT
+    );
+
+    vt_send_str("if (false) { echo foo } else if (false) { echo bar }\n");
+    assert_term(1, PROMPT_LEN,
+        PROMPT "if (false) { echo foo } else if (false) { echo bar }",
+        PROMPT
+    );
+}
+
+TEST(shell, if_condition_is_skipped_on_short_circuit) {
+    vt_send_str("if (true) { echo foo } else if (echo hi) { echo bar }\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "if (true) { echo foo } else if (echo hi) { echo bar }",
+        "foo",
+        PROMPT
+    );
+}
+
+TEST(shell, interrupting_else_if_chain) {
+    vt_send_str("if (sleep 100) { true; } else if (echo bad) { true; }\n");
+    assert_term(1, 0,
+        PROMPT "if (sleep 100) { true; } else if (echo bad) { true; }"
+    );
+
+    test_pump_ms(3);
+
+    vt_send_ch('c', VTERM_MOD_CTRL);
+    assert_term(2, PROMPT_LEN,
+        PROMPT "if (sleep 100) { true; } else if (echo bad) { true; }",
+        "^C%s",
+        PROMPT
+    );
+}
+
+TEST(shell, if_immediately_after_if_body_is_not_consumed) {
+    vt_send_str("if (false) { true; } if (true) { echo bad; }\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "if (false) { true; } if (true) { echo bad; }",
+        "sea: parse error near 'if'",
+        PROMPT
+    );
+}
+
+TEST(shell, multiple_else_only_blocks_are_rejected) {
+    vt_send_str("if (false) { true; } else { echo good; } else { echo bad }\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "if (false) { true; } else { echo good; } else { echo bad }",
+        "sea: parse error near 'else'",
+        PROMPT
+    );
+}
+
+TEST(shell, functions_can_have_persistent_redirects) {
+    vt_send_str("foo() { echo -n he; echo llo } >/tmp/shtest\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "foo() { echo -n he; echo llo } >/tmp/shtest",
+        PROMPT
+    );
+
+    vt_send_str("foo\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "foo",
+        PROMPT
+    );
+
+    vt_send_str("cat /tmp/shtest\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "cat /tmp/shtest",
+        "hello",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1744,4 +1839,11 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, returning_from_a_function);
     RUN_TEST_CASE(shell, returning_from_a_nested_function);
     RUN_TEST_CASE(shell, function_exit_status_is_last_command);
+    RUN_TEST_CASE(shell, if_else_execution);
+    RUN_TEST_CASE(shell, if_else_if_execution);
+    RUN_TEST_CASE(shell, if_condition_is_skipped_on_short_circuit);
+    RUN_TEST_CASE(shell, interrupting_else_if_chain);
+    RUN_TEST_CASE(shell, if_immediately_after_if_body_is_not_consumed);
+    RUN_TEST_CASE(shell, multiple_else_only_blocks_are_rejected);
+    RUN_TEST_CASE(shell, functions_can_have_persistent_redirects);
 }

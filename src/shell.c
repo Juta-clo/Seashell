@@ -148,11 +148,22 @@ char *make_cmd_str(ps_cmd *cmd) {
         linc_string_appendf(&out, "(%s)", ast_str);
         free(ast_str);
     } else if (cmd->kind == PS_CMD_IF) {
-        char *cond_str = make_ast_str(&cmd->if_st.cond);
-        char *body_str = make_ast_str(&cmd->if_st.body);
-        linc_string_appendf(&out, "if %s { %s }", cond_str, body_str);
-        free(cond_str);
-        free(body_str);
+        for (size_t i = 0; i < cmd->if_st.parts.size; ++i) {
+            ps_if_part *part = &cmd->if_st.parts.data[i];
+
+            if (i != 0)
+                linc_string_append(&out, "else ");
+
+            if (part->has_cond) {
+                char *cond_str = make_ast_str(&part->cond);
+                linc_string_appendf(&out, "if %s ", cond_str);
+                free(cond_str);
+            }
+
+            char *body_str = make_ast_str(&part->body);
+            linc_string_appendf(&out, "{ %s }",  body_str);
+            free(body_str);
+        }
     } else if (cmd->kind == PS_CMD_WHILE) {
         char *cond_str = make_ast_str(&cmd->while_st.cond);
         char *body_str = make_ast_str(&cmd->while_st.body);
@@ -434,12 +445,24 @@ static int apply_redirs(da_ex_redir *redirs, bool main_shell) {
 }
 
 static int run_if(ps_if *if_st) {
-    int status = shell_run_ast(&if_st->cond);
-    if (status == -1)
-        return status;
+    int status = EXIT_SUCCESS;
 
-    if (status == EXIT_SUCCESS)
-        status = shell_run_ast(&if_st->body);
+    for (size_t i = 0; i < if_st->parts.size; ++i) {
+        ps_if_part *part = &if_st->parts.data[i];
+
+        status = EXIT_SUCCESS;
+
+        if (part->has_cond)
+            status = shell_run_ast(&part->cond);
+
+        if (status == -1)
+            break;
+
+        if (status == EXIT_SUCCESS) {
+            status = shell_run_ast(&part->body);
+            break;
+        }
+    }
 
     return status;
 }
@@ -451,13 +474,12 @@ static int run_while(ps_while *while_st) {
 
     while (true) {
         status = shell_run_ast(&while_st->cond);
+
         if (status == -1)
-            return status;
+            break;
 
         if (status == EXIT_SUCCESS) {
             status = shell_run_ast(&while_st->body);
-            if (status == -1)
-                break;
 
             if (env.breaking) {
                 env.breaking = false;
@@ -466,6 +488,9 @@ static int run_while(ps_while *while_st) {
 
             if (env.continuing)
                 env.continuing = false;
+
+            if (status == -1)
+                break;
         } else {
             break;
         }
@@ -484,10 +509,11 @@ static int run_for(ex_res *res, ps_for *for_st) {
     for (size_t i = 0; i < res->vals.size; ++i) {
         char *part = res->vals.data[i];
 
-        status = add_var(&env.vars, res->ind, part, false);
-        if (status == -1) {
+        int rv = add_var(&env.vars, res->ind, part, false);
+        if (rv == -1) {
             err_msg("bad index variable: %s", res->ind);
-            return EXIT_FAILURE;
+            status =  EXIT_FAILURE;
+            break;
         }
 
         status = shell_run_ast(&for_st->body);
@@ -509,7 +535,17 @@ static int run_for(ex_res *res, ps_for *for_st) {
     return status;
 }
 
-static int run_func(ps_cmd *cmd) {
+static int run_func(ps_cmd *cmd, bool main_shell) {
+    ex_res res = {0};
+
+    if (expand_cmd(cmd, &res) == -1)
+        return EXIT_FAILURE;
+
+    if (apply_redirs(&res.redirs, main_shell) == -1) {
+        expand_free(&res);
+        return EXIT_FAILURE;
+    }
+
     env.func_level += 1;
 
     int status = shell_run_ast(&cmd->func.body);
@@ -517,6 +553,7 @@ static int run_func(ps_cmd *cmd) {
     env.returning = false;
     env.func_level -= 1;
 
+    expand_free(&res);
     return status;
 }
 
@@ -544,7 +581,7 @@ static int run_simple(ex_res *res) {
     if (mp_str_lookup(&env.funcs, res->argv.data[0], &tmp) == 0) {
         subshell_setup(SUBSH_ASYNC);
 
-        int status = run_func(tmp);
+        int status = run_func(tmp, false);
         _exit((status) ? SIGINT + 128 : status);
     }
 
@@ -591,7 +628,7 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
             if (builtin) {
                 status = builtin->func(res.argv.data, &env);
             } else if (func) {
-                status = run_func(func);
+                status = run_func(func, true);
             } else {
                 switch (cmd->kind) {
                 case PS_CMD_IF:
@@ -733,7 +770,6 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
 
 cleanup:
     expand_free(&res);
-
     return rv;
 }
 

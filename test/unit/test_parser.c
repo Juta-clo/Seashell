@@ -36,6 +36,7 @@ TEST_GROUP(parser);
 #define CMDS(...)     EXP_DA(da_cmd, ps_cmd, __VA_ARGS__)
 #define ANDORS(...)   EXP_DA(da_andor, ps_andor, __VA_ARGS__)
 #define CHAINS(...)   EXP_DA(da_chain, ps_chain, __VA_ARGS__)
+#define IF_PARTS(...) EXP_DA(da_if_part, ps_if_part, __VA_ARGS__)
 
 #define SEGMENT(_i, _n, _raw, _quote) \
     ((ps_segment){ .i = _i, .n = _n, .raw = (_raw), .quote = (_quote) })
@@ -104,12 +105,25 @@ TEST_GROUP(parser);
         .redirs = (REDIRS(__VA_ARGS__)), \
     })
 
-#define CMD_IF(_i, _n, _cond, _body, ...) \
+#define ELSE_PART(_body) \
+    ((ps_if_part){ \
+        .has_cond = false, \
+        .body = _body, \
+    })
+
+#define IF_PART(_cond, _body) \
+    ((ps_if_part){ \
+        .has_cond = true, \
+        .cond = _cond, \
+        .body = _body, \
+    })
+
+#define CMD_IF(_i, _n, _parts, ...) \
     ((ps_cmd){ \
         .i = _i, \
         .n = _n, \
         .kind = PS_CMD_IF, \
-        .if_st = (ps_if){ .cond = _cond, .body = _body }, \
+        .if_st = (ps_if){ .parts = _parts }, \
         .redirs = (REDIRS(__VA_ARGS__)), \
     })
 
@@ -243,6 +257,22 @@ static void validate_words(const da_word *exp, const da_word *act) {
     }
 }
 
+static void validate_if_parts(const da_if_part *exp, const da_if_part *act) {
+    TEST_ASSERT_EQUAL_size_t(exp->size, act->size);
+
+    for (size_t i = 0; i < act->size; ++i) {
+        const ps_if_part *exp_if_part = &exp->data[i];
+        const ps_if_part *act_if_part = &act->data[i];
+
+        if (exp_if_part->has_cond) {
+            TEST_ASSERT(act_if_part->has_cond);
+            validate_ast(&exp_if_part->cond, &act_if_part->cond);
+        }
+
+        validate_ast(&exp_if_part->body, &act_if_part->body);
+    }
+}
+
 static void validate_cmd(const ps_cmd *exp, const ps_cmd *act) {
     TEST_ASSERT_EQUAL_INT(exp->i, act->i);
     TEST_ASSERT_EQUAL_INT(exp->n, act->n);
@@ -254,8 +284,7 @@ static void validate_cmd(const ps_cmd *exp, const ps_cmd *act) {
         validate_words(&exp->simple.words, &act->simple.words);
     } else if (exp->kind == PS_CMD_IF) {
         TEST_ASSERT_EQUAL(PS_CMD_IF, act->kind);
-        validate_ast(&exp->if_st.cond, &act->if_st.cond);
-        validate_ast(&exp->if_st.body, &act->if_st.body);
+        validate_if_parts(&exp->if_st.parts, &act->if_st.parts);
     } else if (exp->kind == PS_CMD_WHILE) {
         TEST_ASSERT_EQUAL(PS_CMD_WHILE, act->kind);
         validate_ast(&exp->while_st.cond, &act->while_st.cond);
@@ -1475,12 +1504,48 @@ TEST(parser, parsing_if_statement) {
 
     ps_ast exp = AST(
         CHAIN(I(0), N(10), SYNC,
-            NOIF(I(0), N(10), CMD_IF(I(0), N(10), condition, body))
+            NOIF(I(0), N(10), CMD_IF(I(0), N(10),
+                    IF_PARTS(IF_PART(condition, body))))
         ),
     );
 
     validate("if a { b }", &exp);
 }
+
+TEST(parser, parsing_if_else_statement) {
+    ps_ast condition = AST(CHAIN(I(3), N(1), SYNC,
+        NOIF(I(3), N(1), CMD_SIMPLE(I(3), N(1), "a"))
+    ));
+    ps_ast body = AST(CHAIN(I(7), N(1), SYNC,
+        NOIF(I(7), N(1), CMD_SIMPLE(I(7), N(1), "b"))
+    ));
+
+    ps_ast condition2 = AST(CHAIN(I(19), N(1), SYNC,
+        NOIF(I(19), N(1), CMD_SIMPLE(I(19), N(1), "a"))
+    ));
+    ps_ast body2 = AST(CHAIN(I(23), N(1), SYNC,
+        NOIF(I(23), N(1), CMD_SIMPLE(I(23), N(1), "b"))
+    ));
+
+    ps_ast body3 = AST(CHAIN(I(34), N(1), SYNC,
+        NOIF(I(34), N(1), CMD_SIMPLE(I(34), N(1), "b"))
+    ));
+
+    ps_ast exp = AST(
+        CHAIN(I(0), N(37), SYNC,
+            NOIF(I(0), N(37), CMD_IF(I(0), N(37),
+                IF_PARTS(
+                    IF_PART(condition, body),
+                    IF_PART(condition2, body2),
+                    ELSE_PART(body3),
+                )
+            ))
+        ),
+    );
+
+    validate("if a { b } else if a { b } else { b }", &exp);
+}
+
 
 TEST(parser, parsing_while_statement) {
     ps_ast condition = AST(CHAIN(I(6), N(1), SYNC,
@@ -1611,6 +1676,7 @@ TEST_GROUP_RUNNER(parser) {
     RUN_TEST_CASE(parser, list_with_andor_chains);
     RUN_TEST_CASE(parser, should_produce_no_err_toks_on_success);
     RUN_TEST_CASE(parser, parsing_if_statement);
+    RUN_TEST_CASE(parser, parsing_if_else_statement);
     RUN_TEST_CASE(parser, parsing_while_statement);
     RUN_TEST_CASE(parser, parsing_for_statement);
 }

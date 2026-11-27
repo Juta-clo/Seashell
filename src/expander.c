@@ -483,8 +483,7 @@ void expand_free(ex_res *res) {
 
     if (res->kind == PS_CMD_SIMPLE)
         argv_free_free(&res->argv);
-
-    if (res->kind == PS_CMD_FOR) {
+    else if (res->kind == PS_CMD_FOR) {
         free(res->ind);
         argv_free_free(&res->vals);
     }

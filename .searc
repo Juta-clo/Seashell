@@ -16,10 +16,9 @@ source ".ls_colors.sea";
 sea_prompt_dir() {
     if test $PWD = $HOME {
         printf '%b~%b ' $COL_CYAN $COL_OFF;
-        return;
+    } else {
+        printf "%b%s%b " $COL_CYAN $(basename $PWD) $COL_OFF;
     };
-
-    printf "%b%s%b " $COL_CYAN $(basename $PWD) $COL_OFF;
 };
 
 sea_prompt_git() {
@@ -44,10 +43,9 @@ sea_prompt_git() {
 sea_prompt_arrow() {
     if test $LAST_EXIT = 0 {
         printf '%b>%b ' $COL_MAG $COL_OFF;
-        return;
+    } else {
+        printf '%b>%b ' $COL_RED $COL_OFF;
     };
-
-    printf '%b>%b ' $COL_RED $COL_OFF;
 };
 
 sea_prompt() {

@@ -29,7 +29,7 @@
     do { \
         if (p_scan->print_err) { \
             if ((_tok)->kind == LX_TOK_WORD) { \
-                err_msg("parse error near %s", tok_word_str(_tok)); \
+                err_msg("parse error near '%s'", tok_word_str(_tok)); \
             } else { \
                 err_msg("parse error near '%s'", tok_str((_tok)->kind)); \
             } \
@@ -244,6 +244,66 @@ static int parse_subsh(ps_ast *ast) {
     return 0;
 }
 
+static int parse_if_part(ps_if_part *part) {
+    *part = (ps_if_part){
+        .cond.allo = p_scan->allo,
+        .cond.chains.allo = p_scan->allo,
+        .body.allo = p_scan->allo,
+        .body.chains.allo = p_scan->allo
+    };
+
+    if (p_tok->kind != LX_TOK_WORD ||
+            (p_tok->spec != LX_SP_IF && p_tok->spec != LX_SP_ELSE)) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    if (p_tok->spec == LX_SP_IF) {
+        tok_advance();
+
+        part->has_cond = true;
+
+        if (parse_ast(&part->cond, LX_TOK_LBRACE) == -1)
+            return -1;
+
+        if (tok_expect(LX_TOK_LBRACE) == -1)
+            return -1;
+
+        if (parse_ast(&part->body, LX_TOK_RBRACE) == -1)
+            return -1;
+
+        if (tok_expect(LX_TOK_RBRACE) == -1)
+            return -1;
+    } else {
+        tok_advance();
+
+        if (p_tok->kind == LX_TOK_WORD) {
+            if (p_tok->spec != LX_SP_IF) {
+                ERR_TOK(p_tok);
+                return -1;
+            }
+
+            tok_advance();
+
+            part->has_cond = true;
+
+            if (parse_ast(&part->cond, LX_TOK_LBRACE) == -1)
+                return -1;
+        }
+
+        if (tok_expect(LX_TOK_LBRACE) == -1)
+            return -1;
+
+        if (parse_ast(&part->body, LX_TOK_RBRACE) == -1)
+            return -1;
+
+        if (tok_expect(LX_TOK_RBRACE) == -1)
+            return -1;
+    }
+
+    return 0;
+}
+
 static int parse_if(ps_cmd *cmd) {
     if (p_tok->kind != LX_TOK_WORD || p_tok->spec != LX_SP_IF) {
         ERR_TOK(p_tok);
@@ -251,31 +311,32 @@ static int parse_if(ps_cmd *cmd) {
     }
 
     cmd->kind = PS_CMD_IF;
-
     cmd->if_st = (ps_if){
-        .cond = (ps_ast){
-            .allo = p_scan->allo,
-            .chains.allo = p_scan->allo
-        },
-        .body = (ps_ast){
-            .allo = p_scan->allo,
-            .chains.allo = p_scan->allo
-        }
+        .parts = { .allo = p_scan->allo, },
     };
 
-    tok_advance();
+    bool on_first = true;
+    bool found_final = false;
 
-    if (parse_ast(&cmd->if_st.cond, LX_TOK_RPAREN) == -1)
-        return -1;
+    while (p_tok->kind == LX_TOK_WORD && (p_tok->spec == LX_SP_IF ||
+                p_tok->spec == LX_SP_ELSE)) {
+        if (found_final) {
+            ERR_TOK(p_tok);
+            return -1;
+        }
 
-    if (tok_expect(LX_TOK_LBRACE) == -1)
-        return -1;
+        if (!on_first && p_tok->spec == LX_SP_IF) {
+            ERR_TOK(p_tok);
+            return -1;
+        }
 
-    if (parse_ast(&cmd->if_st.body, LX_TOK_RBRACE) == -1)
-        return -1;
+        ps_if_part *part = linc_array_push(&cmd->if_st.parts);
+        if (parse_if_part(part) == -1)
+            return -1;
 
-    if (tok_expect(LX_TOK_RBRACE) == -1)
-        return -1;
+        on_first = false;
+        found_final = !part->has_cond;
+    }
 
     return 0;
 }
@@ -415,6 +476,9 @@ static int parse_cmd_element(ps_cmd *cmd, bool first) {
             if (p_tok->spec == LX_SP_IF) {
                 if (parse_if(cmd) == -1)
                     return -1;
+            } else if (p_tok->spec == LX_SP_ELSE) {
+                ERR_TOK(p_tok);
+                return -1;
             } else if (p_tok->spec == LX_SP_WHILE) {
                 if (parse_while(cmd) == -1)
                     return -1;
@@ -773,10 +837,21 @@ void ps_get_info(int ind, ps_ast *ast, ps_info *info) {
                 } else if (info->cmd->kind == PS_CMD_SUBSH) {
                     ps_get_info(ind, &info->cmd->subsh, info);
                 } else if (info->cmd->kind == PS_CMD_IF) {
-                    ps_get_info(ind, &info->cmd->if_st.cond, info);
+                    ps_if *if_st = &info->cmd->if_st;
 
-                    if (info->kinds == 0)
-                        ps_get_info(ind, &info->cmd->if_st.body, info);
+                    for (size_t i = 0; i < if_st->parts.size; ++i) {
+                        ps_if_part *part = &if_st->parts.data[i];
+
+                        if (part->has_cond) {
+                            ps_get_info(ind, &part->cond, info);
+                            if (info->kinds != 0)
+                                break;
+                        }
+
+                        ps_get_info(ind, &part->body, info);
+                        if (info->kinds != 0)
+                            break;
+                    }
                 } else if (info->cmd->kind == PS_CMD_WHILE) {
                     ps_get_info(ind, &info->cmd->while_st.cond, info);
 

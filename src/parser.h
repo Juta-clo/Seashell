@@ -52,6 +52,7 @@ typedef struct ps_chain ps_chain;
 typedef struct ps_info ps_info;
 typedef struct ps_simple ps_simple;
 typedef struct ps_if ps_if;
+typedef struct ps_if_part ps_if_part;
 typedef struct ps_while ps_while;
 typedef struct ps_for ps_for;
 typedef struct ps_func ps_func;
@@ -63,6 +64,7 @@ LINC_ARRAY_TYPE(da_cmd, ps_cmd);
 LINC_ARRAY_TYPE(da_andor, ps_andor);
 LINC_ARRAY_TYPE(da_ast, ps_ast);
 LINC_ARRAY_TYPE(da_chain, ps_chain);
+LINC_ARRAY_TYPE(da_if_part, ps_if_part);
 
 struct ps_simple {
     da_word words;
@@ -107,9 +109,14 @@ struct ps_redir {
     };
 };
 
-struct ps_if {
+struct ps_if_part {
+    bool has_cond;
     ps_ast cond;
     ps_ast body;
+};
+
+struct ps_if {
+    da_if_part parts;
 };
 
 struct ps_while {
