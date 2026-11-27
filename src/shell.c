@@ -30,7 +30,7 @@ static ps_ast ast_nd = {
     ++ast->refs;
 }
 
-static ps_ast *ast_acquire(const char *line, size_t n) {
+ps_ast *ast_acquire(const char *line, size_t n) {
     ASSERT(line);
 
     ps_ast *out = xmalloc(sizeof(ps_ast));
@@ -65,7 +65,7 @@ void ast_release(ps_ast *ast) {
     }
 }
 
-static int run_ast(ps_ast *ast);
+static int run_ast(const ps_ast *ast);
 
 static void subshell_setup(int type) {
     env.subsh |= type;
@@ -974,16 +974,7 @@ int shell_run_file(const char *path) {
     return shell_run(file_content.cstr);
 }
 
-int shell_run_capture(const char *line, size_t n, int *pid) {
-    ps_ast *ast = ast_acquire(line, n);
-    if (!ast)
-        return -1;
-
-    if (ast->chains.size == 0) {
-        ast_release(ast);
-        return -1;
-    }
-
+int shell_run_capture(const ps_ast *ast, int *pid) {
     int pipe_fd[2];
     xpipe(pipe_fd);
 
@@ -1011,11 +1002,10 @@ int shell_run_capture(const char *line, size_t n, int *pid) {
 
     xclose(pipe_fd[1]);
 
-    ast_release(ast);
     return pipe_fd[0];
 }
 
-static int run_ast(ps_ast *ast) {
+static int run_ast(const ps_ast *ast) {
     ASSERT(ast);
 
     int status = EXIT_SUCCESS;

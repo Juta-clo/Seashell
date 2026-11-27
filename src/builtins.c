@@ -413,6 +413,17 @@ static int run_unalias_builtin(char **argv, shell_env *_) {
     return status;
 }
 
+static int run_source_builtin(char **argv, shell_env *env) {
+    if (validate_argc(argv, 1, 1) == -1)
+        return EXIT_FAILURE;
+
+    int saved_jid = env->fg_jid;
+    int status = shell_run_file(argv[1]);
+    env->fg_jid = saved_jid;
+
+    return status;
+}
+
 int run_lua_builtin(char **argv, shell_env *env) {
     if (env->subsh)
         use_err("no lua in this shell");
@@ -488,7 +499,8 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "lua", .func = run_lua_builtin },
     { .name = "break", .func = run_break_builtin },
     { .name = "continue", .func = run_continue_builtin },
-    { .name = "return", .func = run_return_builtin }
+    { .name = "return", .func = run_return_builtin },
+    { .name = "source", .func = run_source_builtin }
 };
 
 sh_builtin *get_builtin(const char *arg) {

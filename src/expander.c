@@ -257,10 +257,16 @@ static int expand_seg(ps_segment *seg, da_charp *parts, bool *has_glob,
         } else if (tok->type == EXT_REGULAR) {
             add_part(parts, tok->str, tok->str_len, true);
         } else if (tok->type == EXT_CMD_SUB) {
-            int rfd = shell_run_capture(&tok->str[2], tok->str_len - 2, &pid);
-            if (rfd == -1)
+            ps_ast *ast = ast_acquire(&tok->str[2], tok->str_len - 2);
+            if (!ast)
                 goto cleanup;
 
+            if (ast->chains.size == 0) {
+                ast_release(ast);
+                goto cleanup;
+            }
+
+            int rfd = shell_run_capture(ast, &pid);
             read_to_eof(rfd, &data);
             trim_newlines(&data);
 
@@ -292,11 +298,18 @@ static int expand_seg(ps_segment *seg, da_charp *parts, bool *has_glob,
                 goto cleanup;
             }
         } else if (tok->type == EXT_PROC_SUB) {
-            int rfd = shell_run_capture(&tok->str[2], tok->str_len - 2, NULL);
-            if (rfd == -1)
+            ps_ast *ast = ast_acquire(&tok->str[2], tok->str_len - 2);
+            if (!ast)
                 goto cleanup;
 
+            if (ast->chains.size == 0) {
+                ast_release(ast);
+                goto cleanup;
+            }
+
+            int rfd = shell_run_capture(ast, NULL);
             linc_string path = LINC_STRING_INIT;
+
             linc_string_appendf(&path, "/dev/fd/%d", rfd);
             add_part(parts, path.cstr, path.len, true);
             linc_string_free(&path);
