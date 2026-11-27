@@ -187,7 +187,7 @@ static int lex_io_num(lx_kind delim, const lx_scan *scan) {
         if (*c < 48 || *c > 57)
             return LX_FAIL;
 
-    if (get_int(tok->parts.data[0].raw, &io_num) == -1 || io_num < 0) {
+    if (get_int(tok->parts.data[0].raw, &io_num, GET_INT_NON_NEG) == -1) {
         LOG_INFO("io-num conversion failed: %s", tok->parts.data[0].raw);
         return LX_FAIL;
     }

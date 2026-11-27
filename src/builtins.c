@@ -15,6 +15,25 @@
 
 #include <linc/args.h>
 
+#define use_err(...) \
+    do { \
+        use_err_imp(argv[0], __VA_ARGS__); \
+        return EXIT_FAILURE; \
+    } while (false)
+
+__attribute__ ((__format__(printf, 2, 3)))
+static void use_err_imp(const char *name, const char *fmt, ...) {
+    va_list va;
+
+    fprintf(stderr, "%s: ", name);
+
+    va_start(va, fmt);
+    vfprintf(stderr, fmt, va);
+    va_end(va);
+
+    fprintf(stderr, "\n");
+}
+
 static int arg_to_sig(char *sig_arg) {
     /* - just to be consistent */
     if (STREQ("-HUP", sig_arg))   return SIGHUP;
@@ -39,73 +58,53 @@ static int arg_to_sig(char *sig_arg) {
 }
 
 static int validate_argc(char **argv, size_t min, size_t max) {
-    if (!argv || !argv[0]) {
-        LOG_ERR("validate_args: bad argv array");
-        fatal("internal error; check logs");
-    }
+    if (!argv || !argv[0])
+        fatal("bad builtin argv list");
 
     size_t arg_n = 0;
     for (char **i = argv + 1; *i != nullptr; ++i)
         ++arg_n;
 
-    if (arg_n < min) {
-        fprintf(stderr, "%s: not enough arguments\n", argv[0]);
-        return -1;
-    }
+    if (arg_n < min)
+        use_err("not enough arguments");
 
-    if (arg_n > max) {
-        fprintf(stderr, "%s: too many arguments\n", argv[0]);
-        return -1;
-    }
+    if (arg_n > max)
+        use_err("too many arguments");
 
     return arg_n;
 }
 
 static int run_fg_builtin(char **argv, shell_env *env) {
-    if (env->subsh || !env->job_ctrl) {
-        fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (env->subsh || !env->job_ctrl)
+        use_err("no job control in this shell");
 
     if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
 
-    if (argv[1][0] != '%') {
-        fprintf(stderr, "%s: invalid argument: %s\n", argv[0], argv[1]);
-        return EXIT_FAILURE;
-    }
+    if (argv[1][0] != '%')
+        use_err("invalid argument: %s", argv[1]);
 
     int jid;
 
-    if (get_int(&argv[1][1], &jid) == -1) {
-        fprintf(stderr, "%s: job not found: %s\n", argv[0], argv[1]);
-        return EXIT_FAILURE;
-    }
+    if (get_int(&argv[1][1], &jid, GET_INT_NON_NEG) == -1)
+        use_err("job not found: %s", argv[1]);
 
     jc_job *job = job_lookup(jid);
 
-    if (!job) {
-        fprintf(stderr, "%s: no such job: %s\n", argv[0], argv[1]);
-        return EXIT_FAILURE;
-    }
+    if (!job)
+        use_err("no such job: %s", argv[1]);
 
     /* Save current tty state then apply saved tty state for the
      * job if one was saved (it was a foreground job) */
 
-    if (tcgetattr(env->tty_fd, &env->tio) == -1) {
-        fprintf(stderr, "%s: tcgetattr: %m", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (tcgetattr(env->tty_fd, &env->tio) == -1)
+        use_err("tcgetattr: %m");
 
-    if (tcsetattr(env->tty_fd, TCSANOW, &job->tio) == -1) {
-        fprintf(stderr, "%s: tcsetattr: %m", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (tcsetattr(env->tty_fd, TCSANOW, &job->tio) == -1)
+        use_err("tcsetattr: %m");
 
-    if (tcsetpgrp(env->tty_fd, job->pgrp.pgid) == -1) {
-        fprintf(stderr, "%s: tcsetpgrp: %m\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (tcsetpgrp(env->tty_fd, job->pgrp.pgid) == -1)
+        use_err("tcsetpgrp: %m");
 
     job_event jev;
     if (job_set_running(jid, &jev)) {
@@ -124,32 +123,24 @@ static int run_fg_builtin(char **argv, shell_env *env) {
 }
 
 static int run_bg_builtin(char **argv, shell_env *env) {
-    if (env->subsh || !env->job_ctrl) {
-        fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (env->subsh || !env->job_ctrl)
+        use_err("no job control in this shell");
 
     if (validate_argc(argv, 1, 1) == -1)
         return EXIT_FAILURE;
 
-    if (argv[1][0] != '%') {
-        fprintf(stderr, "%s: invalid argument: %s\n", argv[0], argv[1]);
-        return EXIT_FAILURE;
-    }
+    if (argv[1][0] != '%')
+        use_err("invalid argument: %s", argv[1]);
 
     int jid;
 
-    if (get_int(&argv[1][1], &jid) == -1) {
-        fprintf(stderr, "%s: job not found: %s\n", argv[0], argv[1]);
-        return EXIT_FAILURE;
-    }
+    if (get_int(&argv[1][1], &jid, GET_INT_NON_NEG) == -1)
+        use_err("job not found: %s", argv[1]);
 
     pid_t pgid = job_lookup_pgrp(jid);
 
-    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH) {
-        fprintf(stderr, "%s: killpg: %m\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (killpg(pgid, SIGCONT) == -1 && errno != ESRCH)
+        use_err("killpg: %m");
 
     job_event jev;
     if (job_set_running(jid, &jev)) {
@@ -162,10 +153,8 @@ static int run_bg_builtin(char **argv, shell_env *env) {
 
 /* default sig is TERM */
 static int run_kill_builtin(char **argv, shell_env *env) {
-    if (env->subsh || !env->job_ctrl) {
-        fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (env->subsh || !env->job_ctrl)
+        use_err("no job control in this shell");
 
     if (validate_argc(argv, 1, 2) == -1)
         return EXIT_FAILURE;
@@ -188,38 +177,26 @@ static int run_kill_builtin(char **argv, shell_env *env) {
 
     if (signal_arg) {
         sig = arg_to_sig(signal_arg);
-        if (sig == -1) {
-            fprintf(stderr, "%s: unknown signal: %d\n", argv[0], sig);
-            return EXIT_FAILURE;
-        }
+        if (sig == -1)
+            use_err("unknown signal: %d", sig);
     }
 
     if (target_arg[0] == '%') {
-        if (get_int(&target_arg[1], &jid) == -1) {
-            fprintf(stderr, "%s: invalid job: %s\n", argv[0], target_arg);
-            return EXIT_FAILURE;
-        }
+        if (get_int(&target_arg[1], &jid, GET_INT_NON_NEG) == -1)
+            use_err("invalid job: %s", target_arg);
 
         pid_t pgid = job_lookup_pgrp(jid);
-        if (pgid == -1) {
-            fprintf(stderr, "%s: no such job\n", argv[0]);
-            return EXIT_FAILURE;
-        }
+        if (pgid == -1)
+            use_err("no such job");
 
-        if (killpg(pgid, sig) == -1 && errno != ESRCH) {
-            fprintf(stderr, "%s: killpg failed: %m\n", argv[0]);
-            return EXIT_FAILURE;
-        }
+        if (killpg(pgid, sig) == -1 && errno != ESRCH)
+            use_err("killpg: %m");
     } else {
-        if (get_int(target_arg, &pid) == -1) {
-            fprintf(stderr, "%s: illegal pid: %s\n", argv[0], target_arg);
-            return EXIT_FAILURE;
-        }
+        if (get_int(target_arg, &pid, GET_INT_NON_NEG) == -1)
+            use_err("illegal pid: %s", target_arg);
 
-        if (kill(pid, sig) == -1 && errno != ESRCH) {
-            fprintf(stderr, "%s: kill failed: %m\n", argv[0]);
-            return EXIT_FAILURE;
-        }
+        if (kill(pid, sig) == -1 && errno != ESRCH)
+            use_err("kill: %m");
     }
 
     /* Report termination/stop messages before the next prompt */
@@ -228,10 +205,8 @@ static int run_kill_builtin(char **argv, shell_env *env) {
 }
 
 static int run_jobs_builtin(char **argv, shell_env *env) {
-    if (env->subsh || !env->job_ctrl) {
-        fprintf(stderr, "%s: no job control in this shell\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (env->subsh || !env->job_ctrl)
+        use_err("no job control in this shell");
 
     int arg_n = validate_argc(argv, 0, 1);
     if (arg_n == -1)
@@ -264,29 +239,25 @@ static int run_jobs_builtin(char **argv, shell_env *env) {
 }
 
 static int run_exit_builtin(char **argv, shell_env *_) {
-    if (validate_argc(argv, 0, 1) == -1)
+    int arg_n = validate_argc(argv, 0, 1);
+    if (arg_n == -1)
         return EXIT_FAILURE;
 
-    int exit_status = EXIT_SUCCESS;
+    int status = EXIT_SUCCESS;
 
-    if (argv[1]) {
-        char *endptr;
-        exit_status = strtol(argv[1], &endptr, 10);
-
-        if (STREQ(argv[1], "") || *endptr != '\0') {
-            fprintf(stderr, "exit: invalid argument: %s\n", argv[1]);
-            return EXIT_FAILURE;
-        }
+    if (arg_n == 1) {
+        if (get_int(argv[1], &status, GET_INT_NON_NEG) == -1)
+            use_err("expected exit status, found '%s'", argv[1]);
     }
 
-    if (env.subsh) {
-        _exit(exit_status);
-    } else {
-        printf("exit\n");
-        exit(exit_status);
-    }
+    if (env.subsh)
+        _exit(status);
 
-    return EXIT_SUCCESS;
+    printf("exit\n");
+    exit(status);
+
+    ASSERT(false && "unexpected control flow");
+    return EXIT_FAILURE;
 }
 
 static int run_cd_builtin(char **argv, shell_env *env) {
@@ -302,10 +273,8 @@ static int run_cd_builtin(char **argv, shell_env *env) {
         path = argv[1];
     }
 
-    if (chdir(path) == -1) {
-        fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
-        return EXIT_FAILURE;
-    }
+    if (chdir(path) == -1)
+        use_err("%m");
 
     char cwd_buf[PATH_MAX];
 
@@ -319,10 +288,8 @@ static int run_export_builtin(char **argv, shell_env *env) {
     if (validate_argc(argv, 2, 2) == -1)
         return EXIT_FAILURE;
 
-    if (add_var(&env->vars, argv[1], argv[2], true) == -1) {
-        fprintf(stderr, "%s: failed to add variable\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (add_var(&env->vars, argv[1], argv[2], true) == -1)
+        use_err("failed to add variable");
 
     return EXIT_SUCCESS;
 }
@@ -349,10 +316,8 @@ static int run_reload_builtin(char **argv, shell_env *_) {
         return EXIT_FAILURE;
 
     FILE *config = config_file_open();
-    if (!config) {
-        printf("%s: failed to open config file\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (!config)
+        use_err("failed to open config file");
 
     int jid = env.fg_jid;
     parse_config();
@@ -368,10 +333,8 @@ static int run_set_builtin(char **argv, shell_env *env) {
     if (validate_argc(argv, 2, 2) == -1)
         return EXIT_FAILURE;
 
-    if (add_var(&env->vars, argv[1], argv[2], false) == -1) {
-        fprintf(stderr, "%s: failed to add variable\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (add_var(&env->vars, argv[1], argv[2], false) == -1)
+        use_err("failed to add variable");
 
     return EXIT_SUCCESS;
 }
@@ -398,10 +361,8 @@ static int run_unset_builtin(char **argv, shell_env *env) {
     if (linc_args_parse(arg_n + 1, argv, opts, 0) == -1)
         return EXIT_FAILURE;
 
-    if (!argv[optind]) {
-        fprintf(stderr, "%s: missing target\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (!argv[optind])
+        use_err("missing target");
 
     if (opts[OPT_FUNC].found) {
         void *func;
@@ -413,10 +374,8 @@ static int run_unset_builtin(char **argv, shell_env *env) {
                 return EXIT_FAILURE;
         }
     } else {
-        if (delete_var(&env->vars, argv[optind]) == -1) {
-            fprintf(stderr, "%s: failed to delete variable\n", argv[0]);
-            return EXIT_FAILURE;
-        }
+        if (delete_var(&env->vars, argv[optind]) == -1)
+            use_err("failed to delete variable");
     }
 
     return EXIT_SUCCESS;
@@ -429,10 +388,8 @@ static int run_alias_builtin(char **argv, shell_env *_) {
     char *key = strdup(argv[1]);
     char *value = strdup(argv[2]);
 
-    if (!key || !value) {
-        perror("strdup");
-        return EXIT_FAILURE;
-    }
+    if (!key || !value)
+        use_err("strdup: %m");
 
     mp_str_add(&env.aliases, key, value);
     free(key);
@@ -446,10 +403,8 @@ static int run_unalias_builtin(char **argv, shell_env *_) {
 
     char *key = strdup(argv[1]);
 
-    if (!key) {
-        perror("strdup");
-        return EXIT_FAILURE;
-    }
+    if (!key)
+        use_err("strdup: %m");
 
     int status = mp_str_delete(&env.aliases, key, true);
 
@@ -459,10 +414,8 @@ static int run_unalias_builtin(char **argv, shell_env *_) {
 }
 
 int run_lua_builtin(char **argv, shell_env *env) {
-    if (env->subsh) {
-        fprintf(stderr, "%s: no lua in this shell\n", argv[0]);
-        return EXIT_FAILURE;
-    }
+    if (env->subsh)
+        use_err("no lua in this shell");
 
     if (validate_argc(argv, 0, 0) == -1)
         return EXIT_FAILURE;
@@ -476,6 +429,9 @@ int run_break_builtin(char **argv, shell_env *env) {
     if (validate_argc(argv, 0, 0) == -1)
         return EXIT_FAILURE;
 
+    if (env->loop_level == 0)
+        use_err("can only break from inside a loop");
+
     env->breaking = true;
 
     return EXIT_SUCCESS;
@@ -485,9 +441,34 @@ int run_continue_builtin(char **argv, shell_env *env) {
     if (validate_argc(argv, 0, 0) == -1)
         return EXIT_FAILURE;
 
+    if (env->loop_level == 0)
+        use_err("can only continue from inside a loop");
+
     env->continuing = true;
 
     return EXIT_SUCCESS;
+}
+
+int run_return_builtin(char **argv, shell_env *env) {
+    int arg_n = validate_argc(argv, 0, 1);
+    if (arg_n == -1)
+        return EXIT_FAILURE;
+
+    if (env->func_level == 0)
+        use_err("can only return from a function or script");
+
+    env->returning = true;
+
+    int status = EXIT_SUCCESS;
+
+    if (arg_n == 1) {
+        if (get_int(argv[1], &status, GET_INT_NON_NEG) == -1)
+            use_err("expected exit status, found '%s'", argv[1]);
+
+        status %= 256;
+    }
+
+    return status;
 }
 
 static sh_builtin builtins[BUILTIN_COUNT] = {
@@ -506,7 +487,8 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "unalias", .func = run_unalias_builtin },
     { .name = "lua", .func = run_lua_builtin },
     { .name = "break", .func = run_break_builtin },
-    { .name = "continue", .func = run_continue_builtin }
+    { .name = "continue", .func = run_continue_builtin },
+    { .name = "return", .func = run_return_builtin }
 };
 
 sh_builtin *get_builtin(const char *arg) {

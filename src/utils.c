@@ -219,7 +219,7 @@ int fd_move(int fd1, int fd2, bool cloexec, bool replace) {
     return newfd;
 }
 
-int get_int(const char *arg, int *num) {
+int get_int(const char *arg, int *num, int flags) {
     ASSERT(arg && num);
 
     if (arg[0] == '\0')
@@ -239,6 +239,9 @@ int get_int(const char *arg, int *num) {
         goto fail;
 
     if (out > INT_MAX || out < INT_MIN)
+        goto fail;
+
+    if ((flags & GET_INT_NON_NEG) && out < 0)
         goto fail;
 
     errno = saved_errno;

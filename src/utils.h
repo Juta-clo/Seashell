@@ -102,6 +102,8 @@ void assert_bool_imp(linc_site site, ...);
 LINC_ARRAY_TYPE(da_charp, char *);
 LINC_ARRAY_TYPE(da_int, int);
 
+#define GET_INT_NON_NEG 1
+
 __attribute__ ((__warn_unused_result__))
 char **argv_copy(char **argv);
 size_t argv_len(char **argv);
@@ -115,7 +117,7 @@ void trim_newlines(linc_string *data);
 void read_to_eof(int fd, linc_string *data);
 int fd_dup(int fd, bool cloexec);
 int fd_move(int fd1, int fd2, bool cloexec, bool replace);
-int get_int(const char *arg, int *num);
+int get_int(const char *arg, int *num, int flags);
 bool is_bin(const char *path);
 bool is_file(const char *path);
 bool is_dir(const char *file);

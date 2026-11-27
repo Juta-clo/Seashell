@@ -55,7 +55,7 @@ int get_last_status(void) {
 
     int status;
 
-    if (get_int(var->value, &status) == -1)
+    if (get_int(var->value, &status, GET_INT_NON_NEG) == -1)
         return EXIT_FAILURE;
 
     return status;

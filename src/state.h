@@ -31,8 +31,11 @@ typedef struct {
     bool lua;
     bool job_ctrl;
     da_int saved_fds;
+    int loop_level;
+    int func_level;
     bool breaking;
     bool continuing;
+    bool returning;
 
     int tty_fd;
     struct termios tio;

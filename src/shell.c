@@ -453,6 +453,8 @@ static int run_if(ps_if *if_st) {
 static int run_while(ps_while *while_st) {
     int status;
 
+    env.loop_level += 1;
+
     while (true) {
         status = run_ast(&while_st->cond);
         if (status == -1)
@@ -475,11 +477,15 @@ static int run_while(ps_while *while_st) {
         }
     }
 
+    env.loop_level -= 1;
+
     return status;
 }
 
 static int run_for(ex_res *res, ps_for *for_st) {
     int status = EXIT_SUCCESS;
+
+    env.loop_level += 1;
 
     for (size_t i = 0; i < res->vals.size; ++i) {
         char *part = res->vals.data[i];
@@ -504,6 +510,19 @@ static int run_for(ex_res *res, ps_for *for_st) {
             break;
     }
 
+    env.loop_level -= 1;
+
+    return status;
+}
+
+static int run_func(ps_cmd *cmd) {
+    env.func_level += 1;
+
+    int status = run_ast(&cmd->func.body);
+
+    env.returning = false;
+    env.func_level -= 1;
+
     return status;
 }
 
@@ -527,11 +546,12 @@ static int run_simple(ex_res *res) {
         _exit(builtin->func(res->argv.data, &env));
 
     void *tmp = nullptr;
+
     if (mp_str_lookup(&env.funcs, res->argv.data[0], &tmp) == 0) {
-        LOG_INFO("running function ast");
         subshell_setup(SUBSH_ASYNC);
-        int status = run_ast(&((ps_cmd *)tmp)->func.body);
-        _exit((status == -1) ? SIGINT + 128 : status);
+
+        int status = run_func(tmp);
+        _exit((status) ? SIGINT + 128 : status);
     }
 
     execvp(res->argv.data[0], res->argv.data);
@@ -577,7 +597,7 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
             if (builtin) {
                 status = builtin->func(res.argv.data, &env);
             } else if (func) {
-                status = run_ast(&((ps_cmd *)func)->func.body);
+                status = run_func(func);
             } else {
                 switch (cmd->kind) {
                 case PS_CMD_IF:
@@ -1001,7 +1021,7 @@ static int run_ast(ps_ast *ast) {
     int status = EXIT_SUCCESS;
 
     for (size_t i = 0; i < ast->chains.size; ++i) {
-        if (env.breaking || env.continuing)
+        if (env.breaking || env.continuing || env.returning)
             break;
 
         status = shell_run_chain(&ast->chains.data[i]);

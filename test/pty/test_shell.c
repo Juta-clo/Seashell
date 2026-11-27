@@ -1531,6 +1531,116 @@ TEST(shell, unsetting_a_function) {
     );
 }
 
+TEST(shell, break_statement_not_in_loop) {
+    vt_send_str("break\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "break",
+        "break: can only break from inside a loop",
+        PROMPT
+    );
+
+    vt_send_str("for i; a b c { echo $i }\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "for i; a b c { echo $i }",
+        "a",
+        "b",
+        "c",
+        PROMPT
+    );
+}
+
+TEST(shell, continue_statement_not_in_loop) {
+    vt_send_str("continue\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "continue",
+        "continue: can only continue from inside a loop",
+        PROMPT
+    );
+
+    vt_send_str("for i; a b c { echo $i }\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "for i; a b c { echo $i }",
+        "a",
+        "b",
+        "c",
+        PROMPT
+    );
+}
+
+TEST(shell, returning_from_a_function) {
+    vt_send_str("foo() { echo before; return; echo after }\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "foo() { echo before; return; echo after }",
+        PROMPT
+    );
+
+    vt_send_str("return; foo; return\n");
+    assert_term_clear(4, PROMPT_LEN,
+        PROMPT "return; foo; return",
+        "return: can only return from a function or script",
+        "before",
+        "return: can only return from a function or script",
+        PROMPT
+    );
+}
+
+TEST(shell, returning_from_a_nested_function) {
+    char *inner = PROMPT
+        "inner() { "
+            "echo inner before; "
+            "return; "
+            "echo inner after; "
+        "}";
+
+    char *outer = PROMPT
+        "outer() { "
+            "echo outer before; "
+            "inner; "
+            "echo outer after; "
+        "}";
+
+    vt_send_str(&inner[2]);
+    vt_send_str("\n");
+    assert_term_clear(1, PROMPT_LEN,
+        inner,
+        PROMPT
+    );
+
+    vt_send_str(&outer[2]);
+    vt_send_str("\n");
+    assert_term_clear(1, PROMPT_LEN,
+        outer,
+        PROMPT
+    );
+
+    vt_send_str("return; outer; return\n");
+    assert_term_clear(6, PROMPT_LEN,
+        PROMPT "return; outer; return",
+        "return: can only return from a function or script",
+        "outer before",
+        "inner before",
+        "outer after",
+        "return: can only return from a function or script",
+        PROMPT
+    );
+}
+
+TEST(shell, function_exit_status_is_last_command) {
+    vt_send_str("foo() { true; false }; foo; echo $?\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "foo() { true; false }; foo; echo $?",
+        "1",
+        PROMPT
+    );
+
+    vt_send_str("foo() { return 99; echo foo }; foo; echo $?\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "foo() { return 99; echo foo }; foo; echo $?",
+        "99",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1629,4 +1739,9 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, function_running_in_main_shell);
     RUN_TEST_CASE(shell, overwriting_a_registered_function);
     RUN_TEST_CASE(shell, unsetting_a_function);
+    RUN_TEST_CASE(shell, break_statement_not_in_loop);
+    RUN_TEST_CASE(shell, continue_statement_not_in_loop);
+    RUN_TEST_CASE(shell, returning_from_a_function);
+    RUN_TEST_CASE(shell, returning_from_a_nested_function);
+    RUN_TEST_CASE(shell, function_exit_status_is_last_command);
 }
