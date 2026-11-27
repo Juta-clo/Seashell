@@ -21,6 +21,7 @@
 #include "luart.h"
 
 #define ALIAS_MAX 4096
+#define FUNC_MAX 4096
 
 shell_env env = {0};
 char *script_file = nullptr;
@@ -203,6 +204,7 @@ void env_init(int argc, char *const *argv) {
 
     linc_init(argc, argv);
     mp_init(&env.aliases, ALIAS_MAX);
+    mp_init(&env.funcs, FUNC_MAX);
 
     log_init();
     var_init();

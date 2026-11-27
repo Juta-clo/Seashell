@@ -38,7 +38,7 @@ static int arg_to_sig(char *sig_arg) {
     return -1;
 }
 
-static int validate_argc(char **argv, size_t min_argc, size_t max_argc) {
+static int validate_argc(char **argv, size_t min, size_t max) {
     if (!argv || !argv[0]) {
         LOG_ERR("validate_args: bad argv array");
         fatal("internal error; check logs");
@@ -48,12 +48,12 @@ static int validate_argc(char **argv, size_t min_argc, size_t max_argc) {
     for (char **i = argv + 1; *i != nullptr; ++i)
         ++arg_n;
 
-    if (arg_n < min_argc) {
+    if (arg_n < min) {
         fprintf(stderr, "%s: not enough arguments\n", argv[0]);
         return -1;
     }
 
-    if (arg_n > max_argc) {
+    if (arg_n > max) {
         fprintf(stderr, "%s: too many arguments\n", argv[0]);
         return -1;
     }
@@ -377,12 +377,46 @@ static int run_set_builtin(char **argv, shell_env *env) {
 }
 
 static int run_unset_builtin(char **argv, shell_env *env) {
-    if (validate_argc(argv, 1, 1) == -1)
+    int arg_n = validate_argc(argv, 1, 2);
+    if (arg_n == -1)
         return EXIT_FAILURE;
 
-    if (delete_var(&env->vars, argv[1])) {
-        fprintf(stderr, "%s: failed to delete variable\n", argv[0]);
+    enum {
+        OPT_FUNC,
+    };
+
+    linc_args opts[] = {
+        [OPT_FUNC] = {
+            .long_name = "function",
+            .short_name = 'f',
+            .has_arg = LINC_ARGS_ARG_OPT,
+            .arg_type = LINC_ARGS_ARG_NONE
+        },
+        (linc_args){0}
+    };
+
+    if (linc_args_parse(arg_n + 1, argv, opts, 0) == -1)
         return EXIT_FAILURE;
+
+    if (!argv[optind]) {
+        fprintf(stderr, "%s: missing target\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (opts[OPT_FUNC].found) {
+        void *func;
+
+        if (mp_str_lookup(&env->funcs, argv[optind], &func) == 0) {
+            ast_release(((ps_cmd *)func)->ast);
+
+            if (mp_str_delete(&env->funcs, argv[optind], false) == -1)
+                return EXIT_FAILURE;
+        }
+    } else {
+        if (delete_var(&env->vars, argv[optind]) == -1) {
+            fprintf(stderr, "%s: failed to delete variable\n", argv[0]);
+            return EXIT_FAILURE;
+        }
     }
 
     return EXIT_SUCCESS;
@@ -417,7 +451,7 @@ static int run_unalias_builtin(char **argv, shell_env *_) {
         return EXIT_FAILURE;
     }
 
-    int status = mp_str_delete(&env.aliases, key);
+    int status = mp_str_delete(&env.aliases, key, true);
 
     free(key);
 

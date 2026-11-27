@@ -23,10 +23,10 @@ void mp_free(map_t *map);
 
 int mp_str_add(map_t *map, char *key, void *value);
 int mp_str_lookup(map_t *map, const char *key, void **value);
-int mp_str_delete(map_t *map, char *key);
+int mp_str_delete(map_t *map, char *key, bool free_val);
 
 int mp_num_add(map_t *map, int key, void *value);
 int mp_num_lookup(map_t *map, int key, void **value);
-int mp_num_delete(map_t *map, int key);
+int mp_num_delete(map_t *map, int key, bool free_val);
 
 #endif

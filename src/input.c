@@ -508,6 +508,8 @@ static bool is_name(const char *text) {
             name_found = true;
     } else if (get_builtin(text)) {
         name_found = true;
+    } else if (mp_str_lookup(&env.funcs, text, nullptr) == 0) {
+        name_found = true;
     } else {
         da_charp candidates = build_path_candidates(text);
 
@@ -676,7 +678,8 @@ void input_highlight(input_buf *ibuf, char *line, size_t n, int start_i) {
             if (is_err_tok(tok, &scan)) {
                 highlight_err(tok->i, tok->i + (tok->n - 1), ibuf, start_i);
                 err_tok_i = i + 1;
-            } else if (tok->kind != LX_TOK_WORD || tok->spec != LX_SP_NONE) {
+            } else if (tok->kind != LX_TOK_WORD || (tok->spec != LX_SP_NONE &&
+                    tok->spec != LX_SP_SIMPLE)) {
                 input_highlight_tok(tok->i, tok->i + (tok->n - 1), tok->kind,
                         ibuf, start_i);
             } else {

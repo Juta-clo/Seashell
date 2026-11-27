@@ -38,6 +38,7 @@
     } while (false)
 
 static ps_scan *p_scan;
+static ps_ast *p_ast;
 static da_tok *p_toks;
 static lx_tok *p_tok;
 static size_t p_i;
@@ -61,6 +62,17 @@ static int tok_expect(lx_kind kind) {
 
     tok_advance();
     return 0;
+}
+
+static lx_kind tok_peek(int n) {
+    int i = 0;
+
+    for (; i < n; ++i) {
+        if (p_tok[i].kind == LX_EOF)
+            return LX_EOF;
+    }
+
+    return p_tok[i].kind;
 }
 
 static int get_cur_i(void) {
@@ -305,10 +317,13 @@ static int parse_while(ps_cmd *cmd) {
 }
 
 static int parse_for(ps_cmd *cmd) {
-    if (p_tok->kind != LX_TOK_WORD || p_tok->spec != LX_SP_FOR) {
+    if (p_tok->spec != LX_SP_FOR) {
         ERR_TOK(p_tok);
         return -1;
     }
+
+    if (tok_expect(LX_TOK_WORD) == -1)
+        return -1;
 
     cmd->kind = PS_CMD_FOR;
     cmd->for_st = (ps_for){
@@ -316,8 +331,6 @@ static int parse_for(ps_cmd *cmd) {
         .vals = { .allo = p_scan->allo, },
         .body = { .allo = p_scan->allo, .chains.allo = p_scan->allo, },
     };
-
-    tok_advance();
 
     if (parse_word(&cmd->for_st.ind) == -1)
         return -1;
@@ -349,12 +362,55 @@ static int parse_for(ps_cmd *cmd) {
     return 0;
 }
 
+static int parse_func(ps_cmd *cmd) {
+    if (p_tok->spec != LX_SP_SIMPLE) {
+        ERR_TOK(p_tok);
+        return -1;
+    }
+
+    cmd->kind = PS_CMD_FUNC;
+    cmd->ast = p_ast;
+    cmd->func = (ps_func){
+        .name = strdup_alloc(p_tok->parts.data[0].raw, &p_scan->allo),
+        .body = { .allo = p_scan->allo, .chains.allo = p_scan->allo },
+    };
+
+    if (tok_expect(LX_TOK_WORD) == -1)
+        return -1;
+
+    if (tok_expect(LX_TOK_LPAREN) == -1)
+        return -1;
+
+    if (tok_expect(LX_TOK_RPAREN) == -1)
+        return -1;
+
+    if (tok_expect(LX_TOK_LBRACE) == -1)
+        return -1;
+
+    if (parse_ast(&cmd->func.body, LX_TOK_RBRACE) == -1)
+        return -1;
+
+    if (tok_expect(LX_TOK_RBRACE) == -1)
+        return -1;
+
+    return 0;
+}
+
 static int parse_cmd_element(ps_cmd *cmd, bool first) {
     if (p_tok->kind == LX_TOK_WORD) {
         if (!first || p_tok->spec == LX_SP_NONE) {
             ps_word *word = linc_array_push(&cmd->simple.words);
             if (parse_word(word) == -1)
                 return -1;
+        } else if (p_tok->spec == LX_SP_SIMPLE) {
+            if (tok_peek(1) == LX_TOK_LPAREN && tok_peek(2) == LX_TOK_RPAREN) {
+                if (parse_func(cmd) == -1)
+                    return -1;
+            } else {
+                ps_word *word = linc_array_push(&cmd->simple.words);
+                if (parse_word(word) == -1)
+                    return -1;
+            }
         } else {
             if (p_tok->spec == LX_SP_IF) {
                 if (parse_if(cmd) == -1)
@@ -553,6 +609,7 @@ int ps_parse(ps_scan *scan, ps_ast *ast) {
 
     *linc_array_push(&toks) = (lx_tok){ .kind = LX_EOF };
 
+    p_ast = ast;
     p_toks = &toks;
     p_tok = p_toks->data;
     p_i = 0;
@@ -727,6 +784,8 @@ void ps_get_info(int ind, ps_ast *ast, ps_info *info) {
                         ps_get_info(ind, &info->cmd->while_st.body, info);
                 } else if (info->cmd->kind == PS_CMD_FOR) {
                     in_for(ind, &info->cmd->for_st, info);
+                } else if (info->cmd->kind == PS_CMD_FUNC) {
+                    ps_get_info(ind, &info->cmd->func.body, info);
                 } else if (info->cmd->kind == PS_CMD_SIMPLE) {
                     in_simple(ind, &info->cmd->simple, info);
                 } else {

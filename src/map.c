@@ -85,7 +85,7 @@ static int mp_lookup(map_t *map, const void *key, void **value, key_func func) {
     return 0;
 }
 
-static int mp_delete(map_t *map, void *key, key_func func) {
+static int mp_delete(map_t *map, void *key, key_func func, bool free_val) {
     void *canon_key = func(map, key);
     if (!canon_key)
         goto fail;
@@ -96,7 +96,9 @@ static int mp_delete(map_t *map, void *key, key_func func) {
         return 0;
     }
 
-    free(map->pairs.data[index].value);
+    if (free_val)
+        free(map->pairs.data[index].value);
+
     free(map->pairs.data[index].key);
 
     linc_array_delete(&map->pairs, index, 1);
@@ -135,8 +137,8 @@ int mp_str_lookup(map_t *map, const char *key, void **value) {
     return 0;
 }
 
-int mp_str_delete(map_t *map, char *key) {
-    if (mp_delete(map, key, str_canon_key) == -1)
+int mp_str_delete(map_t *map, char *key, bool free_val) {
+    if (mp_delete(map, key, str_canon_key, free_val) == -1)
         return -1;
 
     return 0;
@@ -168,8 +170,8 @@ int mp_num_lookup(map_t *map, int key, void **value) {
     return 0;
 }
 
-int mp_num_delete(map_t *map, int key) {
-    if (mp_delete(map, &key, num_canon_key) == -1)
+int mp_num_delete(map_t *map, int key, bool free_val) {
+    if (mp_delete(map, &key, num_canon_key, free_val) == -1)
         return -1;
 
     return 0;

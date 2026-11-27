@@ -40,6 +40,7 @@ typedef struct {
 
     map_t vars;
     map_t aliases;
+    map_t funcs;
 
     linc_fatal_target shell_fatal;
     linc_log shell_log;

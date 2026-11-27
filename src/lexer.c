@@ -210,7 +210,7 @@ static void classify_word(lx_tok *word) {
     } else if (STREQ("for", part->raw)) {
         word->spec = LX_SP_FOR;
     } else {
-        word->spec = LX_SP_NONE;
+        word->spec = LX_SP_SIMPLE;
     }
 }
 

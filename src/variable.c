@@ -94,7 +94,7 @@ int delete_var(map_t *vars, char *key) {
     sh_var *var = lookup_var(vars, key);
     if (var) {
         free(var->value);
-        mp_str_delete(vars, key);
+        mp_str_delete(vars, key, true);
     }
 
     return 0;

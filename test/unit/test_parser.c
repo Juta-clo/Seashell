@@ -79,6 +79,18 @@ TEST_GROUP(parser);
 #define CMD(_i, _n, ...) \
     CMD_R(_i, _n, WORDS(__VA_ARGS__), NO_REDIRS)
 
+#define CMD_FUNC(_i, _n, _name, _body, ...) \
+    ((ps_cmd){ \
+        .i = _i, \
+        .n = _n, \
+        .kind = PS_CMD_FUNC, \
+        .func = (ps_func){ \
+            .name = _name, \
+            .body = _body \
+        }, \
+        .redirs = (REDIRS(__VA_ARGS__)), \
+    })
+
 #define CMD_FOR(_i, _n, _ind, _vals, _body, ...) \
     ((ps_cmd){ \
         .i = _i, \
@@ -1506,6 +1518,20 @@ TEST(parser, parsing_for_statement) {
     );
 
     validate("for i; a { b }", &exp);
+}
+
+TEST(parser, parsing_function) {
+    ps_ast body = AST(CHAIN(I(11), N(1), SYNC,
+        NOIF(I(11), N(1), CMD_SIMPLE(I(11), N(1), "b"))
+    ));
+
+    ps_ast exp = AST(
+        CHAIN(I(0), N(14), SYNC,
+            NOIF(I(0), N(14), CMD_FUNC(I(0), N(14), "foo", body))
+        )
+    );
+
+    validate("foo() { a }", &exp);
 }
 
 /************ Test runner ************/

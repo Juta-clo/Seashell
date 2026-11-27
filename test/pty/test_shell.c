@@ -1489,6 +1489,48 @@ TEST(shell, running_script_file_propagates_exit_status) {
     );
 }
 
+TEST(shell, function_running_in_main_shell) {
+    vt_send_str("foo() { set foo bar }; foo; echo $foo\n");
+    assert_term(2, PROMPT_LEN,
+        PROMPT "foo() { set foo bar }; foo; echo $foo",
+        "bar",
+        PROMPT
+    );
+}
+
+TEST(shell, overwriting_a_registered_function) {
+    vt_send_str("a() { echo foo }; a; a() { echo bar }; a\n");
+    assert_term(3, PROMPT_LEN,
+        PROMPT "a() { echo foo }; a; a() { echo bar }; a",
+        "foo",
+        "bar",
+        PROMPT
+    );
+}
+
+TEST(shell, unsetting_a_function) {
+    vt_send_str("foo() { echo bar }; foo\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "foo() { echo bar }; foo",
+        "bar",
+        PROMPT
+    );
+
+    vt_send_str("unset -f foo; echo $?\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "unset -f foo; echo $?",
+        "0",
+        PROMPT
+    );
+
+    vt_send_str("foo\n");
+    assert_term_clear(2, PROMPT_LEN,
+        PROMPT "foo",
+        "sea: command not found: foo",
+        PROMPT
+    );
+}
+
 // NOLINTEND(bugprone-suspicious-missing-comma)
 
 /************ Test runner ************/
@@ -1584,4 +1626,7 @@ TEST_GROUP_RUNNER(shell) {
     RUN_TEST_CASE(shell, running_empty_script_file);
     RUN_TEST_CASE(shell, running_simple_script_file);
     RUN_TEST_CASE(shell, running_script_file_propagates_exit_status);
+    RUN_TEST_CASE(shell, function_running_in_main_shell);
+    RUN_TEST_CASE(shell, overwriting_a_registered_function);
+    RUN_TEST_CASE(shell, unsetting_a_function);
 }

@@ -40,6 +40,7 @@ TEST_GROUP(lexer);
 #define IO_NUM(_io_num, _i, _n) \
     ((lx_tok){ \
         .kind = LX_TOK_IO_NUM, \
+        .spec = LX_SP_SIMPLE, \
         .is_num = true, \
         .i = _i, \
         .n = _n, \
@@ -56,6 +57,16 @@ TEST_GROUP(lexer);
         .parts = PARTS(PART(_raw, LX_Q_NONE, _i, _n)), \
     })
 
+#define WORD_SP_SIMPLE(_i, _n, _is_num, _raw) \
+    ((lx_tok){ \
+        .kind = LX_TOK_WORD, \
+        .is_num = _is_num, \
+        .spec = LX_SP_SIMPLE, \
+        .i = _i, \
+        .n = _n, \
+        .parts = PARTS(PART(_raw, LX_Q_NONE, _i, _n)), \
+    })
+
 #define WORD(_i, _n, _is_num, ...) \
     ((lx_tok){ \
         .kind = LX_TOK_WORD, \
@@ -67,10 +78,10 @@ TEST_GROUP(lexer);
     })
 
 #define WORD_NUMBER(_number, _i, _n) \
-    WORD(_i, _n, true, PART(#_number, LX_Q_NONE, _i, _n))
+    WORD_SP_SIMPLE(_i, _n, true, #_number)
 
 #define WORD_SIMPLE(_raw, _i, _n) \
-    WORD(_i, _n, false, PART(_raw, LX_Q_NONE, _i, _n))
+    WORD_SP_SIMPLE(_i, _n, false, _raw)
 
 #define WORD_DOUBLE(_raw, _i, _n) \
     WORD(_i, _n, false, PART(_raw, LX_Q_DOUBLE, _i + 1, _n - 1))
@@ -829,9 +840,7 @@ TEST(lexer, command_substitution_before_string) {
 
 TEST(lexer, command_substitution_after_command_substitution) {
     da_tok exp = TOKS(
-        WORD(I(0), N(12), false,
-            PART("$(foo)$(bar)", LX_Q_NONE, I(0), N(12)),
-        ),
+        WORD_SIMPLE("$(foo)$(bar)", I(0), N(12)),
     );
 
     validate("$(foo)$(bar)", &exp);
@@ -896,9 +905,7 @@ TEST(lexer, process_substitution_before_string) {
 
 TEST(lexer, process_substitution_after_process_substitution) {
     da_tok exp = TOKS(
-        WORD(I(0), N(12), false,
-            PART("<(foo)<(bar)", LX_Q_NONE, I(0), N(12)),
-        ),
+        WORD_SIMPLE("<(foo)<(bar)", I(0), N(12)),
     );
 
     validate("<(foo)<(bar)", &exp);
@@ -916,9 +923,7 @@ TEST(lexer, process_substitution_in_double_quotes) {
 
 TEST(lexer, process_substitution_and_command_substitution) {
     da_tok exp = TOKS(
-        WORD(I(0), N(12), false,
-            PART("<(abc)$(def)", LX_Q_NONE, I(0), N(12)),
-        ),
+        WORD_SIMPLE("<(abc)$(def)", I(0), N(12)),
     );
 
     validate("<(abc)$(def)", &exp);

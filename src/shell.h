@@ -37,6 +37,7 @@ void print_job_event(const job_event *jev, bool verbose);
 void seashell_shutdown(void);
 int line_to_ast(const char *line, size_t n, ps_ast *ast);
 linc_string shell_get_prompt(void);
+void ast_release(ps_ast *ast);
 
 int shell_run_file(const char *path);
 int shell_run_chain(ps_chain *chain);

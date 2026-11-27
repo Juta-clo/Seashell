@@ -5,7 +5,6 @@
 
 #include <linc/array.h>
 #include "lexer.h"
-#include "utils.h"
 
 typedef enum {
     PS_NO_IF,
@@ -25,6 +24,7 @@ typedef enum {
     PS_CMD_IF,
     PS_CMD_WHILE,
     PS_CMD_FOR,
+    PS_CMD_FUNC,
 } ps_cmd_kind;
 
 typedef enum {
@@ -54,6 +54,7 @@ typedef struct ps_simple ps_simple;
 typedef struct ps_if ps_if;
 typedef struct ps_while ps_while;
 typedef struct ps_for ps_for;
+typedef struct ps_func ps_func;
 
 LINC_ARRAY_TYPE(da_segment, ps_segment);
 LINC_ARRAY_TYPE(da_word, ps_word);
@@ -122,6 +123,11 @@ struct ps_for {
     ps_ast body;
 };
 
+struct ps_func {
+    char *name;
+    ps_ast body;
+};
+
 struct ps_cmd {
     ps_cmd_kind kind;
     da_redir redirs;
@@ -133,6 +139,11 @@ struct ps_cmd {
         ps_if if_st;
         ps_while while_st;
         ps_for for_st;
+
+        struct {
+            ps_func func;
+            ps_ast *ast; /* owning ast */
+        };
     };
 };
 
