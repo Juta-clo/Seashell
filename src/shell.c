@@ -9,12 +9,8 @@
 #include "parser.h"
 #include "sig_funcs.h"
 #include "utils.h"
-#include "config.h"
 #include "variable.h"
 #include "state.h"
-
-#define PROMPT_DEFAULT "> "
-#define PROMPT_LUA "\x1b[36mlua\x1b[m \x1b[35m>\x1b[m "
 
 #define WAIT_EXIT 193 /* +1 highest signal exit status */
 
@@ -64,8 +60,6 @@ void ast_release(ps_ast *ast) {
         free(ast);
     }
 }
-
-static int run_ast(const ps_ast *ast);
 
 static void subshell_setup(int type) {
     env.subsh |= type;
@@ -440,12 +434,12 @@ static int apply_redirs(da_ex_redir *redirs, bool main_shell) {
 }
 
 static int run_if(ps_if *if_st) {
-    int status = run_ast(&if_st->cond);
+    int status = shell_run_ast(&if_st->cond);
     if (status == -1)
         return status;
 
     if (status == EXIT_SUCCESS)
-        status = run_ast(&if_st->body);
+        status = shell_run_ast(&if_st->body);
 
     return status;
 }
@@ -456,12 +450,12 @@ static int run_while(ps_while *while_st) {
     env.loop_level += 1;
 
     while (true) {
-        status = run_ast(&while_st->cond);
+        status = shell_run_ast(&while_st->cond);
         if (status == -1)
             return status;
 
         if (status == EXIT_SUCCESS) {
-            status = run_ast(&while_st->body);
+            status = shell_run_ast(&while_st->body);
             if (status == -1)
                 break;
 
@@ -496,7 +490,7 @@ static int run_for(ex_res *res, ps_for *for_st) {
             return EXIT_FAILURE;
         }
 
-        status = run_ast(&for_st->body);
+        status = shell_run_ast(&for_st->body);
 
         if (env.breaking) {
             env.breaking = false;
@@ -518,7 +512,7 @@ static int run_for(ex_res *res, ps_for *for_st) {
 static int run_func(ps_cmd *cmd) {
     env.func_level += 1;
 
-    int status = run_ast(&cmd->func.body);
+    int status = shell_run_ast(&cmd->func.body);
 
     env.returning = false;
     env.func_level -= 1;
@@ -700,7 +694,7 @@ static int run_pline(ps_pline *pline, bool bg, int jid) {
             case PS_CMD_WHILE: _exit(run_while(&cmd->while_st));
             case PS_CMD_FOR:   _exit(run_for(&res, &cmd->for_st));
             case PS_CMD_SUBSH:
-                rv = run_ast(&cmd->subsh);
+                rv = shell_run_ast(&cmd->subsh);
                 _exit((rv == -1) ? SIGINT + 128 : rv);
             default:           fatal("unexpected command type");
             }
@@ -919,7 +913,6 @@ void seashell_shutdown(void) {
 
 void process_signals(void) {
     if (sigchld_caught || sig_is_pending(SIGCHLD)) {
-        LOG_INFO("SIGCHLD caught");
         sigchld_caught = false;
 
         flush_wait_events();
@@ -944,34 +937,27 @@ void process_signals(void) {
     }
 }
 
-linc_string shell_get_prompt(void) {
-    linc_string prompt = LINC_STRING_INIT;
-
-    if (env.lua) {
-        linc_string_append(&prompt, PROMPT_LUA);
-    } else {
-        if (config_field_prompt(&prompt) == -1)
-            linc_string_append(&prompt, PROMPT_DEFAULT);
-    }
-
-    return prompt;
-}
-
-int shell_run_file(const char *path) {
+int shell_run_file(const char *path, bool silent) {
     ASSERT(path);
 
     linc_string file_content = LINC_STRING_INIT;
 
     int fd = open(path, O_RDONLY);
     if (fd == -1) {
-        err_msg("%m: %s", path);
+        if (!silent)
+            err_msg("%m: %s", path);
+
         return EXIT_FAILURE;
     }
 
     read_to_eof(fd, &file_content);
     xclose(fd);
 
-    return shell_run(file_content.cstr);
+    ps_ast *ast = ast_acquire(file_content.cstr, file_content.len);
+    if (!ast)
+        return EXIT_FAILURE;
+
+    return shell_run_ast(ast);
 }
 
 int shell_run_capture(const ps_ast *ast, int *pid) {
@@ -993,7 +979,7 @@ int shell_run_capture(const ps_ast *ast, int *pid) {
         fd_move(pipe_fd[1], STDOUT_FILENO, false, true);
         xclose(pipe_fd[0]);
 
-        int status = run_ast(ast);
+        int status = shell_run_ast(ast);
         _exit((status == -1) ? SIGINT + 128 : status);
     }
 
@@ -1005,7 +991,7 @@ int shell_run_capture(const ps_ast *ast, int *pid) {
     return pipe_fd[0];
 }
 
-static int run_ast(const ps_ast *ast) {
+int shell_run_ast(const ps_ast *ast) {
     ASSERT(ast);
 
     int status = EXIT_SUCCESS;
@@ -1028,12 +1014,7 @@ int shell_run(const char *cmd) {
     if (!ast)
         return -1;
 
-    if (ast->chains.size == 0) {
-        ast_release(ast);
-        return EXIT_SUCCESS;
-    }
-
-    int status = run_ast(ast);
+    int status = shell_run_ast(ast);
     if (status == -1)
         status = SIGINT + 128;
 

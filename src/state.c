@@ -18,7 +18,6 @@
 #include "state.h"
 #include "sig_funcs.h"
 #include "utils.h"
-#include "luart.h"
 
 #define ALIAS_MAX 4096
 #define FUNC_MAX 4096
@@ -209,7 +208,6 @@ void env_init(int argc, char *const *argv) {
     log_init();
     var_init();
     sig_init();
-    luart_init();
 
     script_file = argv[optind];
 

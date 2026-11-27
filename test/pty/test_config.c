@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include "t_assert.h"
 #include "unity_fixture.h"
 
@@ -7,43 +5,9 @@ TEST_GROUP(config);
 
 /************ Fixture ************/
 
-FILE *config;
-char prompt_buf[BUFSIZ];
-char aliases_buf[BUFSIZ];
-
-void create_config(void) {
-    config = fopen("/tmp/config_test.lua", "w+");
-    if (!config)
-        xtest_fatal("fopen: %m");
-
-    if (fprintf(config, "return {%s%s}", prompt_buf, aliases_buf) < 0)
-        xtest_fatal("fprintf: %m");
-
-    if (fclose(config) == EOF)
-        xtest_fatal("fclose: %m");
-
-    test_setup("./sea", "--config-file=/tmp/config_test.lua");
-}
-
-void set_prompt(const char *prompt) {
-    snprintf(prompt_buf, BUFSIZ,
-            "prompt = function()"
-                "return \"%s\""
-            "end,",
-        prompt
-    );
-    create_config();
-}
-
-void set_aliases(const char *aliases) {
-    snprintf(aliases_buf, BUFSIZ, "alias = {%s},", aliases);
-    create_config();
-}
-
 TEST_SETUP(config) {
-    config = nullptr;
-    prompt_buf[0] = '\0';
-    aliases_buf[0] = '\0';
+    test_setup("./sea", "--clean");
+    assert_term(0, PROMPT_LEN, PROMPT);
 }
 
 TEST_TEAR_DOWN(config) {
@@ -54,30 +18,26 @@ TEST_TEAR_DOWN(config) {
 
 // NOLINTBEGIN(bugprone-suspicious-missing-comma)
 
-TEST(config, option_config_file_read) {
-    set_prompt("$ ");
-    assert_term(0, 2,
+TEST(config, setting_the_prompt_function) {
+    vt_send_str("sea_prompt() { echo '$ ' }\n");
+    assert_term(1, 2,
+        PROMPT "sea_prompt() { echo '$ ' }",
         "$ "
     );
 }
 
 TEST(config, escapes_in_prompt_are_handled) {
-    set_prompt("\\27[31m$\\27[m ");
-    assert_term(0, 2,
-        "$ "
-    );
-
-    vt_send_str("echo x\n");
-    assert_term(2, 2,
-        "$ echo x",
-        "x",
+    vt_send_str("sea_prompt() { printf '%b ' '\\x1b[31m$\\x1b[m' }\n");
+    assert_term(1, 2,
+        PROMPT "sea_prompt() { printf '%%b ' '\\x1b[31m$\\x1b[m' }",
         "$ "
     );
 }
 
 TEST(config, colored_prompt_resize_below_output) {
-    set_prompt("\\27[31m$\\27[m ");
-    assert_term(0, 2,
+    vt_send_str("sea_prompt() { printf '%b ' '\\x1b[31m$\\x1b[m' }\n");
+    assert_term_clear(1, 2,
+        PROMPT "sea_prompt() { printf '%%b ' '\\x1b[31m$\\x1b[m' }",
         "$ "
     );
 
@@ -108,8 +68,9 @@ TEST(config, colored_prompt_resize_below_output) {
 }
 
 TEST(config, escape_at_rightmost_column) {
-    set_prompt("ab\\27[31mcdef\\27[m> ");
-    assert_term(0, 8,
+    vt_send_str("sea_prompt() { printf '%b ' 'ab\\x1b[31mcdef\\x1b[m>' }\n");
+    assert_term(1, 8,
+        PROMPT "sea_prompt() { printf '%%b ' 'ab\\x1b[31mcdef\\x1b[m>' }",
         "abcdef> "
     );
 
@@ -125,8 +86,9 @@ TEST(config, escape_at_rightmost_column) {
 }
 
 TEST(config, prompt_with_escapes_in_pager) {
-    set_prompt("\\27[31mabcdef> \\27[m");
-    assert_term(0, 8,
+    vt_send_str("sea_prompt() { printf '%b ' '\\x1b[31mabcdef>\\x1b[m' }\n");
+    assert_term_clear(1, 8,
+        PROMPT "sea_prompt() { printf '%%b ' '\\x1b[31mabcdef>\\x1b[m' }",
         "abcdef> "
     );
 
@@ -144,8 +106,9 @@ TEST(config, prompt_with_escapes_in_pager) {
 }
 
 TEST(config, colored_prompt_text_in_pager) {
-    set_prompt("\\27[31mabcdefghijkl> \\27[m");
-    assert_term(0, 14,
+    vt_send_str("sea_prompt() { printf '%b ' '\\x1b[31mabcdefghijkl>\\x1b[m' }\n");
+    assert_term_clear(1, 14,
+        PROMPT "sea_prompt() { printf '%%b ' '\\x1b[31mabcdefghijkl>\\x1b[m' }",
         "abcdefghijkl> "
     );
 
@@ -158,10 +121,13 @@ TEST(config, colored_prompt_text_in_pager) {
 }
 
 TEST(config, pasting_text_with_sequences) {
-    set_prompt("$ ");
-    assert_term(0, 2,
+    vt_send_str("sea_prompt() { printf '$ ' }\n");
+    assert_term_clear(1, 2,
+        PROMPT "sea_prompt() { printf '$ ' }",
         "$ "
     );
+
+    assert_term(0, 2, "$ ");
 
     vterm_keyboard_start_paste(test->vt.vp);
     vt_send_str("\x1b[31mX");
@@ -172,10 +138,13 @@ TEST(config, pasting_text_with_sequences) {
 }
 
 TEST(config, pasting_incomplete_csi) {
-    set_prompt("$ ");
-    assert_term(0, 2,
+    vt_send_str("sea_prompt() { printf '$ ' }\n");
+    assert_term_clear(1, 2,
+        PROMPT "sea_prompt() { printf '$ ' }",
         "$ "
     );
+
+    assert_term(0, 2, "$ ");
 
     vterm_keyboard_start_paste(test->vt.vp);
     vt_send_str("\x1b[31");
@@ -186,10 +155,13 @@ TEST(config, pasting_incomplete_csi) {
 }
 
 TEST(config, paste_csi_that_enters_pager) {
-    set_prompt("$ ");
-    assert_term(0, 2,
-         "$ "
+    vt_send_str("sea_prompt() { printf '$ ' }\n");
+    assert_term_clear(1, 2,
+        PROMPT "sea_prompt() { printf '$ ' }",
+        "$ "
     );
+
+    assert_term(0, 2, "$ ");
 
     test_resize_term(3, 3);
 
@@ -226,11 +198,12 @@ TEST(config, paste_csi_that_enters_pager) {
 }
 
 TEST(config, prompt_len_zero) {
-    set_prompt("\\27[31m\\27[0m");
-    test_pump_ms(3);
-    assert_term(0, 0,
-        ""
+    vt_send_str("sea_prompt() { printf '%b' '\\x1b[31m\\x1b[0m' }\n");
+    assert_term_clear(1, 0,
+        PROMPT "sea_prompt() { printf '%%b' '\\x1b[31m\\x1b[0m' }"
     );
+
+    test_pump_ms(3);
 
     vt_send_str("0123456789");
     assert_term(0, 10,
@@ -258,36 +231,24 @@ TEST(config, prompt_len_zero) {
 }
 
 TEST(config, simple_alias_expansion) {
-    set_aliases("p = 'echo'");
-    assert_term(0, PROMPT_LEN,
+    vt_send_str("alias p 'echo foo'\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias p 'echo foo'",
         PROMPT
     );
 
     vt_send_str("p\n");
     assert_term(2, PROMPT_LEN,
         PROMPT "p",
-        "",
-        PROMPT
-    );
-}
-
-TEST(config, alias_with_multiple_words) {
-    set_aliases("p = 'echo hello world!'");
-    assert_term(0, PROMPT_LEN,
-        PROMPT
-    );
-
-    vt_send_str("p\n");
-    assert_term(2, PROMPT_LEN,
-        PROMPT "p",
-        "hello world!",
+        "foo",
         PROMPT
     );
 }
 
 TEST(config, alias_expands_after_pipe_from_alias) {
-    set_aliases("p = 'echo -n abc |', count = 'wc -c'");
-    assert_term(0, PROMPT_LEN,
+    vt_send_str("alias p 'echo -n abc |'; alias count 'wc -c'\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias p 'echo -n abc |'; alias count 'wc -c'",
         PROMPT
     );
 
@@ -300,8 +261,9 @@ TEST(config, alias_expands_after_pipe_from_alias) {
 }
 
 TEST(config, alias_with_non_first_word) {
-    set_aliases("p = '&& echo hi'");
-    assert_term(0, PROMPT_LEN,
+    vt_send_str("alias p '&& echo hi'\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias p '&& echo hi'",
         PROMPT
     );
 
@@ -314,8 +276,9 @@ TEST(config, alias_with_non_first_word) {
 }
 
 TEST(config, alias_with_no_value) {
-    set_aliases("p = ''");
-    assert_term(0, PROMPT_LEN,
+    vt_send_str("alias p ''\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias p ''",
         PROMPT
     );
 
@@ -328,8 +291,9 @@ TEST(config, alias_with_no_value) {
 }
 
 TEST(config, alias_with_recursive_expansion) {
-    set_aliases("p = 'p'");
-    assert_term(0, PROMPT_LEN,
+    vt_send_str("alias p 'p'\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias p 'p'",
         PROMPT
     );
 
@@ -342,8 +306,9 @@ TEST(config, alias_with_recursive_expansion) {
 }
 
 TEST(config, alias_that_contains_redirect) {
-    set_aliases("p = 'echo x >/dev/null'");
-    assert_term(0, PROMPT_LEN,
+    vt_send_str("alias p 'echo x >/dev/null'\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias p 'echo x >/dev/null'",
         PROMPT
     );
 
@@ -355,8 +320,9 @@ TEST(config, alias_that_contains_redirect) {
 }
 
 TEST(config, alias_that_contains_variable_expansion) {
-    set_aliases("p = 'echo $FOO'");
-    assert_term(0, PROMPT_LEN,
+    vt_send_str("alias p 'echo $FOO'\n");
+    assert_term_clear(1, PROMPT_LEN,
+        PROMPT "alias p 'echo $FOO'",
         PROMPT
     );
 
@@ -379,7 +345,7 @@ TEST(config, alias_that_contains_variable_expansion) {
 /************ Test runner ************/
 
 TEST_GROUP_RUNNER(config) {
-    RUN_TEST_CASE(config, option_config_file_read);
+    RUN_TEST_CASE(config, setting_the_prompt_function);
     RUN_TEST_CASE(config, escapes_in_prompt_are_handled);
     RUN_TEST_CASE(config, colored_prompt_resize_below_output);
     RUN_TEST_CASE(config, escape_at_rightmost_column);
@@ -390,7 +356,6 @@ TEST_GROUP_RUNNER(config) {
     RUN_TEST_CASE(config, paste_csi_that_enters_pager);
     RUN_TEST_CASE(config, prompt_len_zero);
     RUN_TEST_CASE(config, simple_alias_expansion);
-    RUN_TEST_CASE(config, alias_with_multiple_words);
     RUN_TEST_CASE(config, alias_expands_after_pipe_from_alias);
     RUN_TEST_CASE(config, alias_with_non_first_word);
     RUN_TEST_CASE(config, alias_with_no_value);

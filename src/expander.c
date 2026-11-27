@@ -261,11 +261,6 @@ static int expand_seg(ps_segment *seg, da_charp *parts, bool *has_glob,
             if (!ast)
                 goto cleanup;
 
-            if (ast->chains.size == 0) {
-                ast_release(ast);
-                goto cleanup;
-            }
-
             int rfd = shell_run_capture(ast, &pid);
             read_to_eof(rfd, &data);
             trim_newlines(&data);
@@ -301,11 +296,6 @@ static int expand_seg(ps_segment *seg, da_charp *parts, bool *has_glob,
             ps_ast *ast = ast_acquire(&tok->str[2], tok->str_len - 2);
             if (!ast)
                 goto cleanup;
-
-            if (ast->chains.size == 0) {
-                ast_release(ast);
-                goto cleanup;
-            }
 
             int rfd = shell_run_capture(ast, NULL);
             linc_string path = LINC_STRING_INIT;

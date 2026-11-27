@@ -18,7 +18,7 @@ end
 
 add_rules("plugin.compile_commands.autoupdate", { outputdir = "." })
 add_defines("_GNU_SOURCE")
-add_requires("unibilium", "lua 5.4", { system = true })
+add_requires("unibilium", { system = true })
 
 target("launch_seashell")
     set_kind("binary")
@@ -32,7 +32,7 @@ target("sea")
     set_default(false)
 
     add_deps(linc_targets)
-    add_packages("unibilium", "lua")
+    add_packages("unibilium")
     add_ldflags("-rdynamic")
     add_includedirs("deps/Printty/include")
     add_files("src/*.c", "deps/Printty/src/*.c")
@@ -75,7 +75,7 @@ target("unit_test")
     set_targetdir(".")
 
     add_deps(linc_targets)
-    add_packages("unibilium", "lua")
+    add_packages("unibilium")
     add_defines("UNITY_FIXTURE_NO_EXTRAS", "UNITY_OUTPUT_COLOR")
     add_includedirs("src", "test/unit", "deps/unity", "deps/Printty/include")
     add_files(

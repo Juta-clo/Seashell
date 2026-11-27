@@ -1,3 +1,4 @@
+#include <linux/limits.h>
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,7 +6,6 @@
 #include <errno.h>
 #include <assert.h>
 
-#include "config.h"
 #include "shell.h"
 #include "variable.h"
 #include "state.h"
@@ -311,24 +311,6 @@ static int run_vars_builtin(char **argv, shell_env *env) {
     return EXIT_SUCCESS;
 }
 
-static int run_reload_builtin(char **argv, shell_env *_) {
-    if (validate_argc(argv, 0, 0) == -1)
-        return EXIT_FAILURE;
-
-    FILE *config = config_file_open();
-    if (!config)
-        use_err("failed to open config file");
-
-    int jid = env.fg_jid;
-    parse_config();
-    env.fg_jid = jid;
-
-    if (fclose(config) == EOF)
-        fatal("fclose");
-
-    return EXIT_SUCCESS;
-}
-
 static int run_set_builtin(char **argv, shell_env *env) {
     if (validate_argc(argv, 2, 2) == -1)
         return EXIT_FAILURE;
@@ -418,22 +400,14 @@ static int run_source_builtin(char **argv, shell_env *env) {
         return EXIT_FAILURE;
 
     int saved_jid = env->fg_jid;
-    int status = shell_run_file(argv[1]);
+    env->func_level += 1;
+
+    int status = shell_run_file(argv[1], false);
+
+    env->func_level -= 1;
     env->fg_jid = saved_jid;
 
     return status;
-}
-
-int run_lua_builtin(char **argv, shell_env *env) {
-    if (env->subsh)
-        use_err("no lua in this shell");
-
-    if (validate_argc(argv, 0, 0) == -1)
-        return EXIT_FAILURE;
-
-    env->lua = !env->lua;
-
-    return EXIT_SUCCESS;
 }
 
 int run_break_builtin(char **argv, shell_env *env) {
@@ -491,12 +465,10 @@ static sh_builtin builtins[BUILTIN_COUNT] = {
     { .name = "kill", .func = run_kill_builtin },
     { .name = "fg", .func = run_fg_builtin },
     { .name = "bg", .func = run_bg_builtin },
-    { .name = "reload", .func = run_reload_builtin },
     { .name = "set", .func = run_set_builtin },
     { .name = "unset", .func = run_unset_builtin },
     { .name = "alias", .func = run_alias_builtin },
     { .name = "unalias", .func = run_unalias_builtin },
-    { .name = "lua", .func = run_lua_builtin },
     { .name = "break", .func = run_break_builtin },
     { .name = "continue", .func = run_continue_builtin },
     { .name = "return", .func = run_return_builtin },

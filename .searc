@@ -1,0 +1,59 @@
+set COL_RED  '\x1b[31m';
+set COL_MAG  '\x1b[35m';
+set COL_CYAN '\x1b[36m';
+set COL_OFF  '\x1b[m';
+
+alias cl clear;
+alias gs "git status -s";
+
+export PATH "$HOME/.local/bin:$PATH";
+export PATH "$HOME/.cargo/bin:$PATH";
+export EDITOR "$HOME/local/bin/nvim";
+export MANPAGER "nvim +Man!";
+
+source ".ls_colors.sea";
+
+sea_prompt_dir() {
+    if test $PWD = $HOME {
+        printf '%b~%b ' $COL_CYAN $COL_OFF;
+        return;
+    };
+
+    printf "%b%s%b " $COL_CYAN $(basename $PWD) $COL_OFF;
+};
+
+sea_prompt_git() {
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1;
+
+    if test $? != 0 {
+        return;
+    };
+
+    printf '%b(%b' $COL_MAG $COL_OFF;
+    printf '%s' "$(git branch --show-current 2>/dev/null)";
+
+    git diff --cached --quiet 2>/dev/null && git diff --quiet 2>/dev/null;
+
+    if test $? != 0 {
+        printf '%b*%b' $COL_CYAN $COL_OFF;
+    };
+
+    printf '%b)%b ' $COL_MAG $COL_OFF;
+};
+
+sea_prompt_arrow() {
+    if test $LAST_EXIT = 0 {
+        printf '%b>%b ' $COL_MAG $COL_OFF;
+        return;
+    };
+
+    printf '%b>%b ' $COL_RED $COL_OFF;
+};
+
+sea_prompt() {
+    set LAST_EXIT $?;
+
+    sea_prompt_dir;
+    sea_prompt_git;
+    sea_prompt_arrow;
+};

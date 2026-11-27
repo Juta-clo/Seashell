@@ -4,7 +4,7 @@
 #include "state.h"
 #include "utils.h"
 #include "shell.h"
-#include "luart.h"
+#include "config.h"
 
 int main(int argc, char *const *argv) {
     xatexit(seashell_shutdown);
@@ -14,22 +14,20 @@ int main(int argc, char *const *argv) {
         exit(shell_run(opts[OPT_SCRIPT].val_str));
 
     if (script_file)
-        exit(shell_run_file(script_file));
+        exit(shell_run_file(script_file, false));
 
     while (true) {
         char *line;
-        linc_string prompt = shell_get_prompt();
+        linc_string prompt = LINC_STRING_INIT;
+
+        config_get_prompt(&prompt);
 
         if (!(line = input_get_line(prompt.cstr)))
             fatal("input_get_line: EOF/Error");
 
-        if (env.lua) {
-            luart_run(line);
-        } else {
-            shell_run(line);
-            ASSERT(!env.subsh); /* shouldn't be possible */
-            process_signals();
-        }
+        shell_run(line);
+        ASSERT(!env.subsh);
+        process_signals();
 
         free(line);
         linc_string_free(&prompt);

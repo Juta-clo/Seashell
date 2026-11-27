@@ -6,9 +6,6 @@
 #include <unistd.h>
 #include <sys/signal.h>
 
-#include <lua.h>
-#include <lualib.h>
-
 #include "linc.h"
 #include "linc/args.h"
 #include "linc/log.h"
@@ -28,7 +25,6 @@
 typedef struct {
     int fg_jid;
     uint64_t subsh;
-    bool lua;
     bool job_ctrl;
     da_int saved_fds;
     int loop_level;
