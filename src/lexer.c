@@ -20,6 +20,7 @@ typedef struct {
     size_t n;
     bool fd_dup_pending;
     bool esc_pending;
+    bool comment_pending;
     int status;
     lx_kind kind;
 } lx_scan;
@@ -384,6 +385,16 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
                 continue;
             }
 
+            if (*scan.cur_ch == '#' && !scan.cur_tok)
+                scan.comment_pending = true;
+
+            if (scan.comment_pending) {
+                if (*scan.cur_ch == '\n')
+                    scan.comment_pending = false;
+
+                continue;
+            }
+
             if (*scan.cur_ch == '"') {
                 scan.mode = LX_M_DOUBLEQ;
 
@@ -432,13 +443,13 @@ int lx_tokenize(const char *cmd, size_t n, da_tok *toks) {
                     scan_advance(&scan, rp + 1);
                 }
             } else if (kind_is_delim(scan.kind)) {
-                    try_end_part(&scan);
-                    try_end_tok(&scan, scan.kind);
+                try_end_part(&scan);
+                try_end_tok(&scan, scan.kind);
 
-                    ensure_tok(toks, scan.kind, &scan);
-                    try_end_tok(&scan, scan.kind);
+                ensure_tok(toks, scan.kind, &scan);
+                try_end_tok(&scan, scan.kind);
 
-                    scan_advance(&scan, tok_len(scan.kind) - 1);
+                scan_advance(&scan, tok_len(scan.kind) - 1);
             } else if (scan.kind == LX_TOK_UNKNOWN) {
                 ensure_tok(toks, LX_TOK_WORD, &scan);
                 ensure_part(&scan, LX_Q_NONE);
